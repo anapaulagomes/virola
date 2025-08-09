@@ -18,8 +18,9 @@ classifiers = [
 dependencies = [
     "loguru",
     "marimo>=0.14.16",
+    "numpy>=2.3.2",
     "pip",
-    "plotly>=6.2.0",
+    "plotly[express]>=6.2.0",
     "polars>=1.32.2",
     "pytest",
     "python-dotenv",
