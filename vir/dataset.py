@@ -10,9 +10,14 @@ app = typer.Typer()
 def main(
     input_path: Path,
     function: str = "head",
+    attribute: str = None,
 ):
     df = pl.read_parquet(input_path)
-    print(getattr(df, function)())
+    if attribute:
+        print(getattr(df, attribute))
+    else:
+        with pl.Config(tbl_cols=-1):
+            print(getattr(df, function)())
 
 
 if __name__ == "__main__":

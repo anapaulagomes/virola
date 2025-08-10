@@ -1,29 +1,35 @@
-from pathlib import Path
-
-import typer
-from loguru import logger
-from tqdm import tqdm
-
-from vir.config import PROCESSED_DATA_DIR
-
-app = typer.Typer()
+import numpy as np
+from sklearn.preprocessing import FunctionTransformer
 
 
-@app.command()
-def main(
-    # ---- REPLACE DEFAULT PATHS AS APPROPRIATE ----
-    input_path: Path = PROCESSED_DATA_DIR / "dataset.csv",
-    output_path: Path = PROCESSED_DATA_DIR / "features.csv",
-    # -----------------------------------------
-):
-    # ---- REPLACE THIS WITH YOUR OWN CODE ----
-    logger.info("Generating features from dataset...")
-    for i in tqdm(range(10), total=10):
-        if i == 5:
-            logger.info("Something happened for iteration 5.")
-    logger.success("Features generation complete.")
-    # -----------------------------------------
+population_range = [
+    "< 100 mil",
+    "100 - 250 mil",
+    "250 - 500 mil",
+    "> 500 mil",
+]
+
+age_group = [
+    # None,
+    "< 1 ano",
+    "1 a 4 anos",
+    "5 a 11 anos",
+    "12 a 15 anos",
+    "16 a 18 anos",
+    "19 a 24 anos",
+    "25 a 29 anos",
+    "30 a 39 anos",
+    "40 a 49 anos",
+    "50 a 59 anos",
+    "60 a 65 anos",
+    "66 a 85 anos",
+    "Maior que 85 anos",
+]
 
 
-if __name__ == "__main__":
-    app()
+def sin_transformer(period):
+    return FunctionTransformer(lambda x: np.sin(x / period * 2 * np.pi))
+
+
+def cos_transformer(period):
+    return FunctionTransformer(lambda x: np.cos(x / period * 2 * np.pi))

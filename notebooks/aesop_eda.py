@@ -25,11 +25,7 @@ def _():
 def _(mo):
     mo.md(
         r"""
-    # Unsupervised Learning for Surveillance Indicators
-
-    TODO: purpose
-
-    ## AESOP data
+    # 🌳 [AESOP] Exploratory Data Analysis
 
     TODO: source
     TODO: racional
@@ -255,6 +251,12 @@ def _(df, pl):
 @app.cell
 def _():
     # df.write_parquet(INTERIM_DATA_DIR / "cleaned_aesop_raw_dados_2017_20250223_20municipios.parquet")
+    return
+
+
+@app.cell
+def _(df):
+    df.head()
     return
 
 

@@ -22,9 +22,11 @@ dependencies = [
     "pip",
     "plotly[express]>=6.2.0",
     "polars>=1.32.2",
+    "pyarrow>=21.0.0",
     "pytest",
     "python-dotenv",
     "ruff",
+    "skrub>=0.6.0",
     "tqdm",
     "typer",
 ]
