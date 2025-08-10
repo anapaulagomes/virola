@@ -16,6 +16,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License"
 ]
 dependencies = [
+    "hdbscan>=0.8.40",
     "loguru",
     "marimo>=0.14.16",
     "numpy>=2.3.2",
