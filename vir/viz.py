@@ -25,10 +25,9 @@ def plot_null_vs_not_null(df, verbose=False):
     return _fig
 
 
-def plot_categories(df, column, x_categoryorder=None):
-    # FIXME receive title
+def plot_categories(df, column, x_categoryorder=None, title=None):
     _count = df[column].value_counts()
-    _fig = px.bar(_count, x=column, y="count")
+    _fig = px.bar(_count, x=column, y="count", title=title)
     if x_categoryorder:
         _fig.update_xaxes(categoryorder='array', categoryarray=x_categoryorder)
     return _fig
