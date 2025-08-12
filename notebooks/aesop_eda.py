@@ -9,11 +9,17 @@ def _():
     import marimo as mo
     import polars as pl
     import plotly.express as px
+    import numpy as np
+    from scipy.stats import chi2_contingency
+    import itertools
+
     from vir.viz import plot_null_vs_not_null, plot_categories, scatter_plot_year_per_week
     from vir.config import RAW_DATA_DIR, INTERIM_DATA_DIR
     return (
         RAW_DATA_DIR,
+        chi2_contingency,
         mo,
+        np,
         pl,
         plot_categories,
         px,
@@ -225,8 +231,71 @@ def _(ibge_df, pl, raw_df):
 
 
 @app.cell
-def _(df, plot_categories):
-    plot_categories(df, "code_type")
+def _(df, pl, px):
+    px.bar(
+        df.group_by("code_type").agg(
+            pl.col("code").n_unique().alias("count")
+        ),
+        x="code_type",
+        y="count",
+        title="Number of unique codes per code type",
+    )
+    return
+
+
+@app.cell
+def _(df, pl):
+    df.group_by("code_type").agg(
+        pl.col("code").n_unique().alias("count")
+    )
+    return
+
+
+@app.cell
+def _(df, pl):
+    code_length_df = df.group_by([
+        "code_type",
+        pl.col("code").str.len_chars().alias("code_length")
+    ]).agg(
+        pl.len().alias("count")
+    )
+    return (code_length_df,)
+
+
+@app.cell
+def _(df, pl):
+    df.select(pl.col('code_type'), pl.col('code'), pl.col("code").str.len_chars().alias("code_length"))
+    return
+
+
+@app.cell
+def _(code_length_df, px):
+    _fig = px.histogram(
+        code_length_df,
+        x="code_type",
+        y="count",
+        color='code_length',
+        barmode='group',
+        height=400
+    )
+    _fig
+    return
+
+
+@app.cell
+def _(df, px):
+    _fig = px.bar(
+        df.group_by(["code", "code_type"])
+        .len()
+        .sort("len", descending=True)
+        .limit(100),
+        x="code",
+        y="len",
+        color="code_type",
+        title="Top 100 codes per code type",
+    )
+    _fig.update_layout(barmode="stack", xaxis={"categoryorder": "total descending"})
+    _fig
     return
 
 
@@ -257,6 +326,87 @@ def _():
 @app.cell
 def _(df):
     df.head()
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""## Correlation among variables""")
+    return
+
+
+@app.cell
+def _(chi2_contingency, np, pl):
+    def cramers_v(df, col1, col2) -> float:
+        table = (
+            df.group_by([col1, col2])
+              .agg(pl.len().alias("count"))
+              .pivot(values="count", index=col1, on=col2)
+              .fill_null(0)
+              .to_pandas()
+              .set_index(col1)
+        )
+        chi2, _, _, _ = chi2_contingency(table)
+        n = table.values.sum()
+        r, k = table.shape
+        return np.sqrt(chi2 / (n * (min(k, r) - 1)))
+
+    # example
+    # cramers(df.sample(1000), "city", "state")
+    return (cramers_v,)
+
+
+@app.cell
+def _(cramers_v, df, pl):
+    categorical_cols = df.columns #["sex", "age_group", "code", "city", "population_range"]
+
+    assoc_results = []
+    for _index, col1 in enumerate(categorical_cols):
+        for col2 in categorical_cols[_index + 1:]:
+            cv = cramers_v(df, col1, col2)
+            assoc_results.append((col1, col2, cv))
+
+    assoc_df = pl.DataFrame(assoc_results, schema=["var1", "var2", "cramers_v"], orient="row")
+    assoc_df
+    return assoc_df, categorical_cols
+
+
+@app.cell
+def _(np):
+    def df_to_heatmap_matrix(df, variables):
+        number_of_variables = len(variables)
+        matrix = np.zeros(shape=(number_of_variables, number_of_variables))
+        index_variables = {variable: _index for _index, variable in enumerate(variables)}
+
+        for _index in range(number_of_variables):
+            matrix[_index][_index] = 1.0  # they correlate with themselves
+
+        for _row in df.iter_rows(named=True):
+            _var1_index = index_variables.get(_row['var1'])
+            _var2_index = index_variables.get(_row['var2'])
+            matrix[_var1_index][_var2_index] = _row["cramers_v"]
+            matrix[_var2_index][_var1_index] = _row["cramers_v"]
+        return matrix, index_variables
+
+    return (df_to_heatmap_matrix,)
+
+
+@app.cell
+def _(assoc_df, categorical_cols, df_to_heatmap_matrix, px):
+    matrix, index_variables = df_to_heatmap_matrix(assoc_df, categorical_cols)
+    _fig = px.imshow(
+        matrix,
+        x=list(index_variables.keys()),
+        y=list(index_variables.keys()),
+        aspect="auto",
+        origin="lower",
+        text_auto=".2f",
+        color_continuous_scale="RdBu_r",
+        title="Heatmap of categorical variables correlation"
+    )
+    _fig.update_layout(coloraxis_colorbar=dict(title="Cramér's V"))
+    _fig.update_xaxes(tickangle=45)
+    _fig
     return
 
 
