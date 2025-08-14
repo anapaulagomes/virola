@@ -23,7 +23,6 @@ def _(mo):
     # Embedding medical terminologies
 
     Model: [SapBERT](https://huggingface.co/cambridgeltl/SapBERT-from-PubMedBERT-fulltext) - clinical and multilingual
-
     """
     )
     return
@@ -74,7 +73,6 @@ def _(mo):
     "A009";"C�lera n�o especificada";"1";"I";"0";"0";"202506";"01/2017A";"2"
     "A01";"Febres tif�ide e paratif�ide";"0";"I";"0";"0";"202506";"01/2017A";"2"
     ```
-
     """
     )
     return
@@ -97,8 +95,8 @@ def _(pl):
         separator=";",
         has_header=False,
         new_columns=[
-            "CID10",
-            "Descrição da CID10",
+            "code",
+            "description",
             "ST_AGRAVO_NOTIFICACAO",
             "CO_SEXO",
             "ST_ESTADIO",
@@ -108,7 +106,8 @@ def _(pl):
             "ST_ACAO",
         ]
     )
-    cid10.drop(_exclude_columns)
+    cid10 = cid10.drop(_exclude_columns)
+    cid10 = cid10.with_columns(code_type=pl.lit("cid10"))
     cid10
     return (cid10,)
 
@@ -116,9 +115,20 @@ def _(pl):
 @app.cell
 def _(pl):
     ciap2_cid10 = pl.read_csv("references/ciap2-cid10.csv")
-    ciap2_cid10 = ciap2_cid10.rename({"Código da CIAP2": "CIAP2", "Código da CID10": "CID10"})
+    ciap2_cid10 = ciap2_cid10.rename({
+        "Código da CIAP2": "code",
+        "Código da CID10": "related_cid10",
+        "Descrição da CIAP2": "description",
+        "Descrição da CID10": "related_description_cid10",
+    })
+    ciap2_cid10 = ciap2_cid10.with_columns(code_type=pl.lit("ciap2"))
     abp_ciap2 = pl.read_csv("references/abp_ciap2.csv")
-    abp_ciap2 = abp_ciap2.rename({"CIAP2 relacionada": "CIAP2", "Código AB": "AB"})
+    abp_ciap2 = abp_ciap2.rename({
+        "CIAP2 relacionada": "related_ciap2",
+        "Código AB": "code",
+        "Descrição AB": "description",
+    })
+    abp_ciap2 = abp_ciap2.with_columns(code_type=pl.lit("ab"))
     return abp_ciap2, ciap2_cid10
 
 
@@ -129,52 +139,13 @@ def _(abp_ciap2, ciap2_cid10):
 
 
 @app.cell
-def _(abp_ciap2, ciap2_cid10, cid10):
-    columns = ["CID10", "Descrição da CID10", "CIAP2", "Descrição da CIAP2", "AB", "Descrição AB"]
-    mapping = cid10.join(
-        ciap2_cid10.join(abp_ciap2, on=["CIAP2"], how="left"),
-        on=["CID10"], how="left"
-    )
-    mapping = mapping.select(columns)
-    mapping
-    return (mapping,)
+def _(abp_ciap2, ciap2_cid10, cid10, pl):
+    codes = pl.concat([
+        cid10,
+        ciap2_cid10[["code", "description", "code_type"]],
+        abp_ciap2[["code", "description", "code_type"]]
+    ])
 
-
-@app.cell
-def _(mapping, pl):
-    code_types = ["CID10", "CIAP2", "AB"]
-    code_type_descriptions = ["Descrição da CID10", "Descrição da CIAP2", "Descrição AB"]
-    desc_to_type = {
-        "Descrição da CID10": "CID10",
-        "Descrição da CIAP2": "CIAP2",
-        "Descrição AB": "AB",
-    }
-
-    codes = (
-        mapping.with_row_index("row_id")
-          .melt(
-              id_vars=["row_id"],
-              value_vars=code_types + code_type_descriptions,
-              variable_name="col_name",
-              value_name="value",
-          )
-          .with_columns([
-              # which system?
-              pl.when(pl.col("col_name").is_in(code_types))
-                .then(pl.col("col_name"))
-                .otherwise(pl.col("col_name").replace(desc_to_type))
-                .alias("code_type"),
-              # field: code vs description
-              pl.when(pl.col("col_name").is_in(code_types))
-                .then(pl.lit("code"))
-                .otherwise(pl.lit("description"))
-                .alias("field"),
-          ])
-          .select(["row_id", "code_type", "field", "value"])
-          .pivot(values="value", index=["row_id", "code_type"], on="field")
-          .drop_nulls("code")
-          .select(["code", "code_type", "description"])
-    )
     codes
     return (codes,)
 
@@ -241,11 +212,6 @@ def _(mo):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def _(X_embedded, codes, pl):
     codes_tsne = pl.concat([codes, pl.DataFrame(X_embedded, schema=["c0", "c1"])], how="horizontal")
     codes_tsne
@@ -267,12 +233,7 @@ def _(codes_tsne, px):
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.md(
-        r"""
-    ## Validation
-
-    """
-    )
+    mo.md(r"""## Validation""")
     return
 
 
@@ -311,19 +272,18 @@ def _(ciap2_cid10):
 
 @app.cell
 def _(ciap2_cid10, codes_embeddings, cosine_sim, pl):
-    # columns = ["CID10", "Descrição da CID10", "CIAP2", "Descrição da CIAP2", "AB", "Descrição AB"]
     results = {}
 
     print("**ICD10 and CIAP2**")
     for row in ciap2_cid10.iter_rows(named=True):
-        _left = codes_embeddings.filter(pl.col("code").eq(row["CID10"]))
-        _right = codes_embeddings.filter(pl.col("code").eq(row["CIAP2"]))
+        _left = codes_embeddings.filter(pl.col("code").eq(row["related_cid10"]), pl.col("code_type").eq("cid10"))
+        _right = codes_embeddings.filter(pl.col("code").eq(row["code"]), pl.col("code_type").eq("ciap2"))
 
-        results[f"{row['CID10']}_{row['CIAP2']}"] = cosine_sim(_left["embeddings"].first(), _right["embeddings"].first())
+        results[f"{row['related_cid10']}_{row['code']}"] = cosine_sim(_left["embeddings"].first(), _right["embeddings"].first())
 
         print(
-            f"{row['CID10']}_{row['CIAP2']}",
-            results[f"{row['CID10']}_{row['CIAP2']}"],
+            f"{row['related_cid10']}_{row['code']}",
+            results[f"{row['related_cid10']}_{row['code']}"],
             f"{_left['description'].first()} --- {_right['description'].first()}"
         )
 
@@ -333,6 +293,12 @@ def _(ciap2_cid10, codes_embeddings, cosine_sim, pl):
 @app.cell
 def _(px, results):
     px.histogram(list(results.values()))
+    return
+
+
+@app.cell
+def _(np, results):
+    np.percentile(list(results.values()), 50), np.percentile(list(results.values()), 75), np.percentile(list(results.values()), 90)
     return
 
 
