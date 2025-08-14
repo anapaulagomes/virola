@@ -10,9 +10,10 @@ def _():
     import numpy as np
     import torch
     import polars as pl
-    from transformers import AutoTokenizer, AutoModel  
+    from transformers import AutoTokenizer, AutoModel, AutoModelForMaskedLM
     from sklearn.manifold import TSNE
     import plotly.express as px
+    from sentence_transformers import SentenceTransformer
     return AutoModel, AutoTokenizer, TSNE, mo, np, pl, px, torch
 
 
@@ -21,6 +22,18 @@ def _(mo):
     mo.md(
         r"""
     # Embedding medical terminologies
+
+    ```
+    # TODO run all in HPC
+    models = [
+        # "cambridgeltl/SapBERT-from-PubMedBERT-fulltext",
+        # 'neuralmind/bert-base-portuguese-cased'
+        # "pucpr/biobertpt-clin",  # couldn't run it
+        # "BioMistral/BioMistral-7B",
+        # "medicalai/ClinicalBERT"  # best performance so far but it is sketchy
+        "pucpr/clinicalnerpt-medical"  # good results, local context and runs in CPUs
+    ]
+    ```
 
     Model: [SapBERT](https://huggingface.co/cambridgeltl/SapBERT-from-PubMedBERT-fulltext) - clinical and multilingual
     """
@@ -107,7 +120,7 @@ def _(pl):
         ]
     )
     cid10 = cid10.drop(_exclude_columns)
-    cid10 = cid10.with_columns(code_type=pl.lit("cid10"))
+    cid10 = cid10.with_columns(code_type=pl.lit("cid10"), description=pl.col('description').str.to_lowercase())
     cid10
     return (cid10,)
 
@@ -121,14 +134,14 @@ def _(pl):
         "Descrição da CIAP2": "description",
         "Descrição da CID10": "related_description_cid10",
     })
-    ciap2_cid10 = ciap2_cid10.with_columns(code_type=pl.lit("ciap2"))
+    ciap2_cid10 = ciap2_cid10.with_columns(code_type=pl.lit("ciap2"), description=pl.col('description').str.to_lowercase())
     abp_ciap2 = pl.read_csv("references/abp_ciap2.csv")
     abp_ciap2 = abp_ciap2.rename({
         "CIAP2 relacionada": "related_ciap2",
         "Código AB": "code",
         "Descrição AB": "description",
     })
-    abp_ciap2 = abp_ciap2.with_columns(code_type=pl.lit("ab"))
+    abp_ciap2 = abp_ciap2.with_columns(code_type=pl.lit("ab"), description=pl.col('description').str.to_lowercase())
     return abp_ciap2, ciap2_cid10
 
 
@@ -152,22 +165,32 @@ def _(abp_ciap2, ciap2_cid10, cid10, pl):
 
 @app.cell
 def _(mo):
-    mo.md(r"""## Embeddings""")
+    mo.md(
+        r"""
+    ## Embeddings
+
+    TODO: check when running in HPC https://docs.astral.sh/uv/guides/integration/pytorch/
+    """
+    )
     return
 
 
 @app.cell
 def _(AutoModel, AutoTokenizer, torch):
-    tokenizer = AutoTokenizer.from_pretrained("cambridgeltl/SapBERT-from-PubMedBERT-fulltext")
-    model = AutoModel.from_pretrained("cambridgeltl/SapBERT-from-PubMedBERT-fulltext")
-    device = torch.device("cpu")
+    model_name = "pucpr/clinicalnerpt-medical"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModel.from_pretrained(model_name)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
+    print(f"Using device: {device}")
     return device, model, tokenizer
 
 
 @app.cell
-def _(codes, device, model, np, tokenizer):
+def _(codes, device, model, np, tokenizer, torch):
     batch_size = 128  # TODO check
+
     all_embeddings = []
 
     for i in np.arange(0, len(codes["description"]), batch_size):
@@ -178,9 +201,15 @@ def _(codes, device, model, np, tokenizer):
             truncation=True,
             return_tensors="pt"
         )
-        toks_cpu = {k: v.to(device) for k, v in toks.items()}
-        cls_rep = model(**toks_cpu)[0][:, 0, :]  # CLS token representation
-        all_embeddings.append(cls_rep.cpu().detach().numpy())
+        # move input tensors to the same device as the model
+        toks_device = {k: v.to(device) for k, v in toks.items()}
+
+        with torch.no_grad():
+            outputs = model(**toks_device)
+            cls_rep = outputs[0][:, 0, :]  # CLS token representation
+
+        # move to CPU for collecting results
+        all_embeddings.append(cls_rep.cpu().numpy())
 
     all_embeddings = np.concatenate(all_embeddings, axis=0)
     return (all_embeddings,)
@@ -252,14 +281,17 @@ def _(all_embeddings, codes, pl):
 
 @app.cell
 def _():
-    # codes_embeddings.write_parquet("data/processed/code_type_embeddings.parquet")
+    # codes_embeddings.write_parquet(f"data/processed/code_type_embeddings_{model_name.replace('/', '__')}.parquet")
     return
 
 
 @app.cell
 def _(np):
     def cosine_sim(a, b):
-        return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+        try:
+            return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+        except TypeError:
+            return 0.0
 
     return (cosine_sim,)
 
@@ -271,34 +303,53 @@ def _(ciap2_cid10):
 
 
 @app.cell
-def _(ciap2_cid10, codes_embeddings, cosine_sim, pl):
+def _(abp_ciap2, ciap2_cid10, codes_embeddings, cosine_sim, pl):
     results = {}
 
     print("**ICD10 and CIAP2**")
     for row in ciap2_cid10.iter_rows(named=True):
-        _left = codes_embeddings.filter(pl.col("code").eq(row["related_cid10"]), pl.col("code_type").eq("cid10"))
-        _right = codes_embeddings.filter(pl.col("code").eq(row["code"]), pl.col("code_type").eq("ciap2"))
+        _cid10 = row['related_cid10']
+        _ciap2 = row['code']
+        _left = codes_embeddings.filter(pl.col("code").eq(_cid10), pl.col("code_type").eq("cid10"))
+        _right = codes_embeddings.filter(pl.col("code").eq(_ciap2), pl.col("code_type").eq("ciap2"))
 
-        results[f"{row['related_cid10']}_{row['code']}"] = cosine_sim(_left["embeddings"].first(), _right["embeddings"].first())
+        results[f"{_cid10}_{_ciap2}"] = cosine_sim(_left["embeddings"].first(), _right["embeddings"].first())
 
         print(
-            f"{row['related_cid10']}_{row['code']}",
-            results[f"{row['related_cid10']}_{row['code']}"],
+            f"{_cid10}_{_ciap2}",
+            results[f"{_cid10}_{_ciap2}"],
             f"{_left['description'].first()} --- {_right['description'].first()}"
         )
 
-    return (results,)
+    for row in abp_ciap2.iter_rows(named=True):
+        _ab = row['code']
+        _ciap2 = row['related_ciap2']
+        _left = codes_embeddings.filter(pl.col("code").eq(_ab), pl.col("code_type").eq("ab"))
+        _right = codes_embeddings.filter(pl.col("code").eq(_ciap2), pl.col("code_type").eq("ciap2"))
+
+        results[f"{_ab}_{_ciap2}"] = cosine_sim(_left["embeddings"].first(), _right["embeddings"].first())
+
+        print(
+            f"{_ab}_{_ciap2}",
+            results[f"{_ab}_{_ciap2}"],
+            f"{_left['description'].first()} --- {_right['description'].first()}"
+        )
+
+    mapping_results = list(results.values())
+    return (mapping_results,)
 
 
 @app.cell
-def _(px, results):
-    px.histogram(list(results.values()))
+def _(mapping_results, px):
+    _fig = px.histogram(mapping_results)
+    _fig
     return
 
 
 @app.cell
-def _(np, results):
-    np.percentile(list(results.values()), 50), np.percentile(list(results.values()), 75), np.percentile(list(results.values()), 90)
+def _(mapping_results, np):
+    for percentile in range(25, 101, 25):
+        print(f"{percentile}%: {np.percentile(mapping_results, percentile)}")
     return
 
 
