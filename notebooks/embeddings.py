@@ -13,8 +13,9 @@ def _():
     from transformers import AutoTokenizer, AutoModel, AutoModelForMaskedLM
     from sklearn.manifold import TSNE
     import plotly.express as px
-    from sentence_transformers import SentenceTransformer
-    return AutoModel, AutoTokenizer, TSNE, mo, np, pl, px, torch
+    from vir.helpers import get_or_download_model
+
+    return AutoModel, AutoTokenizer, TSNE, mo, np, pl, px, torch, get_or_download_model
 
 
 @app.cell
@@ -178,8 +179,8 @@ def _(mo):
 @app.cell
 def _(AutoModel, AutoTokenizer, torch):
     model_name = "pucpr/clinicalnerpt-medical"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(get_or_download_model(model_name))
+    model = AutoModel.from_pretrained(get_or_download_model(model_name))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
@@ -281,7 +282,7 @@ def _(all_embeddings, codes, pl):
 
 @app.cell
 def _():
-    # codes_embeddings.write_parquet(f"data/processed/code_type_embeddings_{model_name.replace('/', '__')}.parquet")
+    codes_embeddings.write_parquet(f"data/processed/code_type_embeddings_{model_name.replace('/', '__')}.parquet")
     return
 
 
