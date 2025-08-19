@@ -13,7 +13,6 @@ def _():
     from transformers import AutoTokenizer, AutoModel, AutoModelForMaskedLM
     from sklearn.manifold import TSNE
     import plotly.express as px
-    from sentence_transformers import SentenceTransformer
     return AutoModel, AutoTokenizer, TSNE, mo, np, pl, px, torch
 
 
