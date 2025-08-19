@@ -19,7 +19,7 @@ def _():
 
 @app.cell
 def _(PROCESSED_DATA_DIR, pl):
-    df = pl.read_parquet(PROCESSED_DATA_DIR / "processed_aesop_raw_dados_2017_20250223_20municipios.parquet")
+    df = pl.read_parquet(PROCESSED_DATA_DIR / "processed_with_embeddings_aesop_raw_dados_2017_20250223_20municipios_embeddings.parquet")
     df
     return (df,)
 
