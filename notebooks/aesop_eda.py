@@ -14,8 +14,11 @@ def _():
     import itertools
 
     from vir.viz import plot_null_vs_not_null, plot_categories, scatter_plot_year_per_week
+    from vir.features import AGE_GROUP, POPULATION_RANGE
     from vir.config import RAW_DATA_DIR, INTERIM_DATA_DIR
     return (
+        AGE_GROUP,
+        POPULATION_RANGE,
         RAW_DATA_DIR,
         chi2_contingency,
         mo,
@@ -89,14 +92,7 @@ def _():
         230370: {"city": "Caucaia", "region": "Nordeste", "population_range": "250 - 500 mil"},
         241200: {"city": "São Gonçalo do Amarante", "region": "Nordeste", "population_range": "100 - 250 mil"},
     }
-
-    population_range = [
-        "< 100 mil",
-        "100 - 250 mil",
-        "250 - 500 mil",
-        "> 500 mil",
-    ]
-    return ibge_city_map, population_range
+    return (ibge_city_map,)
 
 
 @app.cell
@@ -112,6 +108,12 @@ def _(RAW_DATA_DIR, pl):
     raw_df = pl.read_parquet(RAW_DATA_DIR / "aesop_raw_dados_2017_20250223_20municipios.parquet")  # TODO encoding
     raw_df
     return (raw_df,)
+
+
+@app.cell
+def _(raw_df):
+    raw_df.columns
+    return
 
 
 @app.cell
@@ -163,29 +165,8 @@ def _(plot_categories, raw_df):
 
 
 @app.cell
-def _():
-    age_group = [
-        # None,
-        "< 1 ano",
-        "1 a 4 anos",
-        "5 a 11 anos",
-        "12 a 15 anos",
-        "16 a 18 anos",
-        "19 a 24 anos",
-        "25 a 29 anos",
-        "30 a 39 anos",
-        "40 a 49 anos",
-        "50 a 59 anos",
-        "60 a 65 anos",
-        "66 a 85 anos",
-        "Maior que 85 anos",
-    ]
-    return (age_group,)
-
-
-@app.cell
-def _(age_group, plot_categories, raw_df):
-    plot_categories(raw_df, "FX_ETARIA", age_group)
+def _(AGE_GROUP, plot_categories, raw_df):
+    plot_categories(raw_df, "FX_ETARIA", AGE_GROUP)
     return
 
 
@@ -300,8 +281,8 @@ def _(df, px):
 
 
 @app.cell
-def _(df, plot_categories, population_range):
-    plot_categories(df, "population_range", population_range)
+def _(POPULATION_RANGE, df, plot_categories):
+    plot_categories(df, "population_range", POPULATION_RANGE)
     return
 
 
@@ -314,12 +295,6 @@ def _(df, plot_categories):
 @app.cell
 def _(df, pl):
     df.filter(pl.col("code_type") == "AB")["code"].value_counts()
-    return
-
-
-@app.cell
-def _():
-    # df.write_parquet(INTERIM_DATA_DIR / "cleaned_aesop_raw_dados_2017_20250223_20municipios.parquet")
     return
 
 
@@ -351,24 +326,20 @@ def _(chi2_contingency, np, pl):
         r, k = table.shape
         return np.sqrt(chi2 / (n * (min(k, r) - 1)))
 
-    # example
-    # cramers(df.sample(1000), "city", "state")
     return (cramers_v,)
 
 
 @app.cell
 def _(cramers_v, df, pl):
-    categorical_cols = df.columns #["sex", "age_group", "code", "city", "population_range"]
-
     assoc_results = []
-    for _index, col1 in enumerate(categorical_cols):
-        for col2 in categorical_cols[_index + 1:]:
+    for _index, col1 in enumerate(df.columns):
+        for col2 in df.columns[_index + 1:]:
             cv = cramers_v(df, col1, col2)
             assoc_results.append((col1, col2, cv))
 
     assoc_df = pl.DataFrame(assoc_results, schema=["var1", "var2", "cramers_v"], orient="row")
     assoc_df
-    return assoc_df, categorical_cols
+    return (assoc_df,)
 
 
 @app.cell
@@ -392,8 +363,8 @@ def _(np):
 
 
 @app.cell
-def _(assoc_df, categorical_cols, df_to_heatmap_matrix, px):
-    matrix, index_variables = df_to_heatmap_matrix(assoc_df, categorical_cols)
+def _(assoc_df, df, df_to_heatmap_matrix, px):
+    matrix, index_variables = df_to_heatmap_matrix(assoc_df, df.columns)
     _fig = px.imshow(
         matrix,
         x=list(index_variables.keys()),
@@ -407,6 +378,12 @@ def _(assoc_df, categorical_cols, df_to_heatmap_matrix, px):
     _fig.update_layout(coloraxis_colorbar=dict(title="Cramér's V"))
     _fig.update_xaxes(tickangle=45)
     _fig
+    return
+
+
+@app.cell
+def _():
+    # df.write_parquet(INTERIM_DATA_DIR / "cleaned_aesop_raw_dados_2017_20250223_20municipios.parquet")
     return
 
 
