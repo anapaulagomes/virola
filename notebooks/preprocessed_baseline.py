@@ -15,7 +15,7 @@ def _():
     from sklearn.preprocessing import MinMaxScaler, StandardScaler, OrdinalEncoder, OneHotEncoder, FunctionTransformer
 
     from vir.config import PROCESSED_DATA_DIR
-    from vir.features import age_group, population_range, sin_transformer, cos_transformer
+    from vir.features import AGE_GROUP, POPULATION_RANGE, sin_transformer, cos_transformer
     return (
         ColumnTransformer,
         FunctionTransformer,
@@ -24,11 +24,11 @@ def _():
         PROCESSED_DATA_DIR,
         Pipeline,
         StandardScaler,
-        age_group,
+        AGE_GROUP,
         mo,
         np,
         pl,
-        population_range,
+        POPULATION_RANGE,
     )
 
 
@@ -79,11 +79,6 @@ def _(PROCESSED_DATA_DIR, pl):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def _(pl, week_sin):
     df = pl.scan_parquet(
         "data/interim/cleaned_aesop_raw_dados_2017_20250223_20municipios.parquet"
@@ -97,61 +92,15 @@ def _(pl, week_sin):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def _(codes_embeddings, df):
-    # df_embeddings = df.join(codes_embeddings, how="left", on=["code", "code_type"])
-    # df_embeddings = df.clone()
-
-    # for row in df.group_by(["code", "code_type"]).all().iter_rows(named=True):
-    #     df_embeddings = df_embeddings.with_columns(
-    #         code_embedding=codes_embeddings.filter(
-    #             pl.col("code_type").eq(row["code_type"]), pl.col("code").eq(row["code"])
-    #         )["embeddings"].first()
-    #     )
-    #     break
-
     result_lazy = df.join(
-        codes_embeddings.lazy(), # Make the small one lazy too for consistency
+        codes_embeddings.lazy(),
         on=['code', 'code_type'],
         how='left'
     )
 
-    # Execute in streaming mode
-    result_df = result_lazy.collect(streaming=True)
-    return
-
-
-@app.cell
-def _():
-    # df_embeddings.write_parquet("data/with_embeddings.parquet")
-
-    # Use scan_* so nothing loads into memory yet
-    # small = (
-    #     pl.scan_parquet("code_embeddings.parquet")      # or scan_csv(...)
-    #     .with_columns(
-    #         pl.col(["code", "code_type"]).cast(pl.Categorical),   # shrink/join-friendly
-    #         # store vectors as Float32 to halve memory
-    #         pl.col("embeddings").arr.eval(pl.element().cast(pl.Float32))
-    #     )
-    # )
-
-    # big = (
-    #     pl.scan_parquet("big_43M.parquet")
-    #     .with_columns(pl.col(["code", "code_type"]).cast(pl.Categorical))
-    #     .select(["code", "code_type", "other_needed_cols"])       # project only what you need
-    # )
-
-    # # Streamed join; never collect — write directly to disk
-    # (
-    #     big.join(small, on=["code", "code_type"], how="left", streaming=True)
-    #        .sink_parquet("joined.parquet")  # or sink_ipc("joined.arrow")
-    # )
-
-    return
+    result_df = result_lazy.collect(engine='streaming')
+    return result_df.head()
 
 
 @app.cell(hide_code=True)
@@ -162,14 +111,11 @@ def _(mo):
 
     * year: keep as it is
     * week: to capture the cycles of the weeks, we decompose it with sin/cos.
-    * state: one-hot
     * sex: one-hot
     * age_group: ordinal encoding
     * quantity: keep as it is
-    * facility_code_cnes: _to be discarded because there is no use for it by now_
     * code_type: one-hot
     * code: one-hot
-    * city: one-hot
     * region: one-hot
     * population_range: ordinal encoding
     """
@@ -178,26 +124,14 @@ def _(mo):
 
 
 @app.cell
-def _(FunctionTransformer, Pipeline, np):
-    emb_pipe = Pipeline(steps=[
-        ("to_2d", FunctionTransformer(lambda x: np.vstack(x), validate=False)),
-        # Opcional: normalizar/escala dependendo do modelo
-        # ("scale", StandardScaler())            # bom p/ modelos lineares
-        # ("l2norm", Normalizer(norm="l2"))      # bom p/ cosine/NearestNeighbors
-    ])
-    return (emb_pipe,)
-
-
-@app.cell
 def _(
     ColumnTransformer,
     OneHotEncoder,
     OrdinalEncoder,
     StandardScaler,
-    age_group,
+    AGE_GROUP,
     df,
-    emb_pipe,
-    population_range,
+    POPULATION_RANGE,
 ):
     numeric_features = ['quantity', 'week_sin', 'week_cos']
     ordinal_features = ['age_group', 'population_range']
@@ -206,15 +140,15 @@ def _(
 
     preprocessor = ColumnTransformer(
         transformers=[
-            ("emb", emb_pipe, 'code'),
+            ('embedding', FunctionTransformer(lambda x: np.vstack(x), validate=False), embedding_features),
             ('numeric', StandardScaler(), numeric_features),
-            ('ordinal', OrdinalEncoder(categories=[age_group, population_range]), ordinal_features),
+            ('ordinal', OrdinalEncoder(categories=[AGE_GROUP, POPULATION_RANGE]), ordinal_features),
             ('categorical', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_features),
         ],
-        remainder='passthrough' # Mantém outras colunas se houver (nenhuma neste caso) / MinMaxScaler()
+        remainder='passthrough'
     )
     preprocessor.set_output(transform="polars")
-    preprocessed_data = preprocessor.fit_transform(df.sample(100_000))  # FIXME
+    preprocessed_data = preprocessor.fit_transform(result_df)
 
     cat_names = preprocessor.named_transformers_['categorical'].get_feature_names_out(categorical_features)
     final_columns = ['code'] + numeric_features + ordinal_features + list(cat_names)
@@ -231,13 +165,7 @@ def _(final_columns, preprocessed_data):
 
 @app.cell
 def _(PROCESSED_DATA_DIR, preprocessed_data):
-    preprocessed_data.write_parquet(PROCESSED_DATA_DIR / "processed_aesop_raw_dados_2017_20250223_20municipios_embeddings.parquet")
-    return
-
-
-@app.cell
-def _(df):
-    df["code"]
+    preprocessed_data.write_parquet(PROCESSED_DATA_DIR / "processed_with_embeddings_aesop_raw_dados_2017_20250223_20municipios_embeddings.parquet")
     return
 
 
