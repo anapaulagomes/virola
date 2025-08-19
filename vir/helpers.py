@@ -1,0 +1,39 @@
+import os
+from pathlib import Path
+from typing import Optional
+from vir.config import logger
+
+from huggingface_hub import snapshot_download
+
+
+HF_DEFAULT_HOME = Path(os.getenv("HF_HOME", "~/.cache/huggingface"))
+
+
+def get_or_download_model(
+    repo_id: str,
+    revision: str = "main",
+) -> Path:
+    """
+    Parse model name to locally stored weights. It will download the model from the library only when in limitted environment.
+    Args:
+        model_ref (str) : Model reference containing org_name/model_name such as 'meta-llama/Llama-2-7b-chat-hf'.
+        revision (str): Model revision branch. Defaults to 'main'.
+
+    Returns:
+        str: path to model weights within model directory
+    """
+    if os.getenv("HF_FROM_LIMITTED_ENV") is None:
+        logger.info("Regular environment detected.")
+        return repo_id
+
+    logger.warning("Limitted environment detected. Downloading model weights to cache folder...")
+
+    models_dir = HF_DEFAULT_HOME / "hub"
+    cached_name = f'models--{repo_id.replace("/", "--")}'
+    cached_dir = models_dir / cached_name
+    if cached_dir.exists():
+        return str(cached_dir)
+
+    snapshot_download(repo_id=repo_id, revision=revision, cache_dir=models_dir)
+
+    return str(cached_dir)
