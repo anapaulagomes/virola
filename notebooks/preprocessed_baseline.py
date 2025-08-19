@@ -17,18 +17,18 @@ def _():
     from vir.config import PROCESSED_DATA_DIR
     from vir.features import AGE_GROUP, POPULATION_RANGE, sin_transformer, cos_transformer
     return (
+        AGE_GROUP,
         ColumnTransformer,
         FunctionTransformer,
         OneHotEncoder,
         OrdinalEncoder,
+        POPULATION_RANGE,
         PROCESSED_DATA_DIR,
         Pipeline,
         StandardScaler,
-        AGE_GROUP,
         mo,
         np,
         pl,
-        POPULATION_RANGE,
     )
 
 
@@ -92,15 +92,27 @@ def _(pl, week_sin):
 
 
 @app.cell
+def _():
+    return
+
+
+@app.cell
 def _(codes_embeddings, df):
     result_lazy = df.join(
         codes_embeddings.lazy(),
         on=['code', 'code_type'],
-        how='left'
+        how='left',
+        engine='streaming'
     )
 
     result_df = result_lazy.collect(engine='streaming')
-    return result_df.head()
+    return (result_df,)
+
+
+@app.cell
+def _(result_df):
+    result_df
+    return
 
 
 @app.cell(hide_code=True)
@@ -123,35 +135,53 @@ def _(mo):
     return
 
 
-@app.cell
+@app.cell(disabled=True)
 def _(
+    AGE_GROUP,
     ColumnTransformer,
+    FunctionTransformer,
+    IncrementalPCA,
     OneHotEncoder,
     OrdinalEncoder,
-    StandardScaler,
-    AGE_GROUP,
-    df,
     POPULATION_RANGE,
+    Pipeline,
+    StandardScaler,
+    df,
+    np,
+    result_df,
 ):
     numeric_features = ['quantity', 'week_sin', 'week_cos']
     ordinal_features = ['age_group', 'population_range']
     categorical_features = ['sex', 'region', 'year']
-    embedding_features = ['code']
+    embedding_features = ['embeddings']
+
+    SEX = df["sex"].unique().to_list()
+    REGIONS = df["region"].unique().to_list()
+    YEARS = df["year"].unique().to_list()
+
+    embedding_pipeline = Pipeline([
+        ('to_f32', FunctionTransformer(lambda x: np.asarray(x.to_list(), dtype=np.float32), validate=False)),
+        ('ipca', IncrementalPCA(n_components=64, batch_size=100_000))
+    ])
 
     preprocessor = ColumnTransformer(
         transformers=[
-            ('embedding', FunctionTransformer(lambda x: np.vstack(x), validate=False), embedding_features),
+            ('embedding', embedding_pipeline, embedding_features),
             ('numeric', StandardScaler(), numeric_features),
-            ('ordinal', OrdinalEncoder(categories=[AGE_GROUP, POPULATION_RANGE]), ordinal_features),
-            ('categorical', OneHotEncoder(handle_unknown='ignore', sparse_output=False), categorical_features),
+            ('ordinal', OrdinalEncoder(categories=[AGE_GROUP, POPULATION_RANGE], dtype=np.float32), ordinal_features),
+            ('categorical', OneHotEncoder(categories=[SEX, REGIONS, YEARS], handle_unknown='ignore', sparse_output=False, dtype=np.float32), categorical_features),
         ],
-        remainder='passthrough'
+        remainder='drop'
     )
     preprocessor.set_output(transform="polars")
     preprocessed_data = preprocessor.fit_transform(result_df)
 
+    embedding_names = [f'embed_{i}' for i in range(4)]  # FIXME
+
     cat_names = preprocessor.named_transformers_['categorical'].get_feature_names_out(categorical_features)
-    final_columns = ['code'] + numeric_features + ordinal_features + list(cat_names)
+    final_columns = embedding_names + numeric_features + ordinal_features + list(cat_names)
+
+    assert len(final_columns) == preprocessed_data.shape[1]
 
     return final_columns, preprocessed_data
 
