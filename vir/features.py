@@ -2,14 +2,14 @@ import numpy as np
 from sklearn.preprocessing import FunctionTransformer
 
 
-population_range = [
+POPULATION_RANGE = [
     "< 100 mil",
     "100 - 250 mil",
     "250 - 500 mil",
     "> 500 mil",
 ]
 
-age_group = [
+AGE_GROUP = [
     # None,
     "< 1 ano",
     "1 a 4 anos",
