@@ -14,7 +14,7 @@ def get_or_download_model(
     revision: str = "main",
 ) -> Path:
     """
-    Parse model name to locally stored weights. It will download the model from the library only when in limitted environment.
+    Parse model name to locally stored weights. It will download the model from the library only when in Limited environment.
     Args:
         model_ref (str) : Model reference containing org_name/model_name such as 'meta-llama/Llama-2-7b-chat-hf'.
         revision (str): Model revision branch. Defaults to 'main'.
@@ -22,18 +22,17 @@ def get_or_download_model(
     Returns:
         str: path to model weights within model directory
     """
-    if os.getenv("HF_FROM_LIMITTED_ENV") is None:
+    if os.getenv("HF_FROM_Limited_ENV") is None:
         logger.info("Regular environment detected.")
         return repo_id
 
-    logger.warning("Limitted environment detected. Downloading model weights to cache folder...")
+    logger.warning("Limited environment detected. Downloading model weights to cache folder...")
 
     models_dir = HF_DEFAULT_HOME / "hub"
     cached_name = f'models--{repo_id.replace("/", "--")}'
     cached_dir = models_dir / cached_name
-    if cached_dir.exists():
-        return str(cached_dir)
+    if not cached_dir.exists():
+        snapshot_download(repo_id=repo_id, revision=revision, cache_dir=models_dir)
 
-    snapshot_download(repo_id=repo_id, revision=revision, cache_dir=models_dir)
-
-    return str(cached_dir)
+    snapshot_hash = (cached_dir / "refs" / revision).read_text()
+    return cached_dir / "snapshots" / snapshot_hash
