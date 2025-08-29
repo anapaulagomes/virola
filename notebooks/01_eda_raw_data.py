@@ -35,7 +35,7 @@ def _():
 def _(mo):
     mo.md(
         r"""
-    # 🌳 [AESOP] Raw Data Exploratory Analysis
+    # Exploratory data analysis - Primare Care - Fiocruz/Brazil
 
     The data includes 20 municipalities sampled from different regions and population ranges in Brazil.
 
@@ -96,7 +96,6 @@ def _(RAW_DATA_DIR, mo, pl):
     mo.md(f"""
     **Dataset loaded with unique ID tracking**
     - Total records: {len(raw_df):,}
-    - Unique ID range: 0 to {len(raw_df) - 1:,}
     - Columns: {len(raw_df.columns)}
     """)
     return (raw_df,)
@@ -129,42 +128,6 @@ def _(raw_df):
 @app.cell
 def _(mo):
     mo.md(r"""### Missing values""")
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""### 🏥 Medical terminologies""")
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""### 🌍 Geographic Distribution""")
-    return
-
-
-@app.cell
-def _(POPULATION_RANGE, df, plot_categories):
-    plot_categories(df, "population_range", POPULATION_RANGE)
-    return
-
-
-@app.cell
-def _(df, plot_categories):
-    plot_categories(df, "region")
-    return
-
-
-@app.cell
-def _(df, pl, px):
-    _fig = px.treemap(
-        df.group_by(["region", "city"]).agg(pl.len().alias("count")),
-        path=["region", "city"],
-        values="count",
-        title="Record distribution by region and city",
-    )
-    _fig
     return
 
 
@@ -241,7 +204,16 @@ def _(df, px):
 
 @app.cell
 def _(df, scatter_plot_year_per_week):
-    scatter_plot_year_per_week(df, "year", "week", color_column="year", color_schema="inferno")
+    title = "Number of visits profile per week by year"
+    scatter_plot_year_per_week(
+        df, "year", "week", color_column="year", color_schema="inferno", title=title
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""### 🏥 Medical terminologies""")
     return
 
 
@@ -304,6 +276,36 @@ def _(df, px):
 
 @app.cell
 def _(mo):
+    mo.md(r"""### 🌍 Geographic Distribution""")
+    return
+
+
+@app.cell
+def _(POPULATION_RANGE, df, plot_categories):
+    plot_categories(df, "population_range", POPULATION_RANGE)
+    return
+
+
+@app.cell
+def _(df, plot_categories):
+    plot_categories(df, "region")
+    return
+
+
+@app.cell
+def _(df, pl, px):
+    _fig = px.treemap(
+        df.group_by(["region", "city"]).agg(pl.len().alias("count")),
+        path=["region", "city"],
+        values="count",
+        title="Record distribution by region and city",
+    )
+    _fig
+    return
+
+
+@app.cell
+def _(mo):
     mo.md(r"""## 🔗 Correlation analysis""")
     return
 
@@ -331,19 +333,11 @@ def _(chi2_contingency, np, pl):
 
 
 @app.cell
-def _():
-    categorical_cols = ["state", "sex", "age_group", "region", "population_range"]
-    return (categorical_cols,)
-
-
-@app.cell
-def _(categorical_cols, cramers_v, df, pl):
-    geo_sample = df.select(categorical_cols).drop_nulls()
-
+def _(cramers_v, df, pl):
     assoc_results = []
-    for _index, col1 in enumerate(categorical_cols):
-        for col2 in categorical_cols[_index + 1 :]:
-            cv = cramers_v(geo_sample, col1, col2)
+    for _index, col1 in enumerate(df.columns):
+        for col2 in df.columns[_index + 1 :]:
+            cv = cramers_v(df, col1, col2)
             assoc_results.append((col1, col2, cv))
 
     assoc_df = pl.DataFrame(assoc_results, schema=["var1", "var2", "cramers_v"], orient="row")
@@ -373,8 +367,8 @@ def _(np):
 
 
 @app.cell
-def _(assoc_df, categorical_cols, df_to_heatmap_matrix, px):
-    matrix, index_variables = df_to_heatmap_matrix(assoc_df, categorical_cols)
+def _(assoc_df, df, df_to_heatmap_matrix, px):
+    matrix, index_variables = df_to_heatmap_matrix(assoc_df, df.columns)
     _fig = px.imshow(
         matrix,
         x=list(index_variables.keys()),
@@ -383,7 +377,7 @@ def _(assoc_df, categorical_cols, df_to_heatmap_matrix, px):
         origin="lower",
         text_auto=".2f",
         color_continuous_scale="RdBu_r",
-        title="Categorical variables correlation (Cramér's V)",
+        title="Variables correlation (Cramér's V)",
     )
     _fig.update_layout(coloraxis_colorbar=dict(title="Cramér's V"))
     _fig.update_xaxes(tickangle=45)
