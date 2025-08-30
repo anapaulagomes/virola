@@ -816,17 +816,17 @@ wheels = [
 ]
 
 [[package]]
-name = "polars"
-version = "1.32.2"
+name = "polars-u64-idx"
+version = "1.32.3"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/8a/07/7864688644139b1bc198c36e34e81581ec76c8d20ae57c4879914786b2a1/polars-1.32.2.tar.gz", hash = "sha256:b4c5cefc7cf7a2461f8800cf2c09976c47cb1fd959c6ef3024d5618b497f05d3", size = 4788876 }
+sdist = { url = "https://files.pythonhosted.org/packages/42/c9/2f54fdf9c6332588e9ca391b9b05cb2a96d9ec11bf574247b167099746f8/polars_u64_idx-1.32.3.tar.gz", hash = "sha256:9d1877a0ae31debf141c01361d512bd6c62db87fc41f035f579d2bafdb99bf5b", size = 4839804 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f5/61/b251ce6755d0d3c6f4c8cb245941b80901624fce7efeb95b37c170da2565/polars-1.32.2-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:f21da6a5210898ec800b7e9e667fb53eb9161b7ceb812ee6555ff5661a00e517", size = 37770199 },
-    { url = "https://files.pythonhosted.org/packages/22/74/ea073a88073cd6025b12850484f51d30dad695b51432a3f0a0439e2f8094/polars-1.32.2-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:d3f4e061312ef6c2a907378ce407a6132734fe1a13f261a1984a1a9ca2f6febc", size = 34461798 },
-    { url = "https://files.pythonhosted.org/packages/ec/14/ee34ebe3eb842c83ca1d2d3af6ee02b08377e056ffad156c9a2b15a6d05c/polars-1.32.2-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a711a750cfc19f1f883d2b46895dd698abf4d446ca41c3bf510ced0ff1178057", size = 38280883 },
-    { url = "https://files.pythonhosted.org/packages/af/ed/0f5ab777b0dc95936074266bc6fd9cf117886ebdd6685589437edfdbb186/polars-1.32.2-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:d1c53a828eedc215fb0dabc7cef02c6f4ad042157512ddb99840fd42b8da1e8a", size = 35490843 },
-    { url = "https://files.pythonhosted.org/packages/91/58/d2840554ef1c69e06a28ee928bdaa0d6a61af12205ff24c096628f217f99/polars-1.32.2-cp39-abi3-win_amd64.whl", hash = "sha256:5e1660a584e89e1d60cd89984feca38a695e491a966581fefe8be99c230ea154", size = 37897347 },
-    { url = "https://files.pythonhosted.org/packages/b8/53/4eaaa4f219add46594db21a05a9a5629ec6af20bd859a90668d5a1448abc/polars-1.32.2-cp39-abi3-win_arm64.whl", hash = "sha256:cd390364f6f3927474bd0aed255103195b9d2b3eef0f0c5bb429db5e6311615e", size = 34059100 },
+    { url = "https://files.pythonhosted.org/packages/ee/d7/62ccb4e55019d1a2c8c59b69ebea96364a7d1bebffb8551ce450fe48d3e3/polars_u64_idx-1.32.3-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:8a9ff165f76ae03f704b2f5426400360ccf13b21136b12640cda9f74f352edfe", size = 37834952 },
+    { url = "https://files.pythonhosted.org/packages/82/1f/8d1d596432614b3811cebe3ad3d601547fd3d6e0e59b8eac055976b3709c/polars_u64_idx-1.32.3-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:49ea6e6825570ae3c8077eb26b67940cc682d753319216faf45e7fabb243f761", size = 34471840 },
+    { url = "https://files.pythonhosted.org/packages/c5/be/630010579320f0d60a720e4cd35d11981641ffa7294d37bf87b47311cbbf/polars_u64_idx-1.32.3-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1e1d5b6133f6c8ac2ff62abc1aa6cb86be4568f8a02e58cff254fa4422003c92", size = 38323247 },
+    { url = "https://files.pythonhosted.org/packages/78/87/7e58061f43b939cfbb26d7c8df1769e2afa8dcb09ec825186c3207490eae/polars_u64_idx-1.32.3-cp39-abi3-manylinux_2_24_aarch64.whl", hash = "sha256:42db867a1daacf8a0b47d9b87de810294af225ab33fa07c51068c2ed01dd233f", size = 35498198 },
+    { url = "https://files.pythonhosted.org/packages/05/82/6311a5b5a197bd8f36722aec3fc73b25cd941b7217762ddbcd8054c3cd9e/polars_u64_idx-1.32.3-cp39-abi3-win_amd64.whl", hash = "sha256:ee57d4cf288b15f7b79a7968866245c5dd4b8b1bcfdab4b616515d16cb093952", size = 37935020 },
+    { url = "https://files.pythonhosted.org/packages/cd/cf/d90a4e193255eb7a33b44f997096c3f7511557ae0fbb724623a4bb62ee4b/polars_u64_idx-1.32.3-cp39-abi3-win_arm64.whl", hash = "sha256:64e9aa7c8dc9e945dc54eb9198cd672bf8e9cf881707e5aad37984a0f009bad4", size = 34040357 },
 ]
 
 [[package]]
@@ -1438,7 +1438,7 @@ dependencies = [
     { name = "openai" },
     { name = "pip" },
     { name = "plotly", extra = ["express"] },
-    { name = "polars" },
+    { name = "polars-u64-idx" },
     { name = "pyarrow" },
     { name = "pytest" },
     { name = "python-dotenv" },
@@ -1464,7 +1464,7 @@ requires-dist = [
     { name = "openai", specifier = ">=1.101.0" },
     { name = "pip" },
     { name = "plotly", extras = ["express"], specifier = ">=6.2.0" },
-    { name = "polars", specifier = ">=1.32.2" },
+    { name = "polars-u64-idx", specifier = ">=1.32.3" },
     { name = "pyarrow", specifier = ">=21.0.0" },
     { name = "pytest" },
     { name = "python-dotenv" },
