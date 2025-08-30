@@ -167,6 +167,9 @@ def _(ibge_df, mo, pl, raw_df):
         .drop(["CIDCIAP", "Data_folder"])
         .drop_nulls(subset=["year", "week", "age_group"])
     )
+    df = df.with_columns(
+        pl.when(pl.col("code_type").eq("AB")).then(pl.col("code").str.replace(r"-\d+", "")).otherwise(pl.col("code"))
+    )
     df = df.join(ibge_df, on="CO_MUNICIPIO_IBGE", how="left")
     df = df.drop(["CO_CNES", "CO_MUNICIPIO_IBGE"])
     return (df,)
