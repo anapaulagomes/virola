@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.14.16"
+__generated_with = "0.15.2"
 app = marimo.App(width="medium")
 
 
@@ -27,64 +27,27 @@ def _():
         cos_transformer,
         sin_transformer,
     )
-
     return (
         AGE_GROUP,
         ColumnTransformer,
         FunctionTransformer,
+        INTERIM_DATA_DIR,
         IncrementalPCA,
         OneHotEncoder,
         OrdinalEncoder,
         POPULATION_RANGE,
-        INTERIM_DATA_DIR,
         PROCESSED_DATA_DIR,
         Pipeline,
         StandardScaler,
-        cross_validate,
-        make_pipeline,
         mo,
         np,
         pl,
-        sin_transformer,
-        cos_transformer,
     )
 
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-    # ⚙️ [AESOP] Feature Engineering Pipeline
-    """
-    )
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""## 📥 Loading data""")
-    return
-
-
-@app.cell
-def _(INTERIM_DATA_DIR, mo, pl):
-    # from_city = "cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_salvador.parquet"
-    # full_dataset = "cleaned_aesop_raw_dados_2017_20250223_20municipios.parquet"
-    dataset_filename = "cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_salvador.parquet"
-    df = pl.read_parquet(INTERIM_DATA_DIR / dataset_filename)
-
-    mo.md(f"""
-    **Cleaned Data Loaded**
-    - Total records: {len(df):,}
-    - Unique ID preserved: ✓ (range 0 to {df["unique_id"].max():,})
-    - Columns available: {len(df.columns)}
-    """)
-    return (df,)
-
-
-@app.cell
-def _(df):
-    df.head()
+    mo.md(r"""# ⚙️ [AESOP] Feature Engineering Pipeline""")
     return
 
 
@@ -110,12 +73,29 @@ def _(mo, np):
     Sample values:
     {chr(10).join(f"- {val}" for val in sample_values)}
     """)
-
-    return (week_cos, week_sin)
+    return week_cos, week_sin
 
 
 @app.cell
-def _(df, mo, pl, week_cos, week_sin):
+def _(mo):
+    mo.md(r"""## 📥 Loading data""")
+    return
+
+
+@app.cell
+def _(INTERIM_DATA_DIR, mo, pl, week_cos, week_sin):
+    # from_city = "cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_salvador.parquet"
+    # full_dataset = "cleaned_aesop_raw_dados_2017_20250223_20municipios.parquet"
+    dataset_filename = "cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_salvador.parquet"
+    df = pl.read_parquet(INTERIM_DATA_DIR / dataset_filename)
+
+    mo.md(f"""
+    **Cleaned Data Loaded**
+    - Total records: {len(df):,}
+    - Unique ID preserved: ✓ (range 0 to {df["unique_id"].max():,})
+    - Columns available: {len(df.columns)}
+    """)
+
     df = df.with_columns(
         pl.col("code").cast(pl.Categorical),
         pl.col("code_type").cast(pl.Categorical),
@@ -132,8 +112,13 @@ def _(df, mo, pl, week_cos, week_sin):
     - week_sin: min={df["week_sin"].min():.3f}, max={df["week_sin"].max():.3f}
     - week_cos: min={df["week_cos"].min():.3f}, max={df["week_cos"].max():.3f}
     """)
+    return dataset_filename, df
 
-    return (df,)
+
+@app.cell
+def _():
+    df.head()
+    return
 
 
 @app.cell
@@ -167,17 +152,16 @@ def _(PROCESSED_DATA_DIR, mo, pl):
     mo.md(f"""
     **Medical code embeddings loaded:** {len(codes_embeddings):,} entries
     """)
-
     return (codes_embeddings,)
 
 
 @app.cell
-def _(codes_embeddings, df, mo, pl):
+def _(codes_embeddings, df, pl):
     result_df = df.join(codes_embeddings, on=["code", "code_type"], how="left")
 
     embedding_matches = result_df.filter(pl.col("embeddings").is_not_null()).height
     embedding_coverage = embedding_matches / len(result_df)
-    return (embedding_coverage, result_df)
+    return (result_df,)
 
 
 @app.cell
@@ -187,8 +171,8 @@ def _(mo):
 
 
 @app.cell
-def _(mo, result_df):
-    processed_df = result_df.drop(["facility_code_cnes", "week", "state", "city"])
+def _(result_df):
+    processed_df = result_df.drop(["week", "state", "city"])
     return (processed_df,)
 
 
@@ -278,18 +262,17 @@ def _(
     - AGE_GROUP: {AGE_GROUP}
     - POPULATION_RANGE: {POPULATION_RANGE}
     """)
-
-    return (
-        categorical_features,
-        embedding_pipeline,
-        numeric_features,
-        ordinal_features,
-        preprocessor,
-    )
+    return categorical_features, preprocessor
 
 
 @app.cell
-def _(categorical_features, mo, preprocessor, processed_df, pl):
+def _(pl, processed_df):
+    processed_df.filter(pl.col("embeddings").is_not_null())
+    return
+
+
+@app.cell
+def _(categorical_features, mo, pl, preprocessor, processed_df):
     embedding_subset = processed_df.filter(pl.col("embeddings").is_not_null())
 
     preprocessor.set_output(transform="polars")
@@ -326,14 +309,14 @@ def _(final_df):
 
 
 @app.cell
-def _(mo, final_df):
+def _(final_df, mo):
     mo.md(f"**Final dataset shape**: {final_df.shape}")
     final_df.describe()
     return
 
 
 @app.cell
-def _(PROCESSED_DATA_DIR, final_df, mo, dataset_filename):
+def _(PROCESSED_DATA_DIR, dataset_filename, final_df, mo):
     output_path = PROCESSED_DATA_DIR / f"processed_with_embeddings_{dataset_filename}"
     final_df.write_parquet(output_path)
 
@@ -344,7 +327,6 @@ def _(PROCESSED_DATA_DIR, final_df, mo, dataset_filename):
     - **Records**: {len(final_df):,}
     - **Features**: {len(final_df.columns)}
     """)
-
     return
 
 
