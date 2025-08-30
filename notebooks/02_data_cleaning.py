@@ -11,7 +11,6 @@ def _():
 
     from vir.config import INTERIM_DATA_DIR, RAW_DATA_DIR
     from vir.features import IBGE_CITY_MAP
-
     return IBGE_CITY_MAP, INTERIM_DATA_DIR, RAW_DATA_DIR, mo, pl
 
 
@@ -46,6 +45,7 @@ def _(RAW_DATA_DIR, mo, pl):
 
     mo.md(f"""
     **Dataset loaded with unique ID tracking**
+
     - Total records: {len(raw_df):,}
     - Columns: {len(raw_df.columns)}
     """)
@@ -68,7 +68,9 @@ def _(ibge_df, pl, raw_df):
         .drop(["CIDCIAP", "Data_folder"])
         .drop_nulls(subset=["ANO", "SEMANA", "FX_ETARIA"])
     )
-    # df = df.filter(pl.col("code_type").eq("AB").str.replace(r"-\d+", "", regex=True))
+    df = df.with_columns(
+        pl.when(pl.col("code_type").eq("AB")).then(pl.col("code").str.replace(r"-\d+", "")).otherwise(pl.col("code"))
+    )
     df = df.join(ibge_df, on="CO_MUNICIPIO_IBGE", how="left")
     df = df.drop(["CO_CNES", "CO_MUNICIPIO_IBGE"])
     df = df.rename(
@@ -158,6 +160,7 @@ def _(
     - ID range: {df["unique_id"].min()} to {df["unique_id"].max()}
 
     **2. Core Fields Completeness:**
+
     {chr(10).join(completeness_report)}
 
     **3. Medical Code Quality:**
