@@ -129,7 +129,7 @@ def _(PROCESSED_DATA_DIR, mo, pl):
 
     codes_embeddings = (
         pl.read_parquet(
-            f"{PROCESSED_DATA_DIR}/code_type_embeddings_pucpr__clinicalnerpt-medical.parquet"
+            f"{PROCESSED_DATA_DIR}/bra_medter_cambridgeltl__SapBERT-from-PubMedBERT-fulltext.parquet"
         )
         .with_columns(
             code_type=pl.col("code_type").map_elements(
