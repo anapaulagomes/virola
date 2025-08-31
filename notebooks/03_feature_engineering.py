@@ -11,8 +11,7 @@ def _():
     import polars as pl
     from sklearn.compose import ColumnTransformer
     from sklearn.decomposition import IncrementalPCA
-    from sklearn.model_selection import cross_validate
-    from sklearn.pipeline import Pipeline, make_pipeline
+    from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import (
         FunctionTransformer,
         OneHotEncoder,
@@ -24,9 +23,8 @@ def _():
     from vir.features import (
         AGE_GROUP,
         POPULATION_RANGE,
-        cos_transformer,
-        sin_transformer,
     )
+
     return (
         AGE_GROUP,
         ColumnTransformer,
@@ -89,13 +87,6 @@ def _(INTERIM_DATA_DIR, mo, pl, week_cos, week_sin):
     dataset_filename = "cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_salvador.parquet"
     df = pl.read_parquet(INTERIM_DATA_DIR / dataset_filename)
 
-    mo.md(f"""
-    **Cleaned Data Loaded**
-    - Total records: {len(df):,}
-    - Unique ID preserved: ✓ (range 0 to {df["unique_id"].max():,})
-    - Columns available: {len(df.columns)}
-    """)
-
     df = df.with_columns(
         pl.col("code").cast(pl.Categorical),
         pl.col("code_type").cast(pl.Categorical),
@@ -109,6 +100,7 @@ def _(INTERIM_DATA_DIR, mo, pl, week_cos, week_sin):
 
     mo.md(f"""
     **Added cyclical week features:**
+
     - week_sin: min={df["week_sin"].min():.3f}, max={df["week_sin"].max():.3f}
     - week_cos: min={df["week_cos"].min():.3f}, max={df["week_cos"].max():.3f}
     """)
@@ -116,7 +108,7 @@ def _(INTERIM_DATA_DIR, mo, pl, week_cos, week_sin):
 
 
 @app.cell
-def _():
+def _(df):
     df.head()
     return
 
@@ -156,11 +148,8 @@ def _(PROCESSED_DATA_DIR, mo, pl):
 
 
 @app.cell
-def _(codes_embeddings, df, pl):
+def _(codes_embeddings, df):
     result_df = df.join(codes_embeddings, on=["code", "code_type"], how="left")
-
-    embedding_matches = result_df.filter(pl.col("embeddings").is_not_null()).height
-    embedding_coverage = embedding_matches / len(result_df)
     return (result_df,)
 
 
@@ -253,7 +242,7 @@ def _(
     - Numeric: {numeric_features}
     - Ordinal: {ordinal_features}
     - Categorical: {categorical_features}
-    - Embeddings: {embedding_features}
+    - Embeddings: {len(embedding_features[0])}
 
     **Categories:**
 
@@ -321,9 +310,8 @@ def _(PROCESSED_DATA_DIR, dataset_filename, final_df, mo):
     final_df.write_parquet(output_path)
 
     mo.md(f"""
-    **✅ Processed data saved successfully!**
+    **Processed data:**: `{output_path}`
 
-    - **Location**: `{output_path}`
     - **Records**: {len(final_df):,}
     - **Features**: {len(final_df.columns)}
     """)
