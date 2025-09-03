@@ -11,6 +11,7 @@ def _():
 
     from vir.config import INTERIM_DATA_DIR, RAW_DATA_DIR
     from vir.features import IBGE_CITY_MAP
+
     return IBGE_CITY_MAP, INTERIM_DATA_DIR, RAW_DATA_DIR, mo, pl
 
 
@@ -69,7 +70,9 @@ def _(ibge_df, pl, raw_df):
         .drop_nulls(subset=["ANO", "SEMANA", "FX_ETARIA"])
     )
     df = df.with_columns(
-        pl.when(pl.col("code_type").eq("AB")).then(pl.col("code").str.replace(r"-\d+", "")).otherwise(pl.col("code"))
+        pl.when(pl.col("code_type").eq("AB"))
+        .then(pl.col("code").str.replace(r"-\d+", ""))
+        .otherwise(pl.col("code"))
     )
     df = df.join(ibge_df, on="CO_MUNICIPIO_IBGE", how="left")
     df = df.drop(["CO_CNES", "CO_MUNICIPIO_IBGE"])
@@ -222,13 +225,14 @@ def _(INTERIM_DATA_DIR, df, mo, pl):
     )
     df.write_parquet(output_path)
 
-    # sample with Salvador
+    # sample with a city
+    city_name = "Ibitiara"
     output_path_city = (
         INTERIM_DATA_DIR
-        / "cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_salvador.parquet"
+        / f"cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_{city_name.lower()}.parquet"
     )
-    salvador_df = df.filter(pl.col("city").eq("Salvador"))
-    salvador_df.write_parquet(output_path_city)
+    city_df = df.filter(pl.col("city").eq(city_name))
+    city_df.write_parquet(output_path_city)
 
     mo.md(f"""
     **Cleaned data saved successfully!**
@@ -240,8 +244,8 @@ def _(INTERIM_DATA_DIR, df, mo, pl):
     By city: Salvador
 
     - **Location**: `{output_path_city}`
-    - **Records**: {len(salvador_df):,}
-    - **Columns**: {len(salvador_df.columns)}
+    - **Records**: {len(city_df):,}
+    - **Columns**: {len(city_df.columns)}
     """)
     return
 
