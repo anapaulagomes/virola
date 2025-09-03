@@ -35,7 +35,7 @@ def _():
 def _(mo):
     mo.md(
         r"""
-    # Exploratory data analysis - Primare Care - Fiocruz/Brazil
+    # Exploratory data analysis - Primary care - Fiocruz/Brazil
 
     The data includes 20 municipalities sampled from different regions and population ranges in Brazil.
 
@@ -168,7 +168,9 @@ def _(ibge_df, mo, pl, raw_df):
         .drop_nulls(subset=["year", "week", "age_group"])
     )
     df = df.with_columns(
-        pl.when(pl.col("code_type").eq("AB")).then(pl.col("code").str.replace(r"-\d+", "")).otherwise(pl.col("code"))
+        pl.when(pl.col("code_type").eq("AB"))
+        .then(pl.col("code").str.replace(r"-\d+", ""))
+        .otherwise(pl.col("code"))
     )
     df = df.join(ibge_df, on="CO_MUNICIPIO_IBGE", how="left")
     df = df.drop(["CO_CNES", "CO_MUNICIPIO_IBGE"])
@@ -279,7 +281,7 @@ def _(df, px):
 
 @app.cell
 def _(mo):
-    mo.md(r"""### 🌍 Geographic Distribution""")
+    mo.md(r"""### 🌍 Geographic distribution""")
     return
 
 
