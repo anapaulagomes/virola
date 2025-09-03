@@ -23,3 +23,12 @@ REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 
 # FIXME create dirs if not exist
+
+EMBEDDING_COMPONENTS = 64
+CHUNK_SIZE = 100_000  # Records per chunk - adjust based on available RAM
+
+# Memory recommendations by RAM:
+# 8GB RAM: CHUNK_SIZE = 50_000
+# 16GB RAM: CHUNK_SIZE = 100_000
+# 32GB RAM: CHUNK_SIZE = 200_000
+# 64GB RAM: CHUNK_SIZE = 500_000
