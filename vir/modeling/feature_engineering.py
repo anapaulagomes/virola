@@ -15,6 +15,7 @@ from vir.config import (
     PROCESSED_DATA_DIR,
 )
 from vir.features import AGE_GROUP, POPULATION_RANGE, create_weeks_cyclical_features
+from vir.helpers import suffix_from
 
 app = typer.Typer()
 
@@ -261,8 +262,8 @@ def main(dataset_filename: Path):
 
         # Step 7: Save results
         logger.info("7. Saving results...")
-        filename = dataset_filename.name.rsplit("20municipios")[-1]
-        output_path = PROCESSED_DATA_DIR / f"processed_optimized_{filename}"
+        filename = suffix_from(dataset_filename)
+        output_path = PROCESSED_DATA_DIR / f"processed_optimized{filename}"
         final_df.write_parquet(output_path)
 
         logger.success("\n✅ Processing completed successfully!")
