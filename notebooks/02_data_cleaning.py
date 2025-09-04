@@ -9,10 +9,11 @@ def _():
     import marimo as mo
     import polars as pl
 
-    from vir.config import INTERIM_DATA_DIR, RAW_DATA_DIR
+    from vir.config import INTERIM_DATA_DIR, RAW_DATA_DIR, RAW_DATA_FILE
     from vir.features import IBGE_CITY_MAP
+    from vir.helpers import suffix_from
 
-    return IBGE_CITY_MAP, INTERIM_DATA_DIR, RAW_DATA_DIR, mo, pl
+    return IBGE_CITY_MAP, INTERIM_DATA_DIR, RAW_DATA_DIR, RAW_DATA_FILE, mo, pl, suffix_from
 
 
 @app.cell
@@ -219,34 +220,35 @@ def _(mo):
 
 
 @app.cell
-def _(INTERIM_DATA_DIR, df, mo, pl):
-    output_path = (
-        INTERIM_DATA_DIR / "cleaned_aesop_raw_dados_2017_20250223_20municipios_082025.parquet"
-    )
-    df.write_parquet(output_path)
+def _(INTERIM_DATA_DIR, RAW_DATA_FILE, df, mo, pl, suffix_from):
+    if mo.app_meta().mode == "script":
+        args = mo.cli_args()
 
-    # sample with a city
-    city_name = "Ibitiara"
-    output_path_city = (
-        INTERIM_DATA_DIR
-        / f"cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_{city_name.lower()}.parquet"
-    )
-    city_df = df.filter(pl.col("city").eq(city_name))
-    city_df.write_parquet(output_path_city)
+        city = args.get("city", "")
+        label = args.get("label", "")
+        if label:
+            label = f"_{label}"
 
-    mo.md(f"""
-    **Cleaned data saved successfully!**
+        # load data clean data
+        suffix = suffix_from(RAW_DATA_FILE, break_on="", remove_extension=True)
+        if not city:  # all data
+            output_path = INTERIM_DATA_DIR / f"cleaned_{suffix}{label}.parquet"
+            df.write_parquet(output_path)
+        else:  # sample with a city
+            output_path = (
+                INTERIM_DATA_DIR
+                / f"cleaned_{suffix}{label}_{city.lower().replace(' ', '_')}.parquet"
+            )
+            city_df = df.filter(pl.col("city").eq(city.title()))
+            city_df.write_parquet(output_path)
 
-    - **Location**: `{output_path}`
-    - **Records**: {len(df):,}
-    - **Columns**: {len(df.columns)}
+        mo.md(f"""
+        **Cleaned data saved successfully!** {city or "all cities"}
 
-    By city: Salvador
-
-    - **Location**: `{output_path_city}`
-    - **Records**: {len(city_df):,}
-    - **Columns**: {len(city_df.columns)}
-    """)
+        - **Location**: `{output_path}`
+        - **Records**: {len(df):,}
+        - **Columns**: {len(df.columns)}
+        """)
     return
 
 
