@@ -28,3 +28,10 @@ class TestSuffixFrom:
     )
     def test_suffix_from(self, filename, break_on, expected_suffix):
         assert suffix_from(Path(filename), break_on=break_on) == expected_suffix
+
+    def test_suffix_from_with_remove_extension(self):
+        filepath = Path(
+            "data/interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_salvador.parquet"
+        )
+        expected_suffix = "_082025_salvador"
+        assert suffix_from(filepath, remove_extension=True) == expected_suffix
