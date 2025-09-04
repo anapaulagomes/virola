@@ -37,5 +37,8 @@ def get_or_download_model(
     return cached_dir / "snapshots" / snapshot_hash
 
 
-def suffix_from(filename: Path, break_on="20municipios"):
-    return filename.name.rsplit(break_on)[-1]
+def suffix_from(filename: Path, break_on="20municipios", remove_extension=False):
+    suffix = filename.name.rsplit(break_on)[-1]
+    if remove_extension:
+        return suffix.replace(".parquet", "")
+    return suffix
