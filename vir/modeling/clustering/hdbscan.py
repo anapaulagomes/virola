@@ -6,24 +6,15 @@ import polars as pl
 import typer
 from sklearn.decomposition import PCA
 
-from vir.config import PROCESSED_DATA_DIR
 from vir.helpers import suffix_from
+from vir.modeling.clustering.commons import (
+    calculate_min_samples,
+    load_processed_data,
+    save_results,
+)
 
 MODEL_NAME = "hdbscan"
 app = typer.Typer()
-
-
-def load_processed_data(data_path):
-    print("Loading processed data...")
-    if not data_path.exists():
-        raise FileNotFoundError(f"Processed data not found: {data_path}")
-
-    df = pl.read_parquet(data_path)
-
-    print(f"✅ Data loaded: {len(df):,} records, {len(df.columns)} features")
-    print(f"   Unique IDs: {df['unique_id'].n_unique():,}")
-
-    return df
 
 
 def prepare_features(df):
@@ -72,7 +63,11 @@ def perform_clustering(feature_df, n_components=3):
     n_samples = len(feature_df)
     reduced_features = PCA(n_components=n_components).fit_transform(feature_df.to_numpy())
     optimal_min_cluster_size = int(np.sqrt(n_samples))
-    optimal_min_samples = max(1, optimal_min_cluster_size // 2)
+
+    # handle aggregated data using quantity
+    quantity = feature_df["quantity"]  # rows' frequency
+    optimal_min_samples = calculate_min_samples(quantity)
+
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=optimal_min_cluster_size,
         min_samples=optimal_min_samples,
@@ -118,21 +113,6 @@ def create_cluster_results(unique_ids, cluster_labels, reduced_features):
     return cluster_results, viz_df
 
 
-def save_results(cluster_results, output_dir, label=None):
-    print("Saving results...")
-    if not label:
-        label = ""
-
-    output_dir = Path(output_dir)
-    output_dir.mkdir(exist_ok=True)
-
-    cluster_path = output_dir / f"cluster_results_{MODEL_NAME}{label}.parquet"
-    cluster_results.write_parquet(cluster_path)
-
-    print(f"✅ Results saved to: {output_dir}")
-    return cluster_path
-
-
 @app.command()
 def main(processed_dataset_filepath: Path, label: str = None):
     """Main clustering analysis pipeline"""
@@ -161,9 +141,8 @@ def main(processed_dataset_filepath: Path, label: str = None):
         )
 
         # Step 6: Save results
-        filename = suffix_from(processed_dataset_filepath, remove_extension=True)
-        output_dir = PROCESSED_DATA_DIR / f"clustering_results{filename}{label}.parquet"
-        cluster_path = save_results(cluster_results, output_dir)
+        suffix = suffix_from(processed_dataset_filepath, remove_extension=True)
+        cluster_path = save_results(cluster_results, label, suffix)
 
         print("\n" + "=" * 60)
         print("✅ CLUSTERING ANALYSIS COMPLETED!")
