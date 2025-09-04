@@ -38,7 +38,10 @@ def get_or_download_model(
 
 
 def suffix_from(filename: Path, break_on="20municipios", remove_extension=False):
-    suffix = filename.name.rsplit(break_on)[-1]
+    if break_on:
+        suffix = filename.name.rsplit(break_on)[-1]
+    else:
+        suffix = filename.name
     if remove_extension:
         return suffix.replace(".parquet", "")
     return suffix
