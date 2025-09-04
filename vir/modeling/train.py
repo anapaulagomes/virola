@@ -19,6 +19,10 @@ def main(
             from vir.modeling.clustering.hdbscan import main as hdbscan_main
 
             hdbscan_main(processed_path, label)
+        case "dbscan":
+            from vir.modeling.clustering.dbscan import main as dbscan_main
+
+            dbscan_main(processed_path, label)
         case _:
             raise ValueError(f"Unknown model: {model}")
     logger.success("Clustering completed.")
