@@ -1,5 +1,4 @@
 import numpy as np
-from sklearn.preprocessing import FunctionTransformer
 
 POPULATION_RANGE = [
     "< 100 mil",
@@ -61,9 +60,8 @@ IBGE_CITY_MAP = {
 }
 
 
-def sin_transformer(period):
-    return FunctionTransformer(lambda x: np.sin(x / period * 2 * np.pi))
-
-
-def cos_transformer(period):
-    return FunctionTransformer(lambda x: np.cos(x / period * 2 * np.pi))
+def create_weeks_cyclical_features():
+    _period = 53  # weeks in year
+    week_cos = {_week: np.cos(_week / _period * 2 * np.pi) for _week in range(_period + 1)}
+    week_sin = {_week: np.sin(_week / _period * 2 * np.pi) for _week in range(_period + 1)}
+    return week_cos, week_sin
