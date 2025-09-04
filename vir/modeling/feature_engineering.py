@@ -83,27 +83,25 @@ def process_chunks(lazy_processed, chunk_size=100_000):
     """Process data in chunks to manage memory"""
     logger.info(f"Starting chunked processing with chunk size: {chunk_size:,}")
 
-    # Define feature groups from config
     numeric_features = ["week_sin", "week_cos", "year"]
     ordinal_features = ["age_group", "population_range"]
 
     logger.info("Getting unique values for encoding...")
     sample_df = lazy_processed.head(10000).collect()
-    SEX = sample_df["sex"].unique().to_list()
-    REGIONS = sample_df["region"].unique().to_list()
+    sex = sample_df["sex"].unique().to_list()
+    regions = sample_df["region"].unique().to_list()
 
-    logger.info(f"Unique SEX values: {SEX}")
-    logger.info(f"Unique REGIONS values: {REGIONS}")
+    logger.info(f"Unique SEX values: {sex}")
+    logger.info(f"Unique REGIONS values: {regions}")
 
     ipca = IncrementalPCA(n_components=EMBEDDING_COMPONENTS, batch_size=1000)
-
     numeric_scaler = StandardScaler()
 
     # TODO isn't this done by scikit?
     age_group_mapping = {val: idx for idx, val in enumerate(AGE_GROUP)}
     population_mapping = {val: idx for idx, val in enumerate(POPULATION_RANGE)}
-    sex_mapping = {val: idx for idx, val in enumerate(SEX)}
-    region_mapping = {val: idx for idx, val in enumerate(REGIONS)}
+    sex_mapping = {val: idx for idx, val in enumerate(sex)}
+    region_mapping = {val: idx for idx, val in enumerate(regions)}
 
     processed_chunks = []
     total_processed = 0
@@ -154,8 +152,8 @@ def process_chunks(lazy_processed, chunk_size=100_000):
         ).astype(np.float32)
 
         # one-hot encoding
-        sex_encoded = np.zeros((len(chunk_with_embeddings), len(SEX)), dtype=np.float32)
-        region_encoded = np.zeros((len(chunk_with_embeddings), len(REGIONS)), dtype=np.float32)
+        sex_encoded = np.zeros((len(chunk_with_embeddings), len(sex)), dtype=np.float32)
+        region_encoded = np.zeros((len(chunk_with_embeddings), len(regions)), dtype=np.float32)
 
         for index, (sex_val, region_val) in enumerate(
             zip(chunk_with_embeddings["sex"].to_list(), chunk_with_embeddings["region"].to_list())
@@ -178,8 +176,8 @@ def process_chunks(lazy_processed, chunk_size=100_000):
         embedding_names = [f"embed_{i}" for i in range(EMBEDDING_COMPONENTS)]
         numeric_names = numeric_features
         ordinal_names = ordinal_features
-        sex_names = [f"sex_{s}" for s in SEX]
-        region_names = [f"region_{r}" for r in REGIONS]
+        sex_names = [f"sex_{s}" for s in sex]
+        region_names = [f"region_{r}" for r in regions]
 
         feature_names = embedding_names + numeric_names + ordinal_names + sex_names + region_names
 
