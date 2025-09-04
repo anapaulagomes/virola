@@ -24,6 +24,11 @@ class TestSuffixFrom:
                 "i-do-not-exist-there",
                 "dados.parquet",
             ),
+            (
+                "data/raw/dados.parquet",
+                "",
+                "dados.parquet",
+            ),
         ],
     )
     def test_suffix_from(self, filename, break_on, expected_suffix):
