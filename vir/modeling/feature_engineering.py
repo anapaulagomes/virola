@@ -165,11 +165,12 @@ def process_chunks(lazy_processed, chunk_size=100_000):
 
         combined_features = np.column_stack(
             [
-                embeddings_processed,
+                chunk_with_embeddings["quantity"],
                 numeric_processed,
                 ordinal_processed,
                 sex_encoded,
                 region_encoded,
+                embeddings_processed,
             ]
         )
 
@@ -179,7 +180,14 @@ def process_chunks(lazy_processed, chunk_size=100_000):
         sex_names = [f"sex_{s}" for s in sex]
         region_names = [f"region_{r}" for r in regions]
 
-        feature_names = embedding_names + numeric_names + ordinal_names + sex_names + region_names
+        feature_names = (
+            ["quantity"]
+            + embedding_names
+            + numeric_names
+            + ordinal_names
+            + sex_names
+            + region_names
+        )
 
         # Create polars dataframe for this chunk
         chunk_df = pl.DataFrame(combined_features, schema=feature_names)
