@@ -1,25 +1,29 @@
 import gc
 import os
+from pathlib import Path
 
 import numpy as np
 import polars as pl
+import typer
+from loguru import logger
 from sklearn.decomposition import IncrementalPCA
 from sklearn.preprocessing import StandardScaler
 
 from vir.config import (
     CHUNK_SIZE,
     EMBEDDING_COMPONENTS,
-    INTERIM_DATA_DIR,
     PROCESSED_DATA_DIR,
 )
 from vir.features import AGE_GROUP, POPULATION_RANGE, create_weeks_cyclical_features
 
+app = typer.Typer()
+
 
 def load_data_lazy(dataset_filename, week_cos, week_sin):
     """Load data using lazy evaluation for memory efficiency"""
-    print(f"Loading dataset: {dataset_filename}")
+    logger.info(f"Loading dataset: {dataset_filename}")
 
-    lazy_df = pl.scan_parquet(INTERIM_DATA_DIR / dataset_filename).with_columns(
+    lazy_df = pl.scan_parquet(dataset_filename).with_columns(
         [
             pl.col("code").cast(pl.Categorical),
             pl.col("code_type").cast(pl.Categorical),
@@ -35,7 +39,7 @@ def load_data_lazy(dataset_filename, week_cos, week_sin):
 
 
 def load_embeddings():
-    print("Loading medical code embeddings...")
+    logger.info("Loading medical code embeddings...")
 
     _code_types = {
         "cid10": "CID",
@@ -45,8 +49,8 @@ def load_embeddings():
     embeddings_df = pl.read_parquet(
         f"{PROCESSED_DATA_DIR}/bra_medter_cambridgeltl__SapBERT-from-PubMedBERT-fulltext.parquet"
     )
-    print(f"  Raw embeddings columns: {embeddings_df.columns}")
-    print(f"  Raw embeddings shape: {embeddings_df.shape}")
+    logger.info(f"  Raw embeddings columns: {embeddings_df.columns}")
+    logger.info(f"  Raw embeddings shape: {embeddings_df.shape}")
 
     codes_embeddings = embeddings_df.with_columns(
         [
@@ -60,15 +64,15 @@ def load_embeddings():
         ]
     )
 
-    print(f"Loaded {len(codes_embeddings):,} embedding entries")
-    print(f"Memory usage: {codes_embeddings.estimated_size() / 1024 / 1024:.2f} MB")
+    logger.info(f"Loaded {len(codes_embeddings):,} embedding entries")
+    logger.info(f"Memory usage: {codes_embeddings.estimated_size() / 1024 / 1024:.2f} MB")
 
     return codes_embeddings
 
 
 def join_data_lazy(lazy_df, codes_embeddings):
     """Perform lazy join between main data and embeddings"""
-    print("Performing lazy join...")
+    logger.info("Performing lazy join...")
     lazy_embeddings = pl.LazyFrame(codes_embeddings)
     lazy_joined = lazy_df.join(lazy_embeddings, on=["code", "code_type"], how="left")
     return lazy_joined
@@ -76,19 +80,19 @@ def join_data_lazy(lazy_df, codes_embeddings):
 
 def process_chunks(lazy_processed, chunk_size=100_000):
     """Process data in chunks to manage memory"""
-    print(f"Starting chunked processing with chunk size: {chunk_size:,}")
+    logger.info(f"Starting chunked processing with chunk size: {chunk_size:,}")
 
     # Define feature groups from config
-    numeric_features = ["quantity", "week_sin", "week_cos", "year"]
+    numeric_features = ["week_sin", "week_cos", "year"]
     ordinal_features = ["age_group", "population_range"]
 
-    print("Getting unique values for encoding...")
+    logger.info("Getting unique values for encoding...")
     sample_df = lazy_processed.head(10000).collect()
-    SEX = sample_df["sex"].unique().to_list()  # FIXME
-    REGIONS = sample_df["region"].unique().to_list()  # FIXME
+    SEX = sample_df["sex"].unique().to_list()
+    REGIONS = sample_df["region"].unique().to_list()
 
-    print(f"Unique SEX values: {SEX}")
-    print(f"Unique REGIONS values: {REGIONS}")
+    logger.info(f"Unique SEX values: {SEX}")
+    logger.info(f"Unique REGIONS values: {REGIONS}")
 
     ipca = IncrementalPCA(n_components=EMBEDDING_COMPONENTS, batch_size=1000)
 
@@ -104,27 +108,28 @@ def process_chunks(lazy_processed, chunk_size=100_000):
     total_processed = 0
 
     total_count = lazy_processed.select(pl.len()).collect().item()
-    print(f"Total records to process: {total_count:,}")
+    logger.info(f"Total records to process: {total_count:,}")
 
     for chunk_idx in range(0, total_count, chunk_size):
-        print(f"Processing chunk {chunk_idx // chunk_size + 1}/{(total_count // chunk_size) + 1}")
+        logger.info(
+            f"Processing chunk {chunk_idx // chunk_size + 1}/{(total_count // chunk_size) + 1}"
+        )
 
         # load chunk using slice for pagination
         chunk = lazy_processed.slice(chunk_idx, chunk_size).collect()
         chunk_with_embeddings = chunk.filter(pl.col("embeddings").is_not_null())
 
         if len(chunk_with_embeddings) == 0:
-            print(f"  No records with embeddings in chunk {chunk_idx // chunk_size + 1}")
+            logger.info(f"  No records with embeddings in chunk {chunk_idx // chunk_size + 1}")
             continue
 
-        print(f"  Processing {len(chunk_with_embeddings):,} records with embeddings")
+        logger.info(f"  Processing {len(chunk_with_embeddings):,} records with embeddings")
 
         embeddings_list = chunk_with_embeddings["embeddings"].to_list()
         embeddings_array = np.array(
             [list(emb) for emb in embeddings_list], dtype=np.float32
         )  # TODO hmmm precisa disso?
 
-        # fit/transform embeddings with IPCA - TODO: why is this necessary?
         if chunk_idx == 0:
             embeddings_processed = ipca.fit_transform(embeddings_array)
         else:
@@ -194,79 +199,82 @@ def process_chunks(lazy_processed, chunk_size=100_000):
         del sex_encoded, region_encoded, combined_features, chunk_df
         gc.collect()
 
-        print(f"  Total processed so far: {total_processed:,}")
+        logger.info(f"  Total processed so far: {total_processed:,}")
 
-    print("Combining all processed chunks...")
+    logger.info("Combining all processed chunks...")
 
     if not processed_chunks:
-        print(
+        logger.info(
             "❌ No records with embeddings found! Check the join between main data and embeddings."
         )
-        print("   This could be due to:")
-        print("   - Different code_type values between datasets")
-        print("   - Different code formats between datasets")
-        print("   - Missing embeddings for the codes in the main dataset")
+        logger.info("   This could be due to:")
+        logger.info("   - Different code_type values between datasets")
+        logger.info("   - Different code formats between datasets")
+        logger.info("   - Missing embeddings for the codes in the main dataset")
         raise ValueError("No records with embeddings found. Check the join conditions.")
 
     final_df = pl.concat(processed_chunks, how="vertical")
 
-    print("Processing completed:")
-    print(f"  Total records processed: {len(final_df):,}")
-    print(f"  Final features: {len(final_df.columns)}")
-    print(f"  Memory usage: {final_df.estimated_size() / 1024 / 1024:.2f} MB")
+    logger.info("Processing completed:")
+    logger.info(f"  Total records processed: {len(final_df):,}")
+    logger.info(f"  Final features: {len(final_df.columns)}")
+    logger.info(f"  Memory usage: {final_df.estimated_size() / 1024 / 1024:.2f} MB")
 
     return final_df, feature_names
 
 
-def main():
-    """Main processing pipeline"""
-    print("=" * 60)
-    print("virola - feature engineering step")
-    print("=" * 60)
+@app.command()
+def main(dataset_filename: Path):
+    """Main processing pipeline.
 
-    # Configuration from config.py
-    dataset_filename = "cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_ibitiara.parquet"
+    Expects a cleaned file as input e.g.
+    cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_salvador.parquet
+    """
+    logger.info("=" * 60)
+    logger.info("virola - feature engineering step")
+    logger.info("=" * 60)
 
     try:
         # Step 1: Create cyclical features
-        print("\n1. Creating cyclical features...")
+        logger.info("1. Creating cyclical features...")
         week_cos, week_sin = create_weeks_cyclical_features()
 
         # Step 2: Load data with lazy evaluation
-        print("\n2. Loading data with lazy evaluation...")
+        logger.info("2. Loading data with lazy evaluation...")
         lazy_df = load_data_lazy(dataset_filename, week_cos, week_sin)
 
         # Step 3: Load embeddings
-        print("\n3. Loading embeddings...")
+        logger.info("3. Loading embeddings...")
         codes_embeddings = load_embeddings()
 
         # Step 4: Join data
-        print("\n4. Joining data...")
+        logger.info("4. Joining data...")
         lazy_joined = join_data_lazy(lazy_df, codes_embeddings)
 
         # Step 5: Feature selection
-        print("\n5. Feature selection...")
+        logger.info("5. Feature selection...")
         lazy_processed = lazy_joined.drop(["week", "state", "city"])
 
         # Step 6: Process in chunks
-        print("\n6. Processing in chunks...")
+        logger.info("6. Processing in chunks...")
         final_df, feature_names = process_chunks(lazy_processed, CHUNK_SIZE)
 
         # Step 7: Save results
-        print("\n7. Saving results...")
-        output_path = PROCESSED_DATA_DIR / f"processed_optimized_{dataset_filename}"
+        logger.info("7. Saving results...")
+        filename = dataset_filename.name.rsplit("20municipios")[-1]
+        output_path = PROCESSED_DATA_DIR / f"processed_optimized_{filename}"
         final_df.write_parquet(output_path)
 
-        print("\n✅ Processing completed successfully!")
-        print(f"📁 Output file: {output_path}")
-        print(f"📊 Records: {len(final_df):,}")
-        print(f"🔢 Features: {len(final_df.columns)}")
-        print(f"💾 File size: {os.path.getsize(output_path) / 1024 / 1024:.2f} MB")
+        logger.success("\n✅ Processing completed successfully!")
+        logger.success(f"📁 Output file: {output_path}")
+        logger.success(f"📊 Records: {len(final_df):,}")
+        logger.success(f"🔢 Features: {len(final_df.columns)}")
+        logger.success(f"💾 File size: {os.path.getsize(output_path) / 1024 / 1024:.2f} MB")
 
     except Exception as e:
-        print(f"\n❌ Error during processing: {str(e)}")
+        logger.info(f"\n❌ Error during processing: {str(e)}")
         raise
 
 
 if __name__ == "__main__":
-    main()
+    app()
