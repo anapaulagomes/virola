@@ -1,10 +1,9 @@
 import os
 from pathlib import Path
-from typing import Optional
-from vir.config import logger
 
 from huggingface_hub import snapshot_download
 
+from vir.config import logger
 
 HF_DEFAULT_HOME = Path(os.getenv("HF_HOME", "~/.cache/huggingface"))
 
@@ -29,10 +28,14 @@ def get_or_download_model(
     logger.warning("Limited environment detected. Downloading model weights to cache folder...")
 
     models_dir = HF_DEFAULT_HOME / "hub"
-    cached_name = f'models--{repo_id.replace("/", "--")}'
+    cached_name = f"models--{repo_id.replace('/', '--')}"
     cached_dir = models_dir / cached_name
     if not cached_dir.exists():
         snapshot_download(repo_id=repo_id, revision=revision, cache_dir=models_dir)
 
     snapshot_hash = (cached_dir / "refs" / revision).read_text()
     return cached_dir / "snapshots" / snapshot_hash
+
+
+def suffix_from(filename: Path, break_on="20municipios"):
+    return filename.name.rsplit(break_on)[-1]
