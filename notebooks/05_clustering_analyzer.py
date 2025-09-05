@@ -6,17 +6,17 @@ app = marimo.App(width="full")
 
 @app.cell
 def _():
+    from pathlib import Path
+
     import hdbscan
     import marimo as mo
     import numpy as np
-    import plotly.express as px
     import plotly.graph_objects as go
     import polars as pl
     from sklearn.decomposition import PCA
-    from plotly.subplots import make_subplots
-    from pathlib import Path
 
     from vir.config import PROCESSED_DATA_DIR
+
     return PCA, PROCESSED_DATA_DIR, Path, go, hdbscan, mo, np, pl
 
 
@@ -28,7 +28,10 @@ def _(mo):
 
 @app.cell
 def _(PROCESSED_DATA_DIR, Path, mo):
-    _options = [str(_file.relative_to(Path.cwd())) for _file in PROCESSED_DATA_DIR.glob("**/processed_optimized_*.parquet")]
+    _options = [
+        str(_file.relative_to(Path.cwd()))
+        for _file in PROCESSED_DATA_DIR.glob("**/processed_optimized_*.parquet")
+    ]
     files_dropdown = mo.ui.dropdown(
         options=_options,
         label="Choose one",
@@ -47,7 +50,7 @@ def _():
 @app.cell
 def _(files_dropdown, pl):
     df = pl.read_parquet(files_dropdown.value)
-    features = set([_col.split('_')[0] for _col in df.columns])
+    features = set([_col.split("_")[0] for _col in df.columns])
     return df, features
 
 
@@ -59,7 +62,9 @@ def _(df):
 
 @app.cell
 def _(df, features, mo):
-    _feature_options = [_feature for _feature in features if _feature != "unique"]  # exclude unique_id by now
+    _feature_options = [
+        _feature for _feature in features if _feature != "unique"
+    ]  # exclude unique_id by now
 
     data_batch = mo.md("""
     **Processed data loaded**
@@ -81,7 +86,9 @@ def _(df, features, mo):
 
 @app.cell
 def _(data_batch, df):
-    selected_features = [_col for _col in df.columns if _col.split('_')[0] in data_batch.value['features']]
+    selected_features = [
+        _col for _col in df.columns if _col.split("_")[0] in data_batch.value["features"]
+    ]
     return (selected_features,)
 
 
@@ -105,7 +112,7 @@ def _(PCA, data_batch, df, mo, selected_features):
     mo.md(f"""
     **PCA Analysis Complete**
 
-    - Input features: {data_batch.value['features']}
+    - Input features: {data_batch.value["features"]}
     - PCA components: {pca.n_components_}
     - Total variance explained: {prop_var.sum():.1%}
     - First 3 components: {prop_var[:3].sum():.1%}
@@ -115,10 +122,12 @@ def _(PCA, data_batch, df, mo, selected_features):
 
 @app.cell
 def _(eigenvalues, mo, prop_var):
-    eigenvalue_info = "\n".join([
-        f"PC{_index + 1}: eigenvalue={ev:.2f}, variance={pv:.1%}"
-        for _index, (ev, pv) in enumerate(zip(eigenvalues, prop_var))
-    ])
+    eigenvalue_info = "\n".join(
+        [
+            f"PC{_index + 1}: eigenvalue={ev:.2f}, variance={pv:.1%}"
+            for _index, (ev, pv) in enumerate(zip(eigenvalues, prop_var))
+        ]
+    )
 
     mo.md(f"""
     **Eigenvalues (variance explained by each component)**
@@ -189,8 +198,16 @@ def _(feature_df, mo, np, reduced_features):
     """).batch(
         n_samples=mo.ui.text(value=str(n_samples), disabled=True),
         reduced_features_shape=mo.ui.text(value=str(reduced_features.shape), disabled=True),
-        optimal_min_cluster_size=mo.ui.slider(start=default_optimal_min_cluster_size, stop=n_samples, value=default_optimal_min_cluster_size),
-        optimal_min_samples=mo.ui.slider(start=default_optimal_min_cluster_size//4, stop=n_samples, value=default_optimal_min_samples),
+        optimal_min_cluster_size=mo.ui.slider(
+            start=default_optimal_min_cluster_size,
+            stop=n_samples,
+            value=default_optimal_min_cluster_size,
+        ),
+        optimal_min_samples=mo.ui.slider(
+            start=default_optimal_min_cluster_size // 4,
+            stop=n_samples,
+            value=default_optimal_min_samples,
+        ),
     )
 
     params
@@ -205,14 +222,14 @@ def _(params):
 
 @app.cell
 def _(hdbscan, mo, params, reduced_features):
-    optimal_min_cluster_size = params.value['optimal_min_cluster_size']
-    optimal_min_samples = params.value['optimal_min_samples']
+    optimal_min_cluster_size = params.value["optimal_min_cluster_size"]
+    optimal_min_samples = params.value["optimal_min_samples"]
 
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=optimal_min_cluster_size,
         min_samples=optimal_min_samples,
         metric="euclidean",
-        cluster_selection_method="eom"
+        cluster_selection_method="eom",
     )
     cluster_labels = clusterer.fit_predict(reduced_features)
 
@@ -242,7 +259,7 @@ def _(cluster_labels, mo, pl, unique_ids):
     **Cluster Assignment Complete**
 
     - Total records with cluster assignments: {len(cluster_results):,}
-    - Unique clusters: {cluster_results['cluster'].n_unique()}
+    - Unique clusters: {cluster_results["cluster"].n_unique()}
     - Sample assignments shown in table below
     """)
     return (cluster_results,)
@@ -257,6 +274,7 @@ def _(cluster_results, mo):
 @app.cell
 def _():
     from vir.config import INTERIM_DATA_DIR
+
     return (INTERIM_DATA_DIR,)
 
 
@@ -278,7 +296,11 @@ def _(mo):
 
 @app.cell
 def _(cluster_labels, clusterer, mo, np, reduced_features):
-    from sklearn.metrics import silhouette_score, calinski_harabasz_score, davies_bouldin_score
+    from sklearn.metrics import (
+        calinski_harabasz_score,
+        davies_bouldin_score,
+        silhouette_score,
+    )
 
     # Calculate clustering quality metrics (only for non-noise points)
     mask = cluster_labels != -1
@@ -296,16 +318,16 @@ def _(cluster_labels, clusterer, mo, np, reduced_features):
         silhouette = calinski_harabasz = davies_bouldin = "N/A (insufficient data)"
 
     # Get cluster stability scores if available
-    cluster_persistence = getattr(clusterer, 'cluster_persistence_', 'N/A')
+    cluster_persistence = getattr(clusterer, "cluster_persistence_", "N/A")
 
     mo.md(f"""
     **Clustering Quality Metrics**
 
-    - **Silhouette Score**: {silhouette if isinstance(silhouette, str) else f"{silhouette:.3f}"} 
+    - **Silhouette Score**: {silhouette if isinstance(silhouette, str) else f"{silhouette:.3f}"}
       _(Range: -1 to 1, higher is better)_
-    - **Calinski-Harabasz Score**: {calinski_harabasz if isinstance(calinski_harabasz, str) else f"{calinski_harabasz:.2f}"} 
+    - **Calinski-Harabasz Score**: {calinski_harabasz if isinstance(calinski_harabasz, str) else f"{calinski_harabasz:.2f}"}
       _(Higher is better)_
-    - **Davies-Bouldin Score**: {davies_bouldin if isinstance(davies_bouldin, str) else f"{davies_bouldin:.3f}"} 
+    - **Davies-Bouldin Score**: {davies_bouldin if isinstance(davies_bouldin, str) else f"{davies_bouldin:.3f}"}
       _(Lower is better)_
     - **HDBSCAN Cluster Persistence**: {cluster_persistence}
     """)
@@ -322,7 +344,7 @@ def _(mo):
 def _(INTERIM_DATA_DIR, cluster_results, files_dropdown, pl):
     # expected format: cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_ibitiara.parquet
     # 20municipios for all and city name for individual analysis
-    target = files_dropdown.value.replace('.parquet', '').rsplit('_', 1)[1]
+    target = files_dropdown.value.replace(".parquet", "").rsplit("_", 1)[1]
 
     # INTERIM_DATA_DIR
 
@@ -340,7 +362,7 @@ def _(df_with_clusters):
 
 @app.cell
 def _(df_with_clusters, pl):
-    df_with_clusters.filter(pl.col('cluster').eq(1))['code'].sort(descending=False).unique()
+    df_with_clusters.filter(pl.col("cluster").eq(1))["code"].sort(descending=False).unique()
     return
 
 
