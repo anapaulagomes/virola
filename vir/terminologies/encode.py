@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from transformers import AutoModel, AutoTokenizer
 
-from notebooks.helpers import get_or_download_model
+from vir.helpers import get_or_download_model
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 batch_size = 128
