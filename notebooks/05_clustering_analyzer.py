@@ -279,7 +279,6 @@ def _(cluster_labels, mo, pl, unique_ids):
 
 @app.cell
 def _(cluster_results, mo):
-    # Show cluster distribution
     cluster_dist = cluster_results["cluster"].value_counts().sort("cluster")
 
     mo.md("**Cluster Distribution**")
@@ -343,12 +342,6 @@ def _(mo):
 
 
 @app.cell
-def _(mo):
-    mo.md(r"""## 🎨 Interactive Cluster Visualization""")
-    return
-
-
-@app.cell
 def _(UMAP):
     umap_reducer = UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
     return (umap_reducer,)
@@ -391,8 +384,6 @@ def _(INTERIM_DATA_DIR, cluster_results, files_dropdown, pl):
     # expected format: cleaned_aesop_raw_dados_2017_20250223_20municipios_082025_ibitiara.parquet
     # 20municipios for all and city name for individual analysis
     target = files_dropdown.value.replace(".parquet", "").rsplit("_", 1)[1]
-
-    # INTERIM_DATA_DIR
 
     df_with_clusters = (
         pl.read_parquet(
@@ -467,31 +458,40 @@ def _(px):
 
 @app.cell
 def _(
-    cluster_embeddings,
     code_types,
     codes,
     color_mapping,
+    current_selection,
     descriptions,
     go,
     reduced_embeddings,
     umap_coords,
 ):
     def compute_similarities_and_plot(
-        cluster_embedding, embeddings, umap_coords, codes, code_types, descriptions
+        cluster_selection, embeddings, umap_coords, codes, code_types, descriptions
     ):
-        if cluster_embedding.is_empty() or embeddings is None:
+        if cluster_selection.is_empty() or embeddings is None:
             return go.Figure(), []
 
+        # Create mapping from code to index in the full embeddings dataset
+        code_to_index = {code: idx for idx, code in enumerate(codes)}
+
+        # Get cluster codes and find their indices in the full dataset
+        cluster_codes = cluster_selection["code"].to_list()
+        cluster_indices = []
         results_data = []
-        for idx, code in enumerate(cluster_embedding):
-            results_data.append(
-                {
-                    "code": codes[idx],
-                    "code_type": code_types[idx],
-                    "description": descriptions[idx],
-                    # "score": f"{similarities[idx]}",
-                }
-            )
+
+        for code in cluster_codes:
+            if code in code_to_index:
+                idx = code_to_index[code]
+                cluster_indices.append(idx)
+                results_data.append(
+                    {
+                        "code": codes[idx],
+                        "code_type": code_types[idx],
+                        "description": descriptions[idx],
+                    }
+                )
 
         fig = go.Figure().add_annotation(
             text="",
@@ -515,12 +515,10 @@ def _(
             )
         )
 
-        # top similar points with colors by code type
-        for idx, code in enumerate(cluster_embedding):
+        # Highlight cluster points with colors by code type
+        for idx in cluster_indices:
             code_type = code_types[idx]
             color = color_mapping.get(code_type.upper(), "gray")
-            print(code_type, code)
-            # print(f"{codes[idx]}: {descriptions[idx]}<br>Similarity: {similarities[idx]}")
 
             fig.add_trace(
                 go.Scatter(
@@ -528,12 +526,10 @@ def _(
                     y=[umap_coords[idx, 1]],
                     mode="markers",
                     marker=dict(
-                        # size=marker_size,
+                        size=8,
                         color=color,
-                        # symbol=marker_symbol,
                     ),
-                    # text=f"{codes[idx]}: {descriptions[idx]}<br>Similarity: {similarities[idx]:.3f}",
-                    hovertemplate=f"<b>{descriptions[idx]}",
+                    hovertemplate=f"<b>{codes[idx]}: {descriptions[idx]}</b><br>UMAP: (%{{x:.2f}}, %{{y:.2f}})<extra></extra>",
                     name=code_type,
                     showlegend=False,
                 )
@@ -564,7 +560,7 @@ def _(
         return fig, results_data
 
     similarities_fig, results_data = compute_similarities_and_plot(
-        cluster_embeddings, reduced_embeddings, umap_coords, codes, code_types, descriptions
+        current_selection, reduced_embeddings, umap_coords, codes, code_types, descriptions
     )
     return (similarities_fig,)
 
@@ -576,9 +572,16 @@ def _(
     current_selection,
     make_subplots,
     plot_categories,
-    similarities_fig,
 ):
-    _fig = make_subplots(rows=2, cols=2)
+    _fig = make_subplots(
+        rows=3,
+        cols=2,
+        specs=[
+            [{}, {}],
+            [{"colspan": 2}, None],
+            [{"colspan": 2}, None],
+        ],
+    )
 
     _fig_sex = plot_categories(current_selection, "sex")
     _fig_age = plot_categories(current_selection, "age_group", AGE_GROUP)
@@ -587,9 +590,9 @@ def _(
 
     _fig.add_trace(_fig_age["data"][0], row=1, col=2)
 
-    _fig.add_trace(similarities_fig["data"][0], row=2, col=1)
+    _fig.add_trace(_fig_code["data"][0], row=2, col=1)
 
-    _fig.add_trace(_fig_code["data"][0], row=2, col=2)
+    # _fig.add_trace(similarities_fig["data"][0], row=3, col=1)
 
     _fig.update_layout(title_text=f"Composition of the cluster {cluster_dropdown.value}")
     _fig
@@ -597,11 +600,8 @@ def _(
 
 
 @app.cell
-def _():
-    # TODO next
-    # allow to select one cluster and see basic charts
-    # composition: sex, age group
-    # umap from embeddings?
+def _(similarities_fig):
+    similarities_fig
     return
 
 
