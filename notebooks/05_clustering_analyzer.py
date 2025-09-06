@@ -85,13 +85,22 @@ def _(df):
 
 
 @app.cell
+def _(features):
+    features
+    return
+
+
+@app.cell
 def _(df, features, mo):
+    # Filter for embeddings and temporal features only
     _feature_options = [
-        _feature for _feature in features if _feature != "unique"
-    ]  # exclude unique_id by now
+        _feature
+        for _feature in features
+        if _feature in ["embed", "year", "week", "quantity"] and _feature != "unique"
+    ]
 
     data_batch = mo.md("""
-    **Processed data loaded**
+    **Processed data loaded (Embeddings + Temporal Features)**
 
     - Total records: {total_records}
     - Shape: {shape}
@@ -118,7 +127,7 @@ def _(data_batch, df):
 
 @app.cell
 def _(mo):
-    mo.md(r"""## 📊 Dimensionality Reduction Analysis""")
+    mo.md(r"""## 📊 Dimensionality Reduction Analysis (Embeddings + Temporal Features)""")
     return
 
 
@@ -188,7 +197,7 @@ def _(go, np, pca, prop_var):
 
 @app.cell
 def _(mo):
-    mo.md(r"""## 🎯 Clustering Analysis with HDBSCAN""")
+    mo.md(r"""## 🎯 Clustering Analysis with HDBSCAN (Embeddings + Temporal)""")
     return
 
 
@@ -261,7 +270,7 @@ def _(hdbscan, mo, params, reduced_features):
 
 
 @app.cell
-def _(cluster_labels, mo, pl, unique_ids):
+def _(cluster_labels, df, mo, pl, unique_ids):
     # Create cluster results with unique ID tracking
     cluster_results = pl.concat(
         [unique_ids, pl.DataFrame({"cluster": cluster_labels})], how="horizontal"
@@ -270,6 +279,7 @@ def _(cluster_labels, mo, pl, unique_ids):
     mo.md(f"""
     **Cluster Assignment Complete**
 
+    - Total records: {len(df):,}
     - Total records with cluster assignments: {len(cluster_results):,}
     - Unique clusters: {cluster_results["cluster"].n_unique()}
     - Sample assignments shown in table below
@@ -397,6 +407,12 @@ def _(INTERIM_DATA_DIR, cluster_results, files_dropdown, pl):
 
 @app.cell
 def _(df_with_clusters):
+    df_with_clusters.group_by(["cluster", "age_group"]).len().sort(by=["cluster"])
+    return
+
+
+@app.cell
+def _(df_with_clusters):
     df_with_clusters
     return
 
@@ -428,12 +444,6 @@ def _(current_selection, df, pl):
     cluster_embeddings = df.filter(pl.col("unique_id").is_in(current_selection["unique_id"]))[
         [_col for _col in df.columns if _col.startswith("emb")]
     ]
-    return (cluster_embeddings,)
-
-
-@app.cell
-def _(cluster_embeddings, embeddings):
-    embeddings.shape, cluster_embeddings.shape
     return
 
 
@@ -584,7 +594,7 @@ def _(
     )
 
     _fig_sex = plot_categories(current_selection, "sex")
-    _fig_age = plot_categories(current_selection, "age_group", AGE_GROUP)
+    _fig_age = plot_categories(current_selection, "age_group", x_categoryorder=AGE_GROUP)
     _fig_code = plot_categories(current_selection.sort("code"), "code")
     _fig.add_trace(_fig_sex["data"][0], row=1, col=1)
 
