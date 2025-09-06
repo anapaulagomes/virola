@@ -10,15 +10,21 @@ def _():
     import numpy as np
     import plotly.express as px
     import plotly.graph_objects as go
-    from umap import UMAP
 
-    return UMAP, go, mo, np, px
+    return go, mo, np, px
 
 
 @app.cell
 def _():
-    from notebooks.db import get_all_embeddings
-    from notebooks.encode import encode_text
+    from umap import UMAP
+
+    return (UMAP,)
+
+
+@app.cell
+def _():
+    from vir.db import get_all_embeddings
+    from vir.terminologies.encode import encode_text
 
     return encode_text, get_all_embeddings
 
@@ -49,6 +55,19 @@ def _(get_all_embeddings, mo, np):
 
 
 @app.cell
+def _(embeddings, mo, umap_reducer):
+    @mo.cache
+    def compute_umap(embeddings):
+        """Compute UMAP embeddings for visualization."""
+        if embeddings is None:
+            return None
+        return umap_reducer.fit_transform(embeddings)
+
+    umap_coords = compute_umap(embeddings)
+    return (umap_coords,)
+
+
+@app.cell
 def _(codes, color_mapping, mo):
     mo.md(
         f"""
@@ -76,19 +95,6 @@ def _(codes, color_mapping, mo):
     """
     )
     return
-
-
-@app.cell
-def _(embeddings, mo, umap_reducer):
-    @mo.cache
-    def compute_umap(embeddings):
-        """Compute UMAP embeddings for visualization."""
-        if embeddings is None:
-            return None
-        return umap_reducer.fit_transform(embeddings)
-
-    umap_coords = compute_umap(embeddings)
-    return (umap_coords,)
 
 
 @app.cell
