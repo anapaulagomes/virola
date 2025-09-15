@@ -42,11 +42,6 @@ def load_data_lazy(dataset_filename, week_cos, week_sin):
 def load_embeddings():
     logger.info("Loading medical code embeddings...")
 
-    _code_types = {
-        "cid10": "CID",
-        "ciap2": "CIAP",
-        "ab": "AB",
-    }
     embeddings_df = pl.read_parquet(
         f"{PROCESSED_DATA_DIR}/bra_medter_cambridgeltl__SapBERT-from-PubMedBERT-fulltext.parquet"
     )
@@ -56,10 +51,7 @@ def load_embeddings():
     codes_embeddings = embeddings_df.with_columns(
         [
             pl.col("code").cast(pl.Categorical),
-            # map code_type from embeddings format to main dataset format
-            pl.col("code_type")
-            .map_elements(lambda x: _code_types.get(x, x), return_dtype=pl.String)
-            .cast(pl.Categorical),
+            pl.col("code_type").cast(pl.Categorical),
             # convert embeddings to float32 for memory efficiency
             pl.col("embeddings").cast(pl.List(pl.Float32)),
         ]
