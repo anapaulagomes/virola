@@ -288,15 +288,6 @@ def _(cluster_labels, df, mo, pl, unique_ids):
 
 
 @app.cell
-def _(cluster_results, mo):
-    cluster_dist = cluster_results["cluster"].value_counts().sort("cluster")
-
-    mo.md("**Cluster Distribution**")
-    mo.ui.table(cluster_dist)
-    return
-
-
-@app.cell
 def _(mo):
     mo.md(r"""## 📈 Clustering Quality Metrics""")
     return
@@ -314,34 +305,36 @@ def _(
     silhouette_score,
 ):
     # Calculate clustering quality metrics (only for non-noise points)
-    mask = cluster_labels != -1
-    if mask.sum() > 1:  # Need at least 2 points for metrics
-        clustered_data = reduced_features[mask]
-        clustered_labels = cluster_labels[mask]
+    enable_metrics = False
+    if enable_metrics:
+        mask = cluster_labels != -1
+        if mask.sum() > 1:  # Need at least 2 points for metrics
+            clustered_data = reduced_features[mask]
+            clustered_labels = cluster_labels[mask]
 
-        if len(np.unique(clustered_labels)) > 1:  # Need more than 1 cluster
-            silhouette = silhouette_score(clustered_data, clustered_labels)
-            calinski_harabasz = calinski_harabasz_score(clustered_data, clustered_labels)
-            davies_bouldin = davies_bouldin_score(clustered_data, clustered_labels)
+            if len(np.unique(clustered_labels)) > 1:  # Need more than 1 cluster
+                silhouette = silhouette_score(clustered_data, clustered_labels)
+                calinski_harabasz = calinski_harabasz_score(clustered_data, clustered_labels)
+                davies_bouldin = davies_bouldin_score(clustered_data, clustered_labels)
+            else:
+                silhouette = calinski_harabasz = davies_bouldin = "N/A (only 1 cluster)"
         else:
-            silhouette = calinski_harabasz = davies_bouldin = "N/A (only 1 cluster)"
-    else:
-        silhouette = calinski_harabasz = davies_bouldin = "N/A (insufficient data)"
+            silhouette = calinski_harabasz = davies_bouldin = "N/A (insufficient data)"
 
-    # Get cluster stability scores if available
-    cluster_persistence = getattr(clusterer, "cluster_persistence_", "N/A")
+        # Get cluster stability scores if available
+        cluster_persistence = getattr(clusterer, "cluster_persistence_", "N/A")
 
-    mo.md(f"""
-    **Clustering Quality Metrics**
+        mo.md(f"""
+        **Clustering Quality Metrics**
 
-    - **Silhouette Score**: {silhouette if isinstance(silhouette, str) else f"{silhouette:.3f}"}
-      _(Range: -1 to 1, higher is better)_
-    - **Calinski-Harabasz Score**: {calinski_harabasz if isinstance(calinski_harabasz, str) else f"{calinski_harabasz:.2f}"}
-      _(Higher is better)_
-    - **Davies-Bouldin Score**: {davies_bouldin if isinstance(davies_bouldin, str) else f"{davies_bouldin:.3f}"}
-      _(Lower is better)_
-    - **HDBSCAN Cluster Persistence**: {cluster_persistence}
-    """)
+        - **Silhouette Score**: {silhouette if isinstance(silhouette, str) else f"{silhouette:.3f}"}
+          _(Range: -1 to 1, higher is better)_
+        - **Calinski-Harabasz Score**: {calinski_harabasz if isinstance(calinski_harabasz, str) else f"{calinski_harabasz:.2f}"}
+          _(Higher is better)_
+        - **Davies-Bouldin Score**: {davies_bouldin if isinstance(davies_bouldin, str) else f"{davies_bouldin:.3f}"}
+          _(Lower is better)_
+        - **HDBSCAN Cluster Persistence**: {cluster_persistence}
+        """)
     return
 
 
@@ -412,8 +405,16 @@ def _(df_with_clusters):
 
 
 @app.cell
-def _(df_with_clusters):
-    df_with_clusters
+def _(df_with_clusters, px):
+    _fig = px.histogram(df_with_clusters.group_by(["cluster"]).len("code"), x="cluster", y="code")
+    _fig
+
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""## Individual cluster inspection""")
     return
 
 
@@ -429,12 +430,21 @@ def _(cluster_labels, mo):
 
 
 @app.cell
-def _(cluster_dropdown, df_with_clusters, pl):
+def _(PROCESSED_DATA_DIR, pl):
+    codes_df = pl.read_csv(f"{PROCESSED_DATA_DIR}/cid10_ciap2_ab.csv").with_columns(
+        code_type=pl.col("code_type").str.to_uppercase()
+    )
+    return (codes_df,)
+
+
+@app.cell
+def _(cluster_dropdown, codes_df, df_with_clusters, pl):
     current_selection = (
         df_with_clusters.filter(pl.col("cluster").eq(cluster_dropdown.value))
         .sort(descending=False, by="code")
         .unique()
     )
+    current_selection = current_selection.join(codes_df, on=["code", "code_type"])
     current_selection
     return (current_selection,)
 
@@ -444,7 +454,7 @@ def _(current_selection, df, pl):
     cluster_embeddings = df.filter(pl.col("unique_id").is_in(current_selection["unique_id"]))[
         [_col for _col in df.columns if _col.startswith("emb")]
     ]
-    return
+    return cluster_embeddings
 
 
 @app.cell
@@ -572,6 +582,7 @@ def _(
     similarities_fig, results_data = compute_similarities_and_plot(
         current_selection, reduced_embeddings, umap_coords, codes, code_types, descriptions
     )
+
     return (similarities_fig,)
 
 
@@ -597,14 +608,10 @@ def _(
     _fig_age = plot_categories(current_selection, "age_group", x_categoryorder=AGE_GROUP)
     _fig_code = plot_categories(current_selection.sort("code"), "code")
     _fig.add_trace(_fig_sex["data"][0], row=1, col=1)
-
     _fig.add_trace(_fig_age["data"][0], row=1, col=2)
-
     _fig.add_trace(_fig_code["data"][0], row=2, col=1)
-
-    # _fig.add_trace(similarities_fig["data"][0], row=3, col=1)
-
     _fig.update_layout(title_text=f"Composition of the cluster {cluster_dropdown.value}")
+
     _fig
     return
 
