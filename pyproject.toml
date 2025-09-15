@@ -38,6 +38,7 @@ dependencies = [
     "tqdm",
     "transformers>=4.55.0",
     "typer",
+    "umap-learn>=0.5.9.post2",
 ]
 requires-python = "~=3.12.0"
 

@@ -27,13 +27,11 @@ def _():
     from vir.db import get_all_embeddings
     from vir.features import AGE_GROUP
     from vir.viz import plot_categories
-
     return (
         AGE_GROUP,
         INTERIM_DATA_DIR,
         PCA,
         PROCESSED_DATA_DIR,
-        Path,
         UMAP,
         calinski_harabasz_score,
         davies_bouldin_score,
@@ -57,9 +55,9 @@ def _(mo):
 
 
 @app.cell
-def _(PROCESSED_DATA_DIR, Path, mo):
+def _(PROCESSED_DATA_DIR, mo):
     _options = [
-        str(_file.relative_to(Path.cwd()))
+        str(_file.resolve())
         for _file in PROCESSED_DATA_DIR.glob("**/processed_optimized_*.parquet")
     ]
     files_dropdown = mo.ui.dropdown(
@@ -629,8 +627,10 @@ def _(mo):
 
 
 @app.cell
-def _(PROCESSED_DATA_DIR, files_dropdown):
-    output_path = PROCESSED_DATA_DIR / f"cluster_results_interactive{files_dropdown.value}"
+def _(PROCESSED_DATA_DIR, clusterer, files_dropdown):
+    model = str(clusterer)
+    model = model.replace('(', '_').replace(')', '').replace(' ', '').replace(',', '_')
+    output_path = PROCESSED_DATA_DIR / f"cluster_results_{model}_{files_dropdown.value.rsplit('/', 1)[1]}"
     return (output_path,)
 
 
