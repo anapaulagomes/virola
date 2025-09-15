@@ -7,7 +7,7 @@ POPULATION_RANGE = [
     "> 500 mil",
 ]
 
-AGE_GROUP = [
+ORIGINAL_AGE_GROUP = [
     # None,
     "< 1 ano",
     "1 a 4 anos",
@@ -22,6 +22,13 @@ AGE_GROUP = [
     "60 a 65 anos",
     "66 a 85 anos",
     "Maior que 85 anos",
+]
+
+AGE_GROUP = [
+    "< 1 ano",
+    "1 a 15 anos",
+    "16 a 59 anos",
+    "Maior que 60 anos",
 ]
 
 IBGE_CITY_MAP = {

@@ -61,7 +61,32 @@ def _(mo):
 
 
 @app.cell
-def _(ibge_df, pl, raw_df):
+def _():
+    original_to_reduced_age_group = {
+        "< 1 ano": "< 1 ano",
+        "1 a 4 anos": "1 a 15 anos",
+        "5 a 11 anos": "1 a 15 anos",
+        "12 a 15 anos": "1 a 15 anos",
+        "16 a 18 anos": "16 a 59 anos",
+        "19 a 24 anos": "16 a 59 anos",
+        "25 a 29 anos": "16 a 59 anos",
+        "30 a 39 anos": "16 a 59 anos",
+        "40 a 49 anos": "16 a 59 anos",
+        "50 a 59 anos": "16 a 59 anos",
+        "60 a 65 anos": "Maior que 60 anos",
+        "66 a 85 anos": "Maior que 60 anos",
+        "Maior que 85 anos": "Maior que 60 anos",
+    }
+    code_types_mapping = {
+        "CID": "cid10",
+        "CIAP": "ciap2",
+        "AB": "ab",
+    }
+    return code_types_mapping, original_to_reduced_age_group
+
+
+@app.cell
+def _(code_types_mapping, ibge_df, original_to_reduced_age_group, pl, raw_df):
     df = (
         raw_df.with_columns(
             pl.col("CIDCIAP").str.extract(r"^([A-Z]+)\(", 1).alias("code_type"),
@@ -74,6 +99,16 @@ def _(ibge_df, pl, raw_df):
         pl.when(pl.col("code_type").eq("AB"))
         .then(pl.col("code").str.replace(r"-\d+", ""))
         .otherwise(pl.col("code"))
+    )
+    df = df.with_columns(
+        pl.col("code_type").map_elements(
+            lambda code_type: code_types_mapping.get(code_type), return_dtype=pl.String
+        )
+    )
+    df = df.with_columns(
+        pl.col("FX_ETARIA").map_elements(
+            lambda age_group: original_to_reduced_age_group.get(age_group), return_dtype=pl.String
+        )
     )
     df = df.join(ibge_df, on="CO_MUNICIPIO_IBGE", how="left")
     df = df.drop(["CO_CNES", "CO_MUNICIPIO_IBGE"])
@@ -88,6 +123,12 @@ def _(ibge_df, pl, raw_df):
         }
     )
     return (df,)
+
+
+@app.cell
+def _(df):
+    df
+    return
 
 
 @app.cell
