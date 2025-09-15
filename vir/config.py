@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -11,7 +12,9 @@ load_dotenv()
 
 PROJ_ROOT = Path(__file__).resolve().parents[1]
 
-DATA_DIR = Path(os.getenv("DATA_DIR")) or PROJ_ROOT / "data"
+DATA_DIR = PROJ_ROOT / "data"
+if os.getenv("DATA_DIR"):
+    DATA_DIR = Path(os.getenv("DATA_DIR"))
 RAW_DATA_DIR = DATA_DIR / "raw"
 INTERIM_DATA_DIR = DATA_DIR / "interim"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
