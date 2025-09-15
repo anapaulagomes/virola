@@ -6,8 +6,6 @@ app = marimo.App(width="full")
 
 @app.cell
 def _():
-    from pathlib import Path
-
     import hdbscan
     import marimo as mo
     import numpy as np
@@ -27,6 +25,7 @@ def _():
     from vir.db import get_all_embeddings
     from vir.features import AGE_GROUP
     from vir.viz import plot_categories
+
     return (
         AGE_GROUP,
         INTERIM_DATA_DIR,
@@ -629,8 +628,10 @@ def _(mo):
 @app.cell
 def _(PROCESSED_DATA_DIR, clusterer, files_dropdown):
     model = str(clusterer)
-    model = model.replace('(', '_').replace(')', '').replace(' ', '').replace(',', '_')
-    output_path = PROCESSED_DATA_DIR / f"cluster_results_{model}_{files_dropdown.value.rsplit('/', 1)[1]}"
+    model = model.replace("(", "_").replace(")", "").replace(" ", "").replace(",", "_")
+    output_path = (
+        PROCESSED_DATA_DIR / f"cluster_results_{model}_{files_dropdown.value.rsplit('/', 1)[1]}"
+    )
     return (output_path,)
 
 
