@@ -13,11 +13,11 @@ def _():
     from scipy.stats import chi2_contingency
 
     from vir.config import RAW_DATA_DIR
-    from vir.features import AGE_GROUP, IBGE_CITY_MAP, POPULATION_RANGE
+    from vir.features import IBGE_CITY_MAP, ORIGINAL_AGE_GROUP, POPULATION_RANGE
     from vir.viz import plot_categories, scatter_plot_year_per_week
 
     return (
-        AGE_GROUP,
+        ORIGINAL_AGE_GROUP,
         IBGE_CITY_MAP,
         POPULATION_RANGE,
         RAW_DATA_DIR,
@@ -190,8 +190,8 @@ def _(df, plot_categories):
 
 
 @app.cell
-def _(AGE_GROUP, df, plot_categories):
-    plot_categories(df, "age_group", AGE_GROUP, title="Age group distribution")
+def _(ORIGINAL_AGE_GROUP, df, plot_categories):
+    plot_categories(df, "age_group", ORIGINAL_AGE_GROUP, title="Age group distribution")
     return
 
 
