@@ -130,6 +130,7 @@ def process_chunks(lazy_processed, chunk_size=100_000):
         )  # TODO hmmm precisa disso?
 
         if chunk_idx == 0:
+            # FIXME Error: LinAlgError: SVD did not converge for Nova Mutum
             embeddings_processed = ipca.fit_transform(embeddings_array)
         else:
             embeddings_processed = ipca.transform(embeddings_array)
