@@ -7,20 +7,19 @@ import polars as pl
 import typer
 from loguru import logger
 from sklearn.decomposition import IncrementalPCA
-from sklearn.preprocessing import StandardScaler
 
 from vir.config import (
     CHUNK_SIZE,
     EMBEDDING_COMPONENTS,
     PROCESSED_DATA_DIR,
 )
-from vir.features import AGE_GROUP, POPULATION_RANGE, create_weeks_cyclical_features
+from vir.features import AGE_GROUP
 from vir.helpers import suffix_from
 
 app = typer.Typer()
 
 
-def load_data_lazy(dataset_filename, week_cos, week_sin):
+def load_data_lazy(dataset_filename):
     """Load data using lazy evaluation for memory efficiency"""
     logger.info(f"Loading dataset: {dataset_filename}")
 
@@ -28,12 +27,6 @@ def load_data_lazy(dataset_filename, week_cos, week_sin):
         [
             pl.col("code").cast(pl.Categorical),
             pl.col("code_type").cast(pl.Categorical),
-            pl.col("week")
-            .map_elements(lambda w: week_sin.get(w, 0.0), return_dtype=pl.Float32)
-            .alias("week_sin"),
-            pl.col("week")
-            .map_elements(lambda w: week_cos.get(w, 0.0), return_dtype=pl.Float32)
-            .alias("week_cos"),
         ]
     )
     return lazy_df
@@ -75,25 +68,19 @@ def process_chunks(lazy_processed, chunk_size=100_000):
     """Process data in chunks to manage memory"""
     logger.info(f"Starting chunked processing with chunk size: {chunk_size:,}")
 
-    numeric_features = ["week_sin", "week_cos", "year"]
-    ordinal_features = ["age_group", "population_range"]
+    ordinal_features = ["age_group_ordinal"]
 
     logger.info("Getting unique values for encoding...")
     sample_df = lazy_processed.head(10000).collect()
     sex = sample_df["sex"].unique().to_list()
-    regions = sample_df["region"].unique().to_list()
 
     logger.info(f"Unique SEX values: {sex}")
-    logger.info(f"Unique REGIONS values: {regions}")
 
     ipca = IncrementalPCA(n_components=EMBEDDING_COMPONENTS, batch_size=1000)
-    numeric_scaler = StandardScaler()
 
     # TODO isn't this done by scikit?
     age_group_mapping = {val: idx for idx, val in enumerate(AGE_GROUP)}
-    population_mapping = {val: idx for idx, val in enumerate(POPULATION_RANGE)}
     sex_mapping = {val: idx for idx, val in enumerate(sex)}
-    region_mapping = {val: idx for idx, val in enumerate(regions)}
 
     processed_chunks = []
     total_processed = 0
@@ -127,67 +114,48 @@ def process_chunks(lazy_processed, chunk_size=100_000):
         else:
             embeddings_processed = ipca.transform(embeddings_array)
 
-        numeric_data = chunk_with_embeddings.select(numeric_features).to_numpy()
-        if chunk_idx == 0:
-            numeric_processed = numeric_scaler.fit_transform(numeric_data)
-        else:
-            numeric_processed = numeric_scaler.transform(numeric_data)
-
         ordinal_processed = np.column_stack(
             [
                 chunk_with_embeddings["age_group"]
                 .map_elements(lambda x: age_group_mapping.get(x, 0), return_dtype=pl.Int32)
                 .to_numpy(),
-                chunk_with_embeddings["population_range"]
-                .map_elements(lambda x: population_mapping.get(x, 0), return_dtype=pl.Int32)
-                .to_numpy(),
             ]
         ).astype(np.float32)
 
-        # one-hot encoding
         sex_encoded = np.zeros((len(chunk_with_embeddings), len(sex)), dtype=np.float32)
-        region_encoded = np.zeros((len(chunk_with_embeddings), len(regions)), dtype=np.float32)
 
-        for index, (sex_val, region_val) in enumerate(
-            zip(chunk_with_embeddings["sex"].to_list(), chunk_with_embeddings["region"].to_list())
-        ):
+        for index, sex_val in enumerate(chunk_with_embeddings["sex"].to_list()):
             if sex_val in sex_mapping:
                 sex_encoded[index, sex_mapping[sex_val]] = 1.0
-            if region_val in region_mapping:
-                region_encoded[index, region_mapping[region_val]] = 1.0
 
         combined_features = np.column_stack(
             [
-                chunk_with_embeddings["quantity"],
-                numeric_processed,
                 ordinal_processed,
                 sex_encoded,
-                region_encoded,
                 embeddings_processed,
             ]
         )
 
         embedding_names = [f"embed_{i}" for i in range(EMBEDDING_COMPONENTS)]
-        numeric_names = numeric_features
         ordinal_names = ordinal_features
         sex_names = [f"sex_{s}" for s in sex]
-        region_names = [f"region_{r}" for r in regions]
 
-        feature_names = (
-            ["quantity"]
-            + embedding_names
-            + numeric_names
-            + ordinal_names
-            + sex_names
-            + region_names
-        )
+        feature_names = embedding_names + ordinal_names + sex_names
 
-        # Create polars dataframe for this chunk
         chunk_df = pl.DataFrame(combined_features, schema=feature_names)
-
-        # Add unique_id back # TODO check this
+        keep_columns = [
+            "unique_id",
+            "year",
+            "week",
+            "sex",
+            "age_group",
+            "quantity",
+            "code_type",
+            "code",
+            "description",
+        ]
         chunk_df = pl.concat(
-            [chunk_with_embeddings.select("unique_id"), chunk_df], how="horizontal"
+            [chunk_with_embeddings.select(keep_columns), chunk_df], how="horizontal"
         )
 
         processed_chunks.append(chunk_df)
@@ -195,8 +163,8 @@ def process_chunks(lazy_processed, chunk_size=100_000):
 
         # memory cleanup
         del chunk, chunk_with_embeddings, embeddings_list, embeddings_array
-        del embeddings_processed, numeric_data, numeric_processed, ordinal_processed
-        del sex_encoded, region_encoded, combined_features, chunk_df
+        del embeddings_processed, ordinal_processed
+        del sex_encoded, combined_features, chunk_df
         gc.collect()
 
         logger.info(f"  Total processed so far: {total_processed:,}")
@@ -235,13 +203,9 @@ def main(dataset_filename: Path):
     logger.info("=" * 60)
 
     try:
-        # Step 1: Create cyclical features
-        logger.info("1. Creating cyclical features...")
-        week_cos, week_sin = create_weeks_cyclical_features()
-
         # Step 2: Load data with lazy evaluation
         logger.info("2. Loading data with lazy evaluation...")
-        lazy_df = load_data_lazy(dataset_filename, week_cos, week_sin)
+        lazy_df = load_data_lazy(dataset_filename)
 
         # Step 3: Load embeddings
         logger.info("3. Loading embeddings...")
@@ -253,7 +217,7 @@ def main(dataset_filename: Path):
 
         # Step 5: Feature selection
         logger.info("5. Feature selection...")
-        lazy_processed = lazy_joined.drop(["week", "state", "city"])
+        lazy_processed = lazy_joined.drop(["state", "city"])
 
         # Step 6: Process in chunks
         logger.info("6. Processing in chunks...")
@@ -262,7 +226,7 @@ def main(dataset_filename: Path):
         # Step 7: Save results
         logger.info("7. Saving results...")
         filename = suffix_from(dataset_filename)
-        output_path = PROCESSED_DATA_DIR / f"processed_optimized{filename}"
+        output_path = PROCESSED_DATA_DIR / f"processed_with_original_info_{filename}"
         final_df.write_parquet(output_path)
 
         logger.success("\n✅ Processing completed successfully!")
