@@ -9,11 +9,25 @@ def _():
     import marimo as mo
     import polars as pl
 
-    from vir.config import INTERIM_DATA_DIR, RAW_DATA_DIR, RAW_DATA_FILE
+    from vir.config import (
+        INTERIM_DATA_DIR,
+        PROCESSED_DATA_DIR,
+        RAW_DATA_DIR,
+        RAW_DATA_FILE,
+    )
     from vir.features import IBGE_CITY_MAP
     from vir.helpers import suffix_from
 
-    return IBGE_CITY_MAP, INTERIM_DATA_DIR, RAW_DATA_DIR, RAW_DATA_FILE, mo, pl, suffix_from
+    return (
+        IBGE_CITY_MAP,
+        INTERIM_DATA_DIR,
+        PROCESSED_DATA_DIR,
+        RAW_DATA_DIR,
+        RAW_DATA_FILE,
+        mo,
+        pl,
+        suffix_from,
+    )
 
 
 @app.cell
@@ -249,8 +263,39 @@ def _(df):
 
 
 @app.cell
+def _(PROCESSED_DATA_DIR, pl):
+    codes_df = pl.read_csv(f"{PROCESSED_DATA_DIR}/cid10_ciap2_ab.csv")
+    codes_df
+    return (codes_df,)
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""### 75% of diagnosis in this dataset""")
+    return
+
+
+@app.cell
+def _(codes_df, df, pl):
+    count = df.group_by("code_type", "code").len().sort(by="len")
+    count = count.join(codes_df, on=["code", "code_type"])
+    quantile75 = count["len"].quantile(0.75)
+    count.filter(pl.col("len").gt(quantile75))
+    return
+
+
+@app.cell
+def _(codes_df, df, pl):
+    _count = df.group_by(["code_type", "code"]).agg(pl.col("quantity").sum())
+    _count = _count.join(codes_df, on=["code", "code_type"])
+    _quantile75 = _count["quantity"].quantile(0.75)
+    _count.filter(pl.col("quantity").gt(_quantile75))
+    return
+
+
+@app.cell
 def _(df):
-    df.group_by(["code_type", "code"]).len()
+    df.group_by(["code_type", "code"]).len().describe()
     return
 
 
