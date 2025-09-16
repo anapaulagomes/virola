@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.15.2"
+__generated_with = "0.15.5"
 app = marimo.App(width="full")
 
 
@@ -93,7 +93,7 @@ def _(df, features, mo):
     _feature_options = [
         _feature
         for _feature in features
-        if _feature in ["embed", "year", "week", "quantity"] and _feature != "unique"
+        if _feature in ["embed", "quantity"] and _feature != "unique"
     ]
 
     data_batch = mo.md("""
@@ -405,7 +405,6 @@ def _(df_with_clusters):
 def _(df_with_clusters, px):
     _fig = px.histogram(df_with_clusters.group_by(["cluster"]).len("code"), x="cluster", y="code")
     _fig
-
     return
 
 
@@ -444,14 +443,6 @@ def _(cluster_dropdown, codes_df, df_with_clusters, pl):
     current_selection = current_selection.join(codes_df, on=["code", "code_type"])
     current_selection
     return (current_selection,)
-
-
-@app.cell
-def _(current_selection, df, pl):
-    cluster_embeddings = df.filter(pl.col("unique_id").is_in(current_selection["unique_id"]))[
-        [_col for _col in df.columns if _col.startswith("emb")]
-    ]
-    return cluster_embeddings
 
 
 @app.cell
@@ -579,7 +570,6 @@ def _(
     similarities_fig, results_data = compute_similarities_and_plot(
         current_selection, reduced_embeddings, umap_coords, codes, code_types, descriptions
     )
-
     return (similarities_fig,)
 
 
