@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.15.0"
+__generated_with = "0.15.5"
 app = marimo.App(width="medium")
 
 
@@ -13,27 +13,21 @@ def _():
     from transformers import AutoModel, AutoTokenizer
 
     from vir.config import PROCESSED_DATA_DIR
-    from vir.db import (
-        create_embeddings_table_if_not_exists,
-        get_connection,
-        get_embedding,
-        insert,
-    )
+    from vir.db import DEFAULT_MODEL, create_embeddings_table_if_not_exists, insert
     from vir.helpers import get_or_download_model
 
     return (
         AutoModel,
         AutoTokenizer,
-        get_connection,
-        get_embedding,
+        DEFAULT_MODEL,
+        PROCESSED_DATA_DIR,
         get_or_download_model,
         mo,
         np,
         pl,
         torch,
-        PROCESSED_DATA_DIR,
-        create_embeddings_table_if_not_exists,
         insert,
+        create_embeddings_table_if_not_exists,
     )
 
 
@@ -46,14 +40,17 @@ def _(mo):
     TODO
 
     - [ ] Evaluate the length of the sentences to define max_length (tokens)
-    - [ ] Check ABP008 (duplicated)
+
+    Notes:
+
+    - ABP008 is duplicated (confirmed in official source: https://integracao.esusab.ufsc.br/ledi/documentacao/estrutura_arquivos/dicionario-fai.html#listaciapcondicaoavaliada). To circunvent this, suffix with numbers was added to it. ABP008-1, ABP008-2.
     """
     )
     return
 
 
 @app.cell
-def _(pl, PROCESSED_DATA_DIR):
+def _(PROCESSED_DATA_DIR, pl):
     codes = pl.read_csv(f"{PROCESSED_DATA_DIR}/cid10_ciap2_ab.csv")
     codes
     return (codes,)
@@ -67,8 +64,9 @@ def _(torch):
 
 
 @app.cell
-def _():
-    model_name = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+def _(DEFAULT_MODEL):
+    # model_name = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+    model_name = DEFAULT_MODEL
     return (model_name,)
 
 
@@ -142,15 +140,15 @@ def _(codes, encode_batch):
 
 
 @app.cell
-def _(all_embeddings, codes, pl, PROCESSED_DATA_DIR, model_name):
+def _(PROCESSED_DATA_DIR, all_embeddings, codes, model_name, pl):
     embeddings_df = pl.concat(
-        [codes, pl.DataFrame(all_embeddings, schema=["embeddings"])], how="horizontal"
+        [codes, pl.DataFrame(all_embeddings, schema=["embedding"])], how="horizontal"
     )
     embeddings_df.write_parquet(
         f"{PROCESSED_DATA_DIR}/bra_medter_{model_name.replace('/', '__')}.parquet"
     )
     all_embeddings
-    return
+    return (embeddings_df,)
 
 
 @app.cell
@@ -160,40 +158,22 @@ def _(mo):
 
 
 @app.cell
-def _(embeddings_df, create_embeddings_table_if_not_exists, insert):
+def _(embeddings_df):
+    embeddings_df
+    return
+
+
+@app.cell
+def _(embeddings_df, pl):
+    (embeddings_df.group_by(["code", "code_type"]).len().filter(pl.col("len") > 1))
+    return
+
+
+@app.cell
+def _(insert, embeddings_df, create_embeddings_table_if_not_exists):
     # un-comment to store in the db
     create_embeddings_table_if_not_exists()
     insert(embeddings_df)
-    return
-
-
-@app.cell
-def _(get_embedding):
-    # E511,beribéri,cid10
-    # ABP008,beribéri,ab
-    # ABP011,tabagismo,ab
-    # F17,transtornos mentais e comportamentais devidos ao uso de fumo,cid10
-
-    get_embedding("ABP011", "ab")  # using code and code type
-    return
-
-
-@app.cell
-def _(get_connection):
-    con = get_connection()
-    return (con,)
-
-
-@app.cell
-def _(con, medical_terminologies, mo):
-    _df = mo.sql(
-        """
-        SELECT
-        model, embedding
-        FROM medical_terminologies WHERE model = 'cambridgeltl/SapBERT-from-PubMedBERT-fulltext' AND code = 'E511' AND code_type = 'cid10';
-        """,
-        engine=con,
-    )
     return
 
 
