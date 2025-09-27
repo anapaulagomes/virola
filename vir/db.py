@@ -104,12 +104,14 @@ def get_all_embeddings(model=None):
 
 
 def insert_or_update_dimension(df):
+    """
+    Inserts dimension data from a Polars DataFrame into the dimensions table.
+    """
     con = get_connection(writeable=True)
     con.register("df_view", df)
     con.execute("""
         INSERT INTO dimensions (terminology_id_1, terminology_id_2, value, dimension)
         SELECT terminology_id_1, terminology_id_2, value, dimension FROM df_view
-        ON CONFLICT DO NOTHING
     """)
 
 
@@ -132,3 +134,50 @@ def insert_clinical_dimensions(model_name=None):
         """,
         {"model": model_name or DEFAULT_MODEL},
     )
+
+
+def read_dimension(dimension):
+    con = get_connection()
+    result = con.execute(
+        """
+    SELECT terminology_id_1, terminology_id_2, value
+    FROM dimensions
+    WHERE dimension = $dimension
+    ORDER BY terminology_id_1 ASC
+    """,
+        {"dimension": dimension},
+    )
+    return result.pl()
+
+
+def count_terminologies():
+    con = get_connection()
+    result = con.execute(
+        """
+    SELECT COUNT(*)
+    FROM medical_terminologies
+    """
+    ).fetchone()
+    return result
+
+
+def fetch_terminologies():
+    con = get_connection()
+    result = con.execute(
+        """
+    SELECT id, code, code_type, code || ':' || code_type AS label
+    FROM medical_terminologies
+    ORDER BY id
+    """
+        "",
+    ).pl()
+    return result
+
+
+def dimension_exists(dimension: str) -> bool:
+    """Checks if a given dimension exists in the dimensions table."""
+    con = get_connection()
+    result = con.execute(
+        "SELECT 1 FROM dimensions WHERE dimension = ? LIMIT 1", [dimension]
+    ).fetchone()
+    return result is not None
