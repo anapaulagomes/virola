@@ -1,7 +1,7 @@
 import duckdb
 
-EMBEDDINGS_DB = "bra_medter_embeddings.db"
-DEFAULT_MODEL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+EMBEDDINGS_DB = "virola.db"
+DEFAULT_MODEL = "medicalai/ClinicalBERT"
 MODEL_DIMENSIONS = 768
 
 
@@ -11,16 +11,34 @@ def get_connection(writeable=False):
 
 def create_embeddings_table_if_not_exists():
     con = get_connection(writeable=True)
-    con.from_query(
+    con.execute(
         """
         CREATE SEQUENCE IF NOT EXISTS id_sequence START 1;
         CREATE TABLE IF NOT EXISTS medical_terminologies(
-             id INTEGER DEFAULT nextval('id_sequence'),
-             code VARCHAR,
-             code_type VARCHAR,
-             description VARCHAR,
-             model VARCHAR,
-             embedding FLOAT[] NOT NULL,
+            id INTEGER PRIMARY KEY DEFAULT nextval('id_sequence'),
+            code_type VARCHAR,
+            code VARCHAR,
+            description VARCHAR,
+            model VARCHAR,
+            embedding FLOAT[],
+            UNIQUE(code, code_type, model)
+        );
+        """
+    )
+
+
+def create_dimensions_table_if_not_exists():
+    con = get_connection(writeable=True)
+    con.execute(
+        """
+        CREATE SEQUENCE IF NOT EXISTS id_sequence START 1;
+        CREATE TABLE IF NOT EXISTS dimensions (
+            terminology_id_1 INTEGER NOT NULL REFERENCES medical_terminologies(id),
+            terminology_id_2 INTEGER NOT NULL REFERENCES medical_terminologies(id),
+            value FLOAT4 NOT NULL,
+            dimension VARCHAR NOT NULL,
+            PRIMARY KEY (terminology_id_1, terminology_id_2, dimension),
+            CHECK (terminology_id_1 < terminology_id_2)
         );
         """
     )
@@ -47,7 +65,8 @@ def insert(df, model=None):
     con.register("df_view", df)
     con.execute(f"""
         INSERT INTO medical_terminologies (code, code_type, description, model, embedding)
-        SELECT code, code_type, description, '{model or DEFAULT_MODEL}' AS model, embeddings FROM df_view
+        SELECT code, code_type, description, '{model or DEFAULT_MODEL}' AS model, embedding FROM df_view
+        ON CONFLICT DO NOTHING
     """)
 
 
@@ -82,3 +101,34 @@ def get_all_embeddings(model=None):
             for row in result
         ]
     return []
+
+
+def insert_or_update_dimension(df):
+    con = get_connection(writeable=True)
+    con.register("df_view", df)
+    con.execute("""
+        INSERT INTO dimensions (terminology_id_1, terminology_id_2, value, dimension)
+        SELECT terminology_id_1, terminology_id_2, value, dimension FROM df_view
+        ON CONFLICT DO NOTHING
+    """)
+
+
+def insert_clinical_dimensions(model_name=None):
+    """Inserts the clinical dimensions into the database.
+
+    Reads all terminologies and calculate the cosine similarity of its embeddings."""
+    con = get_connection(writeable=True)
+    con.execute(
+        """
+        INSERT INTO dimensions
+        SELECT
+            t1.id AS terminology_id_1,
+            t2.id AS terminology_id_2,
+            array_cosine_similarity(t1.embedding::float[768], t2.embedding::float[768]) AS value,
+            'clinical' AS dimension
+        FROM medical_terminologies t1
+        JOIN medical_terminologies t2 ON t1.id < t2.id
+        WHERE t1.model = $model;
+        """,
+        {"model": model_name or DEFAULT_MODEL},
+    )
