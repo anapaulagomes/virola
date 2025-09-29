@@ -16,7 +16,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License"
 ]
 dependencies = [
-    "dtaidistance>=2.3.13",
+    "aeon>=1.3.0",
     "duckdb>=1.3.2",
     "einops>=0.8.1",
     "embedding-atlas>=0.9.0",

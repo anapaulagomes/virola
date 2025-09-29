@@ -9,24 +9,26 @@ def _():
     import marimo as mo
     import numpy as np
     import polars as pl
-    from dtaidistance import dtw, similarity
+    from aeon.distances import dtw_pairwise_distance
     from sklearn import cluster
     from snf import compute, metrics
 
+    from vir.config import DATA_DIR
     from vir.db import (
+        create_dimensions_table_if_not_exists,
+        create_embeddings_table_if_not_exists,
         dimension_exists,
         fetch_terminologies,
         insert_or_update_dimension,
         read_dimension,
-        create_embeddings_table_if_not_exists,
-        create_dimensions_table_if_not_exists
     )
-    from vir.config import DATA_DIR
+
     return (
         DATA_DIR,
         cluster,
         compute,
         dimension_exists,
+        dtw_pairwise_distance,
         fetch_terminologies,
         insert_or_update_dimension,
         metrics,
@@ -34,7 +36,8 @@ def _():
         np,
         pl,
         read_dimension,
-        similarity,
+        create_embeddings_table_if_not_exists,
+        create_dimensions_table_if_not_exists,
     )
 
 
@@ -46,6 +49,12 @@ def _(DATA_DIR, pl):
     df = df.filter(pl.col("year").ge(2022))
     df.head()
     return (df,)
+
+
+@app.cell
+def _(df):
+    len(df.group_by(["code", "code_type"]).unique())
+    return
 
 
 @app.cell
@@ -170,6 +179,7 @@ def _(np, pl, read_dimension):
         np.fill_diagonal(mat, 1)
 
         return mat, all_ids_df["id"].to_list()
+
     return (load_dimension,)
 
 
@@ -240,31 +250,22 @@ def _(pl, temporal_pivot):
 
 
 @app.cell
-def _(temporal_pivot):
-    _labels = temporal_pivot["id"].to_list()
-    _series = temporal_pivot.drop("id").to_numpy()
-
-    # min-max scaling por linha
-    _series = (_series - _series.min(axis=1, keepdims=True)) / (
-        _series.max(axis=1, keepdims=True) - _series.min(axis=1, keepdims=True) + 1e-9
-    )
-    _series
-    return
-
-
-@app.cell
-def _(dtw, pl):
+def _(dtw_pairwise_distance, pl):
     def make_temporal_matrix(temporal_pivot: pl.DataFrame, window: int | None = None):
-        labels = temporal_pivot["id"].to_list()
+        labels = [str(_id) for _id in temporal_pivot["id"].to_list()]
         series = temporal_pivot.drop("id").to_numpy()
+        print(type(series), series.shape)
 
-        series = (series - series.min(axis=1, keepdims=True)) / (
+        series = (series - series.min(axis=1, keepdims=True)) / (  # normalized
             series.max(axis=1, keepdims=True) - series.min(axis=1, keepdims=True) + 1e-9
         )
+        print("Temporal matrix normalized...")
         series_list = [s for s in series]
 
-        dist_matrix = dtw.distance_matrix(series_list, parallel=True, window=window)
+        print("Let's calculate the distance using DTW...")
+        dist_matrix = dtw_pairwise_distance(series_list, n_jobs=-1)
 
+        print("Putting in the matrix...")
         df_dtw = pl.DataFrame(dist_matrix, schema=labels).with_columns(pl.Series("id", labels))
         return df_dtw
 
@@ -278,6 +279,12 @@ def _(make_temporal_matrix, temporal_pivot):
 
 
 @app.cell
+def _(df_dtw):
+    df_dtw
+    return
+
+
+@app.cell
 def _(df_dtw, similarity):
     temporal_mat = similarity.distance_to_similarity(df_dtw)
     return (temporal_mat,)
@@ -286,7 +293,7 @@ def _(df_dtw, similarity):
 @app.cell
 def _():
     # hyperparameters
-    K = 1494
+    K = 30
     return (K,)
 
 
