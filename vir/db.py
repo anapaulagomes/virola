@@ -1,12 +1,15 @@
 import duckdb
 
-EMBEDDINGS_DB = "virola.db"
+from vir.config import DATA_DIR
+
+
+PROJECT_DB = DATA_DIR / "virola.db"
 DEFAULT_MODEL = "medicalai/ClinicalBERT"
 MODEL_DIMENSIONS = 768
 
 
 def get_connection(writeable=False):
-    return duckdb.connect(EMBEDDINGS_DB, read_only=not writeable)
+    return duckdb.connect(PROJECT_DB, read_only=not writeable)
 
 
 def create_embeddings_table_if_not_exists():
