@@ -18,13 +18,15 @@ def _():
         fetch_terminologies,
         insert_or_update_dimension,
         read_dimension,
+        create_embeddings_table_if_not_exists,
+        create_dimensions_table_if_not_exists
     )
-
+    from vir.config import DATA_DIR
     return (
+        DATA_DIR,
         cluster,
         compute,
         dimension_exists,
-        dtw,
         fetch_terminologies,
         insert_or_update_dimension,
         metrics,
@@ -37,9 +39,9 @@ def _():
 
 
 @app.cell
-def _(pl):
+def _(DATA_DIR, pl):
     df = pl.read_parquet(
-        "data/interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet"
+        DATA_DIR / "interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet"
     )
     df = df.filter(pl.col("year").ge(2022))
     df.head()
@@ -49,6 +51,13 @@ def _(pl):
 @app.cell
 def _(df):
     df.shape
+    return
+
+
+@app.cell
+def _():
+    # first time!
+    # create_embeddings_table_if_not_exists(), create_dimensions_table_if_not_exists()
     return
 
 
@@ -84,7 +93,18 @@ def _(mo):
 
 @app.cell
 def _(mo):
-    mo.md(r"""### Clinical dimension""")
+    mo.md(
+        r"""
+    ### Clinical dimension
+
+    To run clinical dimension, it is needed to place the descriptions of different
+    terminiologies into the same embedded space and then calculate the distance
+    among them.
+
+    For this, run the notebook uv run vir/terminologies/embeddings_model.py
+    Then run insert_clinical_dimensions() to store this dimension in the db.
+    """
+    )
     return
 
 
@@ -150,7 +170,6 @@ def _(np, pl, read_dimension):
         np.fill_diagonal(mat, 1)
 
         return mat, all_ids_df["id"].to_list()
-
     return (load_dimension,)
 
 
