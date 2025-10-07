@@ -24,41 +24,32 @@ def _(mo):
 
 @app.cell
 def _():
-    # # each is an (n_diagnosis x n_diagnosis) NumPy array
-    # clinical = np.array(...)
-    # temporal = np.array(...)
-    # demographics = np.array(...)
-
-    # alpha = 0.5   # clinical weight
-    # beta  = 0.3   # temporal weight
-    # delta = 0.2   # demographic weight
-
-    # similarity_matrix = (alpha * S_clinical) + (beta  * S_temporal) + (delta * S_demo)
-
-    # # Optional: convert to distance matrix for clustering
-    # distance_matrix = 1 - similarity_matrix
-
-    # similarity_matrix, distance_matrix
-    return
-
-
-@app.cell
-def _():
     import marimo as mo
+    import matplotlib.pyplot as plt
     import numpy as np
     import polars as pl
     from aeon.distances import dtw_pairwise_distance
     from sklearn import cluster
     from snf import compute, metrics
 
-    return cluster, compute, dtw_pairwise_distance, metrics, mo, np, pl
+    return cluster, compute, dtw_pairwise_distance, metrics, mo, np, pl, plt
 
 
 @app.cell
 def _():
-    from vir.db import fetch_terminologies, read_dimension
+    from vir.db import (
+        dimension_exists,
+        fetch_terminologies,
+        insert_or_update_dimension,
+        read_dimension,
+    )
 
-    return fetch_terminologies, read_dimension
+    return (
+        dimension_exists,
+        fetch_terminologies,
+        insert_or_update_dimension,
+        read_dimension,
+    )
 
 
 @app.cell
@@ -106,7 +97,7 @@ def _(df):
         _index: terminology_id
         for _index, terminology_id in enumerate(df["terminology_id"].unique())
     }
-    return (terminology_to_ids,)
+    return ids_to_terminology, terminology_to_ids
 
 
 @app.cell
@@ -135,7 +126,7 @@ def _(mo):
 
 
 @app.cell
-def _(empty_matrix, pl, read_dimension, terminology_to_ids):
+def _(empty_matrix, np, pl, read_dimension, terminology_to_ids):
     def load_clinical_dimension():
         clinical_df = read_dimension("clinical")
         _ids = list(terminology_to_ids.keys())
@@ -145,13 +136,13 @@ def _(empty_matrix, pl, read_dimension, terminology_to_ids):
 
         i = clinical_df["terminology_id_1"].replace_strict(terminology_to_ids).to_numpy()
         j = clinical_df["terminology_id_2"].replace_strict(terminology_to_ids).to_numpy()
-        v = clinical_df["value"].to_numpy()  # TODO check if scaling is needed here
+        v = clinical_df["value"].to_numpy()  # scale later
 
         clinical_matrix = empty_matrix.copy()
         clinical_matrix[i, j] = v
         clinical_matrix[j, i] = v
 
-        # np.fill_diagonal(clinical_matrix, 1)  # TODO check if 0 or 1
+        np.fill_diagonal(clinical_matrix, 0)  # enforce 0
         return clinical_matrix
 
     return (load_clinical_dimension,)
@@ -197,7 +188,6 @@ def _(df_year_week):
         .get_column("year_week")
         .to_list()
     )
-    ordered_year_week
     return (ordered_year_week,)
 
 
@@ -217,69 +207,161 @@ def _(df_year_week, ordered_year_week):
 
 
 @app.cell
-def _(pl, temporal_pivot):
-    # TODO refactor from here
-
-    value_cols = [c for c in temporal_pivot.columns if c != "id"]
-    pivot_scaled = temporal_pivot.with_columns(
-        [
-            (
-                (pl.col(col) - pl.min_horizontal(pl.col(value_cols)))
-                / (pl.max_horizontal(pl.col(value_cols)) - pl.min_horizontal(pl.col(value_cols)))
-            ).alias(col)
-            for col in value_cols
-        ]
+def _(dtw_pairwise_distance, ordered_year_week, temporal_pivot):
+    dtw_results = dtw_pairwise_distance(
+        temporal_pivot.select(ordered_year_week).to_numpy(), n_jobs=-1
     )
-    pivot_scaled
+    dtw_results
+    return (dtw_results,)
+
+
+@app.cell
+def _():
+    # dtw took 14 min with n jobs = -1
     return
 
 
 @app.cell
-def _(dtw_pairwise_distance, pl):
-    def make_temporal_matrix(temporal_pivot: pl.DataFrame, window: int | None = None):
-        labels = [str(_id) for _id in temporal_pivot["id"].to_list()]
-        series = temporal_pivot.drop("id").to_numpy()
-        print(type(series), series.shape)
+def _(dtw_results, np):
+    def load_temporal_dimension():
+        temporal_matrix = dtw_results.copy()
 
-        series = (series - series.min(axis=1, keepdims=True)) / (  # normalized
-            series.max(axis=1, keepdims=True) - series.min(axis=1, keepdims=True) + 1e-9
+        np.fill_diagonal(temporal_matrix, 0)  # enforce 0
+        return temporal_matrix
+
+    return (load_temporal_dimension,)
+
+
+@app.cell
+def _(load_temporal_dimension):
+    temporal_matrix = load_temporal_dimension()
+    return (temporal_matrix,)
+
+
+@app.cell
+def _(
+    dimension_exists,
+    ids_to_terminology,
+    insert_or_update_dimension,
+    mo,
+    pl,
+    temporal_matrix,
+):
+    if not dimension_exists("temporal"):
+        mo.md("Salvando a dimensão temporal no banco de dados...")
+
+        to_db = {
+            "terminology_id_1": [],
+            "terminology_id_2": [],
+            "value": [],
+        }
+        for _out in range(len([1, 2])):
+            for _in in range(len([1, 2])):
+                print(
+                    ids_to_terminology[_out], ids_to_terminology[_in], temporal_matrix[_out][_in]
+                )
+                to_db["terminology_id_1"].append(ids_to_terminology[_out])
+                to_db["terminology_id_2"].append(ids_to_terminology[_in])
+                to_db["value"].append(temporal_matrix[_out][_in])
+
+        df_to_insert = pl.DataFrame(to_db).with_columns(pl.lit("temporal").alias("dimension"))
+
+        insert_or_update_dimension(df_to_insert)
+
+        mo.md("✅ Dimensão temporal salva.")
+    else:
+        mo.md("A dimensão temporal já existe no banco de dados.")
+    return
+
+
+@app.cell
+def _(epsilon, neighbors, np):
+    def stable_affinity_from_distance(a_distance_matrix, K=30, mu=0.5, eps=1e-8):
+        """
+        This function converts a distance matrix into an affinity (similarity) matrix
+        using an adaptive Gaussian kernel, following the idea from Similarity Network Fusion (SNF).
+        It prevents numerical instability when sigma (the adaptive scale) becomes very small,
+        which can otherwise lead to overflow or NaN values.
+        """
+        distance_matrix = np.nan_to_num(
+            a_distance_matrix, nan=0.0, posinf=np.nanmax(a_distance_matrix), neginf=0.0
         )
-        print("Temporal matrix normalized...")
-        series_list = [s for s in series]
 
-        print("Let's calculate the distance using DTW...")
-        dist_matrix = dtw_pairwise_distance(series_list, n_jobs=-1)
+        # ensure perfect symmetry (averaging the matrix with its transpose)
+        distance_matrix = (distance_matrix + distance_matrix.T) / 2.0
 
-        print("Putting in the matrix...")
-        df_dtw = pl.DataFrame(dist_matrix, schema=labels).with_columns(pl.Series("id", labels))
-        return df_dtw
+        np.fill_diagonal(distance_matrix, 0.0)
 
-    return (make_temporal_matrix,)
+        # normalize all distances to the range [0, 1]
+        distance_matrix = distance_matrix / (np.nanmax(distance_matrix) + epsilon)
+
+        # sort distances within each row to find K nearest neighbors
+        sorted_distances = np.sort(distance_matrix, axis=1)
+
+        # compute the average distance to the K nearest neighbors for each sample
+        mean_neighbor_distance = np.vstack(
+            sorted_distances[:, 1 : neighbors + 1].mean(axis=1) + epsilon
+        )
+
+        # compute adaptive local scale sigma according to SNF definition
+        sigma = (mean_neighbor_distance + mean_neighbor_distance.T + distance_matrix) / 3.0
+
+        # avoid extremely small sigma values (numerical underflow)
+        sigma = np.clip(mu * sigma, epsilon, None)
+
+        # compute Gaussian affinity kernel
+        affinity_matrix = np.exp(-(distance_matrix**2) / (2.0 * sigma**2))
+        affinity_matrix = np.nan_to_num(affinity_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        np.fill_diagonal(affinity_matrix, 0.0)
+
+        return affinity_matrix
+
+    return (stable_affinity_from_distance,)
 
 
 @app.cell
-def _(make_temporal_matrix, temporal_pivot):
-    df_dtw = make_temporal_matrix(temporal_pivot, window=10)
-    return (df_dtw,)
+def _(np, stable_affinity_from_distance, temporal_matrix):
+    temporal_matrix_normalized = stable_affinity_from_distance(temporal_matrix, K=20, mu=0.5)
+    print(np.nanmin(temporal_matrix_normalized), np.nanmax(temporal_matrix_normalized))
+
+    return (temporal_matrix_normalized,)
 
 
 @app.cell
-def _(df_dtw, np, pl):
-    # normalized_df_dtw = (df_dtw[:, :-1] / np.nanmax(df_dtw[:, :-1])).to_numpy()  # escala para [0, 1]
-    normalized_df_dtw = df_dtw.select(
-        pl.all().exclude("id")
-    ).to_numpy()  # (n x n) só as distâncias  # TODO check this
-    normalized_df_dtw = normalized_df_dtw / np.nanmax(normalized_df_dtw)
+def _(plt, temporal_matrix_normalized):
+    plt.imshow(temporal_matrix_normalized[:100, :100], cmap="viridis")
+    plt.colorbar()
+    plt.title("Affinity matrix (temporal - DTW)")
+    plt.show()
 
-    # Usando kernel RBF gaussiano (como sugerido no paper original do SNF)
-    sigma = np.nanmedian(normalized_df_dtw[normalized_df_dtw > 0])  # ignora zeros da diagonal
-    temporal_mat = np.exp(-(normalized_df_dtw**2) / (2 * sigma**2)).astype(np.float32)
-    return (temporal_mat,)
+    return
 
 
 @app.cell
-def _(temporal_mat):
-    temporal_mat
+def _(clinical_mat, plt):
+    plt.imshow(clinical_mat[:100, :100], cmap="viridis")
+    plt.colorbar()
+    plt.title("Affinity matrix (temporal - DTW)")
+    plt.show()
+
+    return
+
+
+@app.cell
+def _(np, temporal_matrix_normalized):
+    np.nanmin(temporal_matrix_normalized), np.nanmax(temporal_matrix_normalized)
+    return
+
+
+@app.cell
+def _(clinical_mat, np):
+    np.nanmin(clinical_mat), np.nanmax(clinical_mat)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""## Affinities""")
     return
 
 
@@ -291,60 +373,30 @@ def _():
 
 
 @app.cell
-def _():
-    # if not dimension_exists("temporal"):
-    #     mo.md("Salvando a dimensão temporal no banco de dados...")
-
-    #     n = temporal_mat.shape[0]
-    #     rows, cols = np.triu_indices(n, k=1)
-
-    #     df_to_insert = pl.DataFrame({
-    #         "terminology_id_1": np.array(clinical_ids)[rows],
-    #         "terminology_id_2": np.array(clinical_ids)[cols],
-    #         "value": temporal_mat[rows, cols],
-    #     }).with_columns(
-    #         pl.lit("temporal").alias("dimension")
-    #     )
-
-    #     insert_or_update_dimension(df_to_insert)
-
-    #     mo.md("✅ Dimensão temporal salva.")
-    # else:
-    #     mo.md("A dimensão temporal já existe no banco de dados.")
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""## Affinities""")
-    return
-
-
-@app.cell
-def _(load_dimension):
-    temp_mat, temp_ids = load_dimension("temporal")
-    return (temp_mat,)
-
-
-@app.cell
-def _(clinical_mat):
-    clinical_mat.shape
-    return
-
-
-@app.cell
-def _(clinical_mat, temp_mat):
+def _(clinical_mat, temporal_matrix_normalized):
     # all views
-    affinities = [clinical_mat, temp_mat]
+    affinities = [clinical_mat, temporal_matrix_normalized]
     return (affinities,)
 
 
 @app.cell
 def _(K, affinities, compute, np):
-    fused = compute.snf(affinities, K=K)  # 14 min
+    fused = compute.snf(affinities, K=K)  # 5 min
     print(np.isnan(fused).any())  # nan might occurr due to divisions to 0
     fused = np.nan_to_num(fused, nan=0.0, posinf=1.0, neginf=0.0)
     return (fused,)
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""### Finding the perfect K""")
+    return
+
+
+@app.cell
+def _():
+    # TODO
+    return
 
 
 @app.cell
@@ -357,10 +409,9 @@ def _(mo):
 def _(compute, fused):
     # estimate the number of clusters present in the fused matrix, derived via
     # an "eigengap" method (i.e., largest difference in eigenvalues of the
-    # laplacian of the graph). note this function returns the top two options;
-    # we'll only use the first
+    # laplacian of the graph). note this function returns the top two options
     first, second = compute.get_n_clusters(
-        fused, range(2, 20)
+        fused, range(2, 50)
     )  # TODO establish a better range given the number of codes
     return first, second
 
@@ -372,32 +423,16 @@ def _(first, second):
 
 
 @app.cell
-def _(cluster, first, fused):
-    fused_labels = cluster.spectral_clustering(fused, n_clusters=first)
-    return (fused_labels,)
-
-
-@app.cell
-def _(affinities, cluster, first, fused_labels, metrics, terminology_labels):
-    # clustering depois da fusão
-    labels = [terminology_labels["label"], fused_labels]
-    for arr in affinities:
-        labels += [cluster.spectral_clustering(arr, n_clusters=first)]
-    nmi = metrics.nmi(labels)
-    return (nmi,)
-
-
-@app.cell
-def _(nmi):
-    nmi
-    return
-
-
-@app.cell
 def _(fused, fused_labels, metrics):
     silhouette = metrics.silhouette_score(fused, fused_labels)  # nan se tiver apenas uma amostra!
     silhouette
     return
+
+
+@app.cell
+def _(cluster, first, fused):
+    fused_labels = cluster.spectral_clustering(fused, n_clusters=first)
+    return (fused_labels,)
 
 
 if __name__ == "__main__":
