@@ -4,84 +4,6 @@ __generated_with = "0.15.5"
 app = marimo.App(width="medium")
 
 
-@app.cell
-def _():
-    import marimo as mo
-    import numpy as np
-    import polars as pl
-    from aeon.distances import dtw_pairwise_distance
-    from sklearn import cluster
-    from snf import compute, metrics
-
-    from vir.config import DATA_DIR
-    from vir.db import (
-        create_dimensions_table_if_not_exists,
-        create_embeddings_table_if_not_exists,
-        dimension_exists,
-        fetch_terminologies,
-        insert_or_update_dimension,
-        read_dimension,
-    )
-
-    return (
-        DATA_DIR,
-        cluster,
-        compute,
-        dimension_exists,
-        dtw_pairwise_distance,
-        fetch_terminologies,
-        insert_or_update_dimension,
-        metrics,
-        mo,
-        np,
-        pl,
-        read_dimension,
-        create_embeddings_table_if_not_exists,
-        create_dimensions_table_if_not_exists,
-    )
-
-
-@app.cell
-def _(DATA_DIR, pl):
-    df = pl.read_parquet(
-        DATA_DIR / "interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet"
-    )
-    df = df.filter(pl.col("year").ge(2022))
-    df.head()
-    return (df,)
-
-
-@app.cell
-def _(df):
-    len(df.group_by(["code", "code_type"]).unique())
-    return
-
-
-@app.cell
-def _(df):
-    df.shape
-    return
-
-
-@app.cell
-def _():
-    # first time!
-    # create_embeddings_table_if_not_exists(), create_dimensions_table_if_not_exists()
-    return
-
-
-@app.cell
-def _(fetch_terminologies):
-    terminology_labels = fetch_terminologies()
-    return (terminology_labels,)
-
-
-@app.cell
-def _(terminology_labels):
-    terminology_labels
-    return
-
-
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(
@@ -95,23 +17,6 @@ def _(mo):
     * **Demographic**: sex and gender characteristics
 
     Calculate the similarity in all these dimensions, having the diagnosis as the central factor.
-    """
-    )
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(
-        r"""
-    ### Clinical dimension
-
-    To run clinical dimension, it is needed to place the descriptions of different
-    terminiologies into the same embedded space and then calculate the distance
-    among them.
-
-    For this, run the notebook uv run vir/terminologies/embeddings_model.py
-    Then run insert_clinical_dimensions() to store this dimension in the db.
     """
     )
     return
@@ -138,61 +43,124 @@ def _():
 
 
 @app.cell
-def _(np, pl, read_dimension):
-    def load_dimension(dimension: str):
-        """
-        Lê os dados de uma dimensão do banco de dados e constrói uma matriz de afinidade.
+def _():
+    import marimo as mo
+    import numpy as np
+    import polars as pl
+    from aeon.distances import dtw_pairwise_distance
+    from sklearn import cluster
+    from snf import compute, metrics
 
-        Retorna a matriz e a lista de IDs na ordem correspondente.
-        """
-        df = read_dimension(dimension)
-
-        id_col1 = df.select("terminology_id_1").rename({"terminology_id_1": "id"})
-        id_col2 = df.select("terminology_id_2").rename({"terminology_id_2": "id"})
-        all_ids_df = pl.concat([id_col1, id_col2]).unique().sort("id")
-
-        n = all_ids_df.height
-        # Criar um mapa de ID para índice (0 a n-1)
-        id2idx = {id_val: i for i, id_val in enumerate(all_ids_df["id"].to_list())}
-
-        # Usar map_elements para converter IDs para índices
-        i = (
-            df["terminology_id_1"]
-            .map_elements(lambda x: id2idx[x], return_dtype=pl.Int32)
-            .to_numpy()
-        )
-        j = (
-            df["terminology_id_2"]
-            .map_elements(lambda x: id2idx[x], return_dtype=pl.Int32)
-            .to_numpy()
-        )
-        v = df["value"].to_numpy()
-
-        # Escalar a similaridade de cosseno de [-1, 1] para [0, 1]
-        v_scaled = (v + 1) / 2
-
-        mat = np.zeros((n, n), dtype=np.float32)
-        mat[i, j] = v_scaled
-        mat[j, i] = v_scaled  # Garantir simetria
-
-        # Preencher a diagonal com 1 (auto-similaridade)
-        np.fill_diagonal(mat, 1)
-
-        return mat, all_ids_df["id"].to_list()
-
-    return (load_dimension,)
+    return cluster, compute, dtw_pairwise_distance, metrics, mo, np, pl
 
 
 @app.cell
-def _(load_dimension):
-    clinical_mat, clinical_ids = load_dimension("clinical")
-    return clinical_ids, clinical_mat
+def _():
+    from vir.db import fetch_terminologies, read_dimension
+
+    return fetch_terminologies, read_dimension
 
 
 @app.cell
-def _(clinical_mat):
-    clinical_mat
+def _(mo):
+    mo.md(r"""## Data loading""")
     return
+
+
+@app.cell
+def _(fetch_terminologies):
+    terminology_labels = fetch_terminologies()
+    return (terminology_labels,)
+
+
+@app.cell
+def _(terminology_labels):
+    terminology_labels
+    return
+
+
+@app.cell
+def _(pl, terminology_labels):
+    df = pl.read_parquet(
+        "data/interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet",
+    )
+    df = df.drop(["unique_id", "state", "city", "region", "population_range"])  # make it per city
+    df = df.group_by(["year", "week", "sex", "age_group", "code_type", "code"]).agg(
+        pl.col("quantity").sum()
+    )
+    df = df.join(terminology_labels, on=["code", "code_type"]).rename(
+        {"id": "terminology_id", "label": "terminology_label"}
+    )
+    df = df.filter(pl.col("year").ge(2022))
+    df.head()
+    return (df,)
+
+
+@app.cell
+def _(df):
+    terminology_to_ids = {
+        terminology_id: _index
+        for _index, terminology_id in enumerate(df["terminology_id"].unique())
+    }
+    ids_to_terminology = {
+        _index: terminology_id
+        for _index, terminology_id in enumerate(df["terminology_id"].unique())
+    }
+    return (terminology_to_ids,)
+
+
+@app.cell
+def _(np, terminology_to_ids):
+    matrix_len = len(terminology_to_ids)
+    empty_matrix = np.zeros((matrix_len, matrix_len), dtype=np.float32)
+    return (empty_matrix,)
+
+
+@app.cell
+def _(empty_matrix):
+    empty_matrix
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""## Dimensions""")
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""### Clinical dimension""")
+    return
+
+
+@app.cell
+def _(empty_matrix, pl, read_dimension, terminology_to_ids):
+    def load_clinical_dimension():
+        clinical_df = read_dimension("clinical")
+        _ids = list(terminology_to_ids.keys())
+        clinical_df = clinical_df.filter(
+            pl.col("terminology_id_1").is_in(_ids) & pl.col("terminology_id_2").is_in(_ids)
+        )
+
+        i = clinical_df["terminology_id_1"].replace_strict(terminology_to_ids).to_numpy()
+        j = clinical_df["terminology_id_2"].replace_strict(terminology_to_ids).to_numpy()
+        v = clinical_df["value"].to_numpy()  # TODO check if scaling is needed here
+
+        clinical_matrix = empty_matrix.copy()
+        clinical_matrix[i, j] = v
+        clinical_matrix[j, i] = v
+
+        # np.fill_diagonal(clinical_matrix, 1)  # TODO check if 0 or 1
+        return clinical_matrix
+
+    return (load_clinical_dimension,)
+
+
+@app.cell
+def _(load_clinical_dimension):
+    clinical_mat = load_clinical_dimension()
+    return (clinical_mat,)
 
 
 @app.cell
@@ -208,33 +176,50 @@ def _(mo):
 
 
 @app.cell
-def _(df, pl, terminology_labels):
-    df_with_ids = df.join(terminology_labels, on=["code", "code_type"], how="left")
-    df_with_ids = (
-        df_with_ids.with_columns(
+def _(df, pl):
+    df_year_week = (
+        df.with_columns(
             (pl.col("year").cast(pl.Utf8) + "-" + pl.col("week").cast(pl.Utf8)).alias("year_week")
         )
-        .group_by(["id", "year", "week", "year_week"])
+        .group_by(["terminology_id", "year", "week", "year_week"])
         .agg(pl.col("quantity").sum().alias("total"))
     )
+    df_year_week
+    return (df_year_week,)
 
-    temporal_pivot = df_with_ids.pivot(values="total", index="id", on="year_week").fill_null(0)
 
-    year_weeks = (
-        df_with_ids.select("year_week", "year", "week")
+@app.cell
+def _(df_year_week):
+    ordered_year_week = (
+        df_year_week.select("year_week", "year", "week")
         .unique()
         .sort(["year", "week"])  # ordena cronologicamente
         .get_column("year_week")
         .to_list()
     )
+    ordered_year_week
+    return (ordered_year_week,)
 
-    temporal_pivot = temporal_pivot.select(["id"] + year_weeks)
+
+@app.cell
+def _(df_year_week, ordered_year_week):
+    temporal_pivot = (
+        df_year_week.pivot(
+            index="terminology_id",  # rows
+            on="year_week",  # new columns
+            values="total",  # cell value
+        )
+        .fill_null(0)
+        .select(["terminology_id"] + ordered_year_week)
+    )
     temporal_pivot
     return (temporal_pivot,)
 
 
 @app.cell
 def _(pl, temporal_pivot):
+    # TODO refactor from here
+
     value_cols = [c for c in temporal_pivot.columns if c != "id"]
     pivot_scaled = temporal_pivot.with_columns(
         [
@@ -279,15 +264,23 @@ def _(make_temporal_matrix, temporal_pivot):
 
 
 @app.cell
-def _(df_dtw):
-    df_dtw
-    return
+def _(df_dtw, np, pl):
+    # normalized_df_dtw = (df_dtw[:, :-1] / np.nanmax(df_dtw[:, :-1])).to_numpy()  # escala para [0, 1]
+    normalized_df_dtw = df_dtw.select(
+        pl.all().exclude("id")
+    ).to_numpy()  # (n x n) só as distâncias  # TODO check this
+    normalized_df_dtw = normalized_df_dtw / np.nanmax(normalized_df_dtw)
+
+    # Usando kernel RBF gaussiano (como sugerido no paper original do SNF)
+    sigma = np.nanmedian(normalized_df_dtw[normalized_df_dtw > 0])  # ignora zeros da diagonal
+    temporal_mat = np.exp(-(normalized_df_dtw**2) / (2 * sigma**2)).astype(np.float32)
+    return (temporal_mat,)
 
 
 @app.cell
-def _(df_dtw, similarity):
-    temporal_mat = similarity.distance_to_similarity(df_dtw)
-    return (temporal_mat,)
+def _(temporal_mat):
+    temporal_mat
+    return
 
 
 @app.cell
@@ -299,42 +292,25 @@ def _():
 
 @app.cell
 def _():
-    # From: https://snfpy.readthedocs.io
-    # While the appropriate numbers for these varies based on scenario,
-    # a good rule is that K should be around N // 10,
-    # and mu should be in the range (0.2 - 0.8).
-    return
+    # if not dimension_exists("temporal"):
+    #     mo.md("Salvando a dimensão temporal no banco de dados...")
 
+    #     n = temporal_mat.shape[0]
+    #     rows, cols = np.triu_indices(n, k=1)
 
-@app.cell
-def _(
-    clinical_ids,
-    dimension_exists,
-    insert_or_update_dimension,
-    mo,
-    np,
-    pl,
-    temporal_mat,
-):
-    if not dimension_exists("temporal"):
-        mo.md("Salvando a dimensão temporal no banco de dados...")
+    #     df_to_insert = pl.DataFrame({
+    #         "terminology_id_1": np.array(clinical_ids)[rows],
+    #         "terminology_id_2": np.array(clinical_ids)[cols],
+    #         "value": temporal_mat[rows, cols],
+    #     }).with_columns(
+    #         pl.lit("temporal").alias("dimension")
+    #     )
 
-        n = temporal_mat.shape[0]
-        rows, cols = np.triu_indices(n, k=1)
+    #     insert_or_update_dimension(df_to_insert)
 
-        df_to_insert = pl.DataFrame(
-            {
-                "terminology_id_1": np.array(clinical_ids)[rows],
-                "terminology_id_2": np.array(clinical_ids)[cols],
-                "value": temporal_mat[rows, cols],
-            }
-        ).with_columns(pl.lit("temporal").alias("dimension"))
-
-        insert_or_update_dimension(df_to_insert)
-
-        mo.md("✅ Dimensão temporal salva.")
-    else:
-        mo.md("A dimensão temporal já existe no banco de dados.")
+    #     mo.md("✅ Dimensão temporal salva.")
+    # else:
+    #     mo.md("A dimensão temporal já existe no banco de dados.")
     return
 
 
@@ -345,16 +321,22 @@ def _(mo):
 
 
 @app.cell
-def _(clinical_mat, temporal_mat):
-    # all views
-    affinities = [clinical_mat, temporal_mat]
-    return (affinities,)
+def _(load_dimension):
+    temp_mat, temp_ids = load_dimension("temporal")
+    return (temp_mat,)
 
 
 @app.cell
-def _(affinities, np):
-    np.isnan(affinities).any()
+def _(clinical_mat):
+    clinical_mat.shape
     return
+
+
+@app.cell
+def _(clinical_mat, temp_mat):
+    # all views
+    affinities = [clinical_mat, temp_mat]
+    return (affinities,)
 
 
 @app.cell
