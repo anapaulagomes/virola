@@ -24,6 +24,8 @@ def _(mo):
 
 @app.cell
 def _():
+    import time
+
     import marimo as mo
     import matplotlib.pyplot as plt
     import numpy as np
@@ -32,7 +34,17 @@ def _():
     from sklearn import cluster
     from snf import compute, metrics
 
-    return cluster, compute, dtw_pairwise_distance, metrics, mo, np, pl, plt
+    return (
+        cluster,
+        compute,
+        dtw_pairwise_distance,
+        metrics,
+        mo,
+        np,
+        pl,
+        plt,
+        time,
+    )
 
 
 @app.cell
@@ -366,17 +378,97 @@ def _(mo):
 
 
 @app.cell
-def _():
-    # hyperparameters
-    K = 30
-    return (K,)
-
-
-@app.cell
 def _(clinical_mat, temporal_matrix_normalized):
     # all views
     affinities = [clinical_mat, temporal_matrix_normalized]
     return (affinities,)
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""### Finding the perfect K""")
+    return
+
+
+@app.cell
+def _(cluster, compute, metrics, np, time):
+    def evaluate_snf_k_range(affinities, K_values, t=20, n_range=(2, 80)):
+        results = []
+
+        for K in K_values:
+            start_time = time.time()
+            print(f"\n Running SNF with K={K}...")
+            fused = compute.snf(affinities, K=K, t=t)
+            fused = np.nan_to_num(fused, nan=0.0, posinf=1.0, neginf=0.0)
+
+            n_opt, n_alt = compute.get_n_clusters(fused, range(*n_range))
+            print(f"  Estimated number of clusters: {n_opt} (second best: {n_alt})")
+
+            fused_labels = cluster.spectral_clustering(fused, n_clusters=n_opt)
+
+            silhouette = metrics.silhouette_score(fused, fused_labels)
+            nmi = metrics.nmi([fused_labels])
+
+            end_time = time.time()
+            elapsed = end_time - start_time
+
+            print(f"  Done in {elapsed / 60:.2f} min | Silhouette = {silhouette:.4f}")
+
+            results.append(
+                {
+                    "K": K,
+                    "clusters": n_opt,
+                    "silhouette": float(silhouette),
+                    "nmi": float(nmi),
+                }
+            )
+        return results
+
+    return (evaluate_snf_k_range,)
+
+
+@app.cell
+def _(affinities, evaluate_snf_k_range):
+    K_values = [20, 50, 75, 100, 150]
+    results = evaluate_snf_k_range(affinities, K_values, t=20, n_range=(2, 100))
+    return (results,)
+
+
+@app.cell
+def _(plt, results):
+    number_of_neighbors = []
+    silhouettes = []
+    clusters = []
+
+    for result in results:
+        number_of_neighbors.append(result["K"])
+        silhouettes.append(result["silhouette"])
+        clusters.append(result["clusters"])
+
+    _fig, _ax1 = plt.subplots(figsize=(8, 4))
+    _ax1.plot(number_of_neighbors, silhouettes, "-o", color="tab:blue")
+    _ax1.set_xlabel("K (number of neighbors)")
+    _ax1.set_ylabel("Silhouette", color="tab:blue")
+    _ax1.tick_params(axis="y", labelcolor="tab:blue")
+
+    _ax2 = _ax1.twinx()
+    _ax2.plot(number_of_neighbors, clusters, "--s", color="tab:orange")
+    _ax2.set_ylabel("# Clusters (eigengap)", color="tab:orange")
+    _ax2.tick_params(axis="y", labelcolor="tab:orange")
+
+    plt.title("K evaluation in SNF")
+    plt.tight_layout()
+    plt.show()
+
+    return
+
+
+@app.cell
+def _():
+    # hyperparameters
+    K = 30
+    number_of_clusters = 30
+    return K, number_of_clusters
 
 
 @app.cell
@@ -389,37 +481,14 @@ def _(K, affinities, compute, np):
 
 @app.cell
 def _(mo):
-    mo.md(r"""### Finding the perfect K""")
-    return
-
-
-@app.cell
-def _():
-    # TODO
-    return
-
-
-@app.cell
-def _(mo):
     mo.md(r"""## Clustering 🩻""")
     return
 
 
 @app.cell
-def _(compute, fused):
-    # estimate the number of clusters present in the fused matrix, derived via
-    # an "eigengap" method (i.e., largest difference in eigenvalues of the
-    # laplacian of the graph). note this function returns the top two options
-    first, second = compute.get_n_clusters(
-        fused, range(2, 50)
-    )  # TODO establish a better range given the number of codes
-    return first, second
-
-
-@app.cell
-def _(first, second):
-    first, second
-    return
+def _(cluster, fused, number_of_clusters):
+    fused_labels = cluster.spectral_clustering(fused, n_clusters=number_of_clusters)
+    return (fused_labels,)
 
 
 @app.cell
@@ -430,9 +499,9 @@ def _(fused, fused_labels, metrics):
 
 
 @app.cell
-def _(cluster, first, fused):
-    fused_labels = cluster.spectral_clustering(fused, n_clusters=first)
-    return (fused_labels,)
+def _():
+    # TODO visualize clusters formation
+    return
 
 
 if __name__ == "__main__":
