@@ -4,7 +4,7 @@ __generated_with = "0.15.5"
 app = marimo.App(width="medium")
 
 
-@app.cell(hide_code=True)
+@app.cell
 def _(mo):
     mo.md(
         r"""
@@ -24,6 +24,7 @@ def _(mo):
 
 @app.cell
 def _():
+    import os
     import time
 
     import marimo as mo
@@ -31,6 +32,7 @@ def _():
     import numpy as np
     import polars as pl
     from aeon.distances import dtw_pairwise_distance
+    from dotenv import load_dotenv
     from sklearn import cluster
     from snf import compute, metrics
 
@@ -38,9 +40,11 @@ def _():
         cluster,
         compute,
         dtw_pairwise_distance,
+        load_dotenv,
         metrics,
         mo,
         np,
+        os,
         pl,
         plt,
         time,
@@ -49,6 +53,7 @@ def _():
 
 @app.cell
 def _():
+    from vir.config import INTERIM_DATA_DIR
     from vir.db import (
         dimension_exists,
         fetch_terminologies,
@@ -57,11 +62,18 @@ def _():
     )
 
     return (
+        INTERIM_DATA_DIR,
         dimension_exists,
         fetch_terminologies,
         insert_or_update_dimension,
         read_dimension,
     )
+
+
+@app.cell
+def _(load_dotenv):
+    load_dotenv()
+    return
 
 
 @app.cell
@@ -83,9 +95,9 @@ def _(terminology_labels):
 
 
 @app.cell
-def _(pl, terminology_labels):
+def _(INTERIM_DATA_DIR, pl, terminology_labels):
     df = pl.read_parquet(
-        "data/interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet",
+        INTERIM_DATA_DIR / "cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet",
     )
     df = df.drop(["unique_id", "state", "city", "region", "population_range"])  # make it per city
     df = df.group_by(["year", "week", "sex", "age_group", "code_type", "code"]).agg(
@@ -219,9 +231,10 @@ def _(df_year_week, ordered_year_week):
 
 
 @app.cell
-def _(dtw_pairwise_distance, ordered_year_week, temporal_pivot):
+def _(dtw_pairwise_distance, ordered_year_week, os, temporal_pivot):
     dtw_results = dtw_pairwise_distance(
-        temporal_pivot.select(ordered_year_week).to_numpy(), n_jobs=-1
+        temporal_pivot.select(ordered_year_week).to_numpy(),
+        n_jobs=int(os.getenv("NUMBER_OF_THREADS", -1)),
     )
     dtw_results
     return (dtw_results,)
@@ -230,6 +243,7 @@ def _(dtw_pairwise_distance, ordered_year_week, temporal_pivot):
 @app.cell
 def _():
     # dtw took 14 min with n jobs = -1
+    # 25 min with 16 threads
     return
 
 
@@ -287,7 +301,7 @@ def _(
 
 
 @app.cell
-def _(epsilon, neighbors, np):
+def _(np):
     def stable_affinity_from_distance(a_distance_matrix, K=30, mu=0.5, eps=1e-8):
         """
         This function converts a distance matrix into an affinity (similarity) matrix
@@ -305,21 +319,19 @@ def _(epsilon, neighbors, np):
         np.fill_diagonal(distance_matrix, 0.0)
 
         # normalize all distances to the range [0, 1]
-        distance_matrix = distance_matrix / (np.nanmax(distance_matrix) + epsilon)
+        distance_matrix = distance_matrix / (np.nanmax(distance_matrix) + eps)
 
         # sort distances within each row to find K nearest neighbors
         sorted_distances = np.sort(distance_matrix, axis=1)
 
         # compute the average distance to the K nearest neighbors for each sample
-        mean_neighbor_distance = np.vstack(
-            sorted_distances[:, 1 : neighbors + 1].mean(axis=1) + epsilon
-        )
+        mean_neighbor_distance = np.vstack(sorted_distances[:, 1 : K + 1].mean(axis=1) + eps)
 
         # compute adaptive local scale sigma according to SNF definition
         sigma = (mean_neighbor_distance + mean_neighbor_distance.T + distance_matrix) / 3.0
 
         # avoid extremely small sigma values (numerical underflow)
-        sigma = np.clip(mu * sigma, epsilon, None)
+        sigma = np.clip(mu * sigma, eps, None)
 
         # compute Gaussian affinity kernel
         affinity_matrix = np.exp(-(distance_matrix**2) / (2.0 * sigma**2))
@@ -335,7 +347,6 @@ def _(epsilon, neighbors, np):
 def _(np, stable_affinity_from_distance, temporal_matrix):
     temporal_matrix_normalized = stable_affinity_from_distance(temporal_matrix, K=20, mu=0.5)
     print(np.nanmin(temporal_matrix_normalized), np.nanmax(temporal_matrix_normalized))
-
     return (temporal_matrix_normalized,)
 
 
@@ -345,7 +356,6 @@ def _(plt, temporal_matrix_normalized):
     plt.colorbar()
     plt.title("Affinity matrix (temporal - DTW)")
     plt.show()
-
     return
 
 
@@ -355,7 +365,6 @@ def _(clinical_mat, plt):
     plt.colorbar()
     plt.title("Affinity matrix (temporal - DTW)")
     plt.show()
-
     return
 
 
@@ -459,7 +468,6 @@ def _(plt, results):
     plt.title("K evaluation in SNF")
     plt.tight_layout()
     plt.show()
-
     return
 
 
