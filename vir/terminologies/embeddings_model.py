@@ -21,13 +21,13 @@ def _():
         AutoTokenizer,
         DEFAULT_MODEL,
         PROCESSED_DATA_DIR,
+        create_embeddings_table_if_not_exists,
         get_or_download_model,
+        insert,
         mo,
         np,
         pl,
         torch,
-        insert,
-        create_embeddings_table_if_not_exists,
     )
 
 
@@ -85,7 +85,7 @@ def _(
     model = model.to(device)
     model.eval()  # inference only
     if device == "cpu":
-        torch.set_num_threads(max(os.cpu_count() or 2, 2))
+        torch.set_num_threads(max(os.cpu_count() or os.getenv("NUMBER_OF_THREADS"), 2))
     embeddings_dimension = model.config.hidden_size
     return embeddings_dimension, model, tokenizer
 
@@ -170,10 +170,15 @@ def _(embeddings_df, pl):
 
 
 @app.cell
-def _(insert, embeddings_df, create_embeddings_table_if_not_exists):
+def _(
+    create_embeddings_table_if_not_exists,
+    embeddings_df,
+    insert,
+    model_name,
+):
     # un-comment to store in the db
     create_embeddings_table_if_not_exists()
-    insert(embeddings_df)
+    insert(embeddings_df, model_name)
     return
 
 

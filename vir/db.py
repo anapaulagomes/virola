@@ -2,7 +2,6 @@ import duckdb
 
 from vir.config import DATA_DIR
 
-
 PROJECT_DB = DATA_DIR / "virola.db"
 DEFAULT_MODEL = "medicalai/ClinicalBERT"
 MODEL_DIMENSIONS = 768
@@ -66,11 +65,12 @@ def get_embedding(code, code_type, model=None):
 def insert(df, model=None):
     con = get_connection(writeable=True)
     con.register("df_view", df)
-    con.execute(f"""
+    con.execute(
+        f"""
         INSERT INTO medical_terminologies (code, code_type, description, model, embedding)
         SELECT code, code_type, description, '{model or DEFAULT_MODEL}' AS model, embedding FROM df_view
-        ON CONFLICT DO NOTHING
-    """)
+        """
+    )
 
 
 def get_all_embeddings(model=None):
@@ -112,10 +112,12 @@ def insert_or_update_dimension(df):
     """
     con = get_connection(writeable=True)
     con.register("df_view", df)
-    con.execute("""
+    con.execute(
+        """
         INSERT INTO dimensions (terminology_id_1, terminology_id_2, value, dimension)
         SELECT terminology_id_1, terminology_id_2, value, dimension FROM df_view
-    """)
+        """
+    )
 
 
 def insert_clinical_dimensions(model_name=None):
@@ -143,11 +145,11 @@ def read_dimension(dimension):
     con = get_connection()
     result = con.execute(
         """
-    SELECT terminology_id_1, terminology_id_2, value
-    FROM dimensions
-    WHERE dimension = $dimension
-    ORDER BY terminology_id_1 ASC
-    """,
+        SELECT terminology_id_1, terminology_id_2, value
+        FROM dimensions
+        WHERE dimension = $dimension
+        ORDER BY terminology_id_1 ASC
+        """,
         {"dimension": dimension},
     )
     return result.pl()
@@ -157,9 +159,9 @@ def count_terminologies():
     con = get_connection()
     result = con.execute(
         """
-    SELECT COUNT(*)
-    FROM medical_terminologies
-    """
+        SELECT COUNT(*)
+        FROM medical_terminologies
+        """
     ).fetchone()
     return result
 
@@ -168,11 +170,10 @@ def fetch_terminologies():
     con = get_connection()
     result = con.execute(
         """
-    SELECT id, code, code_type, code || ':' || code_type AS label
-    FROM medical_terminologies
-    ORDER BY id
-    """
-        "",
+        SELECT id, code, code_type, code || ':' || code_type AS label
+        FROM medical_terminologies
+        ORDER BY id
+        """,
     ).pl()
     return result
 
