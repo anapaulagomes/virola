@@ -34,6 +34,8 @@ def _():
     from sklearn import cluster
     from snf import compute, metrics
 
+    from vir.config import INTERIM_DATA_DIR
+
     return (
         cluster,
         compute,
@@ -44,6 +46,7 @@ def _():
         pl,
         plt,
         time,
+        INTERIM_DATA_DIR,
     )
 
 
@@ -83,9 +86,25 @@ def _(terminology_labels):
 
 
 @app.cell
-def _(pl, terminology_labels):
+def _(INTERIM_DATA_DIR, mo):
+    _all_options = [
+        str(_file.resolve()) for _file in INTERIM_DATA_DIR.glob("**/cleaned_*.parquet")
+    ]
+
+    files_dropdown = mo.ui.dropdown(
+        options=_all_options,
+        label="Choose dataset",
+        searchable=True,
+    )
+    # TODO default: "data/interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet"
+    files_dropdown
+    return (files_dropdown,)
+
+
+@app.cell
+def _(pl, terminology_labels, files_dropdown):
     df = pl.read_parquet(
-        "data/interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet",
+        files_dropdown.value,
     )
     df = df.drop(["unique_id", "state", "city", "region", "population_range"])  # make it per city
     df = df.group_by(["year", "week", "sex", "age_group", "code_type", "code"]).agg(
@@ -101,6 +120,7 @@ def _(pl, terminology_labels):
 
 @app.cell
 def _(df):
+    # TODO note: the order of diagnosis code is determined by df["terminology_id"].unique() == terminology_to_ids.keys()
     terminology_to_ids = {
         terminology_id: _index
         for _index, terminology_id in enumerate(df["terminology_id"].unique())
@@ -259,30 +279,31 @@ def _(
     pl,
     temporal_matrix,
 ):
-    if not dimension_exists("temporal"):
-        mo.md("Salvando a dimensão temporal no banco de dados...")
-
-        to_db = {
-            "terminology_id_1": [],
-            "terminology_id_2": [],
-            "value": [],
-        }
-        for _out in range(len([1, 2])):
-            for _in in range(len([1, 2])):
-                print(
-                    ids_to_terminology[_out], ids_to_terminology[_in], temporal_matrix[_out][_in]
-                )
-                to_db["terminology_id_1"].append(ids_to_terminology[_out])
-                to_db["terminology_id_2"].append(ids_to_terminology[_in])
-                to_db["value"].append(temporal_matrix[_out][_in])
-
-        df_to_insert = pl.DataFrame(to_db).with_columns(pl.lit("temporal").alias("dimension"))
-
-        insert_or_update_dimension(df_to_insert)
-
-        mo.md("✅ Dimensão temporal salva.")
-    else:
-        mo.md("A dimensão temporal já existe no banco de dados.")
+    # FIXME add column city
+    # if not dimension_exists("temporal"):
+    #     mo.md("Salvando a dimensão temporal no banco de dados...")
+    #
+    #     to_db = {
+    #         "terminology_id_1": [],
+    #         "terminology_id_2": [],
+    #         "value": [],
+    #     }
+    #     for _out in range(len([1, 2])):
+    #         for _in in range(len([1, 2])):
+    #             print(
+    #                 ids_to_terminology[_out], ids_to_terminology[_in], temporal_matrix[_out][_in]
+    #             )
+    #             to_db["terminology_id_1"].append(ids_to_terminology[_out])
+    #             to_db["terminology_id_2"].append(ids_to_terminology[_in])
+    #             to_db["value"].append(temporal_matrix[_out][_in])
+    #
+    #     df_to_insert = pl.DataFrame(to_db).with_columns(pl.lit("temporal").alias("dimension"))
+    #
+    #     insert_or_update_dimension(df_to_insert)
+    #
+    #     mo.md("✅ Dimensão temporal salva.")
+    # else:
+    #     mo.md("A dimensão temporal já existe no banco de dados.")
     return
 
 
@@ -387,7 +408,8 @@ def _(clinical_mat, temporal_matrix_normalized):
 @app.cell
 def _(mo):
     mo.md(r"""### Finding the perfect K""")
-    return
+    run_k_validation = False
+    return (run_k_validation,)
 
 
 @app.cell
@@ -428,46 +450,50 @@ def _(cluster, compute, metrics, np, time):
 
 
 @app.cell
-def _(affinities, evaluate_snf_k_range):
-    K_values = [20, 50, 75, 100, 150]
-    results = evaluate_snf_k_range(affinities, K_values, t=20, n_range=(2, 100))
+def _(affinities, evaluate_snf_k_range, run_k_validation):
+    if run_k_validation:
+        K_values = [20, 50, 75, 100, 150]
+        results = evaluate_snf_k_range(affinities, K_values, t=20, n_range=(2, 100))
+    else:
+        results = []
     return (results,)
 
 
 @app.cell
-def _(plt, results):
-    number_of_neighbors = []
-    silhouettes = []
-    clusters = []
+def _(plt, results, run_k_validation):
+    if run_k_validation:
+        number_of_neighbors = []
+        silhouettes = []
+        clusters = []
 
-    for result in results:
-        number_of_neighbors.append(result["K"])
-        silhouettes.append(result["silhouette"])
-        clusters.append(result["clusters"])
+        for result in results:
+            number_of_neighbors.append(result["K"])
+            silhouettes.append(result["silhouette"])
+            clusters.append(result["clusters"])
 
-    _fig, _ax1 = plt.subplots(figsize=(8, 4))
-    _ax1.plot(number_of_neighbors, silhouettes, "-o", color="tab:blue")
-    _ax1.set_xlabel("K (number of neighbors)")
-    _ax1.set_ylabel("Silhouette", color="tab:blue")
-    _ax1.tick_params(axis="y", labelcolor="tab:blue")
+        _fig, _ax1 = plt.subplots(figsize=(8, 4))
+        _ax1.plot(number_of_neighbors, silhouettes, "-o", color="tab:blue")
+        _ax1.set_xlabel("K (number of neighbors)")
+        _ax1.set_ylabel("Silhouette", color="tab:blue")
+        _ax1.tick_params(axis="y", labelcolor="tab:blue")
 
-    _ax2 = _ax1.twinx()
-    _ax2.plot(number_of_neighbors, clusters, "--s", color="tab:orange")
-    _ax2.set_ylabel("# Clusters (eigengap)", color="tab:orange")
-    _ax2.tick_params(axis="y", labelcolor="tab:orange")
+        _ax2 = _ax1.twinx()
+        _ax2.plot(number_of_neighbors, clusters, "--s", color="tab:orange")
+        _ax2.set_ylabel("# Clusters (eigengap)", color="tab:orange")
+        _ax2.tick_params(axis="y", labelcolor="tab:orange")
 
-    plt.title("K evaluation in SNF")
-    plt.tight_layout()
-    plt.show()
+        plt.title("K evaluation in SNF")
+        plt.tight_layout()
+        plt.show()
 
     return
 
 
 @app.cell
 def _():
-    # hyperparameters
-    K = 30
-    number_of_clusters = 30
+    # hyperparameters chosen based on K validation step
+    K = 150
+    number_of_clusters = 20
     return K, number_of_clusters
 
 
@@ -480,14 +506,25 @@ def _(K, affinities, compute, np):
 
 
 @app.cell
+def _(fused, np, files_dropdown):
+    # TODO get name from files_dropdown
+    selected_file_name = files_dropdown
+    selected_file_name
+    # np.savetxt(f'fused_snf_{selected_file_name}.txt', fused)
+    # np.savetxt(f'fused_snf_terminologies_ids_{selected_file_name}.txt', list(terminology_to_ids.keys()))
+    return
+
+
+@app.cell
 def _(mo):
     mo.md(r"""## Clustering 🩻""")
     return
 
 
 @app.cell
-def _(cluster, fused, number_of_clusters):
+def _(cluster, fused, number_of_clusters, selected_file_name):
     fused_labels = cluster.spectral_clustering(fused, n_clusters=number_of_clusters)
+    # np.savetxt(f'fused_snf_clusters_{number_of_clusters}_{selected_file_name}.txt', fused_labels)
     return (fused_labels,)
 
 
