@@ -326,42 +326,37 @@ def _():
 
 
 @app.cell
-def _():
+def _(mo):
+    mo.md(
+        r"""
+    ### Demographics dimension 🧑‍🍼
+
+    * Features: sex, age group
+    """
+    )
     return
 
 
 @app.cell
-def _(df, pl):
-    df_demographics = (
-        df.with_columns(
-            (pl.col("sex").cast(pl.Utf8) + "-" + pl.col("age_group").cast(pl.Utf8)).alias(
-                "sex_age"
-            )
-        )
-        .group_by(["terminology_id", "sex", "age_group", "sex_age"])
-        .agg(pl.col("quantity").sum().alias("total"))
-    )
-    df_demographics
-    return (df_demographics,)
-
-
-@app.cell
-def _(df_demographics):
-    pivoted_df_demographics = df_demographics.pivot(
-        index="terminology_id",  # rows
-        on="sex_age",  # new columns
-        values="total",  # cell value
-    ).fill_null(0)
-    pivoted_df_demographics
-    return (pivoted_df_demographics,)
-
-
-@app.cell
-def _(pivoted_df_demographics, cosine_similarity, pl):
+def _(cosine_similarity, pl):
     def demographics_view(df):
-        ids = df["terminology_id"]
-        feature_cols = df.columns[1:]
-        features_matrix = df.select(feature_cols).to_numpy()
+        df_demographics = (
+            df.with_columns(
+                (pl.col("sex").cast(pl.Utf8) + "-" + pl.col("age_group").cast(pl.Utf8)).alias(
+                    "sex_age"
+                )
+            )
+            .group_by(["terminology_id", "sex", "age_group", "sex_age"])
+            .agg(pl.col("quantity").sum().alias("total"))
+        )
+        pivoted_df_demographics = df_demographics.pivot(
+            index="terminology_id",  # rows
+            on="sex_age",  # new columns
+            values="total",  # cell value
+        ).fill_null(0)
+        ids = pivoted_df_demographics["terminology_id"]
+        feature_cols = pivoted_df_demographics.columns[1:]
+        features_matrix = pivoted_df_demographics.select(feature_cols).to_numpy()
         sim_matrix_np = cosine_similarity(features_matrix)
         id_labels = ids.to_list()
         id_labels_str = [str(i) for i in id_labels]
@@ -369,8 +364,21 @@ def _(pivoted_df_demographics, cosine_similarity, pl):
         sim_df = sim_df.with_columns(terminology_id=ids).select(["terminology_id"] + id_labels_str)
         return sim_df
 
-    demo_view = demographics_view(pivoted_df_demographics)
+    # TODO guarantee the order of the ids
+    return (demographics_view,)
+
+
+@app.cell
+def _(demographics_view, df):
+    demo_view = demographics_view(df)
+    demo_view
     return (demo_view,)
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""## SNF ✨""")
+    return
 
 
 @app.cell
@@ -442,6 +450,15 @@ def _(clinical_mat, plt):
 
 
 @app.cell
+def _(demo_view, plt):
+    plt.imshow(demo_view[:100, :100], cmap="viridis")
+    plt.colorbar()
+    plt.title("Affinity matrix (demo - cosine)")
+    plt.show()
+    return
+
+
+@app.cell
 def _(np, temporal_matrix_normalized):
     np.nanmin(temporal_matrix_normalized), np.nanmax(temporal_matrix_normalized)
     return
@@ -454,13 +471,19 @@ def _(clinical_mat, np):
 
 
 @app.cell
+def _(demo_view, np):
+    np.nanmin(demo_view), np.nanmax(demo_view)
+    return
+
+
+@app.cell
 def _(mo):
     mo.md(r"""## Affinities""")
     return
 
 
 @app.cell
-def _(clinical_mat, temporal_matrix_normalized, demo_view):
+def _(clinical_mat, demo_view, temporal_matrix_normalized):
     # all views
     affinities = [clinical_mat, temporal_matrix_normalized, demo_view]
     return (affinities,)
