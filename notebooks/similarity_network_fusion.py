@@ -27,6 +27,7 @@ def _():
     import json
     import os
     import time
+    from pathlib import Path
 
     import marimo as mo
     import matplotlib.pyplot as plt
@@ -38,10 +39,11 @@ def _():
     from snf import compute, metrics
 
     return (
-        json,
+        Path,
         cluster,
         compute,
         dtw_pairwise_distance,
+        json,
         load_dotenv,
         metrics,
         mo,
@@ -55,20 +57,16 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import DATA_DIR, INTERIM_DATA_DIR
+    from vir.config import CLUSTERING_DIR, INTERIM_DATA_DIR
     from vir.db import (
-        dimension_exists,
         fetch_terminologies,
-        insert_or_update_dimension,
         read_dimension,
     )
 
     return (
-        DATA_DIR,
+        CLUSTERING_DIR,
         INTERIM_DATA_DIR,
-        dimension_exists,
         fetch_terminologies,
-        insert_or_update_dimension,
         read_dimension,
     )
 
@@ -87,9 +85,9 @@ def _(mo):
 
 @app.cell
 def _(fetch_terminologies):
-    embeddings_model_name = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+    embeddings_model_name = "medicalai/ClinicalBERT"
     terminology_labels = fetch_terminologies(embeddings_model_name)
-    return (terminology_labels,)
+    return embeddings_model_name, terminology_labels
 
 
 @app.cell
@@ -120,7 +118,7 @@ def _(INTERIM_DATA_DIR, mo):
 
 
 @app.cell
-def _(pl, terminology_labels, files_dropdown):
+def _(files_dropdown, pl, terminology_labels):
     selected_filename = files_dropdown.value
     df = pl.read_parquet(selected_filename)
     df = df.drop(["unique_id", "state", "city", "region", "population_range"])  # make it per city
@@ -132,10 +130,7 @@ def _(pl, terminology_labels, files_dropdown):
     )
     df = df.filter(pl.col("year").ge(2022))
     df.head()
-    return (
-        df,
-        selected_filename,
-    )
+    return (df,)
 
 
 @app.cell
@@ -207,6 +202,12 @@ def _(load_clinical_dimension):
 
 
 @app.cell
+def _(clinical_mat):
+    len(clinical_mat)
+    return
+
+
+@app.cell
 def _(mo):
     mo.md(
         r"""
@@ -236,7 +237,7 @@ def _(df_year_week):
     ordered_year_week = (
         df_year_week.select("year_week", "year", "week")
         .unique()
-        .sort(["year", "week"])  # ordena cronologicamente
+        .sort(["year", "week"])  # chronological order
         .get_column("year_week")
         .to_list()
     )
@@ -293,14 +294,7 @@ def _(load_temporal_dimension):
 
 
 @app.cell
-def _(
-    dimension_exists,
-    ids_to_terminology,
-    insert_or_update_dimension,
-    mo,
-    pl,
-    temporal_matrix,
-):
+def _():
     # FIXME add column city
     # if not dimension_exists("temporal"):
     #     mo.md("Salvando a dimensão temporal no banco de dados...")
@@ -543,28 +537,32 @@ def _(fused, fused_labels, metrics):
 
 @app.cell
 def _(
-    ids_to_terminology,
-    fused_labels,
-    np,
-    number_of_clusters,
-    selected_filename,
-    json,
+    CLUSTERING_DIR,
+    K,
+    Path,
     embeddings_model_name,
+    fused_labels,
+    ids_to_terminology,
+    json,
+    number_of_clusters,
 ):
     # notes
     # terminology_to_ids: terminology ids from db to index db used during execution
     # ids_to_terminology: index to terminology ids
     # fused labels: list with assigned clusters
-    terminology_id_clusters = {}
+    terminology_id_clusters = []
     for _index, _cluster in enumerate(fused_labels):
         _terminology_id = ids_to_terminology.get(_index)
-        terminology_id_clusters[_terminology_id] = _cluster
+        terminology_id_clusters.append(
+            {"terminology_id": _terminology_id, "cluster": str(_cluster)}
+        )
 
-    np.savetxt(
-        f"fused_snf_clusters_{number_of_clusters}_{selected_filename}_{embeddings_model_name.replace('/', '_')}.txt",
-        json.dumps(terminology_id_clusters),
+    _terminology_id_clusters_file = Path(
+        CLUSTERING_DIR
+        / f"snf_k{K}_{number_of_clusters}_clusters__{embeddings_model_name.replace('/', '_')}.txt"
     )
-    return terminology_id_clusters
+    _terminology_id_clusters_file.write_text(json.dumps(terminology_id_clusters))
+    return
 
 
 if __name__ == "__main__":
