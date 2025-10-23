@@ -24,6 +24,7 @@ def _(mo):
 
 @app.cell
 def _():
+    import json
     import os
     import time
 
@@ -37,6 +38,7 @@ def _():
     from snf import compute, metrics
 
     return (
+        json,
         cluster,
         compute,
         dtw_pairwise_distance,
@@ -53,7 +55,7 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import INTERIM_DATA_DIR
+    from vir.config import DATA_DIR, INTERIM_DATA_DIR
     from vir.db import (
         dimension_exists,
         fetch_terminologies,
@@ -62,6 +64,7 @@ def _():
     )
 
     return (
+        DATA_DIR,
         INTERIM_DATA_DIR,
         dimension_exists,
         fetch_terminologies,
@@ -99,22 +102,26 @@ def _(INTERIM_DATA_DIR, mo):
     _all_options = [
         str(_file.resolve()) for _file in INTERIM_DATA_DIR.glob("**/cleaned_*.parquet")
     ]
+    default = [
+        _option
+        for _option in _all_options
+        if "cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet" in _option
+    ]
 
     files_dropdown = mo.ui.dropdown(
         options=_all_options,
         label="Choose dataset",
         searchable=True,
+        value=default[0] if default else None,
     )
-    # TODO default: "data/interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet"
     files_dropdown
     return (files_dropdown,)
 
 
 @app.cell
 def _(pl, terminology_labels, files_dropdown):
-    df = pl.read_parquet(
-        files_dropdown.value,
-    )
+    selected_file_name = files_dropdown.value
+    df = pl.read_parquet(selected_file_name)
     df = df.drop(["unique_id", "state", "city", "region", "population_range"])  # make it per city
     df = df.group_by(["year", "week", "sex", "age_group", "code_type", "code"]).agg(
         pl.col("quantity").sum()
@@ -124,7 +131,10 @@ def _(pl, terminology_labels, files_dropdown):
     )
     df = df.filter(pl.col("year").ge(2022))
     df.head()
-    return (df,)
+    return (
+        df,
+        selected_file_name,
+    )
 
 
 @app.cell
@@ -507,17 +517,8 @@ def _(K, affinities, compute, np):
     fused = compute.snf(affinities, K=K)  # 5 min
     print(np.isnan(fused).any())  # nan might occurr due to divisions to 0
     fused = np.nan_to_num(fused, nan=0.0, posinf=1.0, neginf=0.0)
+    # np.savetxt(f'fused_snf_{selected_filename}.txt', fused)
     return (fused,)
-
-
-@app.cell
-def _(fused, np, files_dropdown):
-    # TODO get name from files_dropdown
-    selected_file_name = files_dropdown
-    selected_file_name
-    # np.savetxt(f'fused_snf_{selected_file_name}.txt', fused)
-    # np.savetxt(f'fused_snf_terminologies_ids_{selected_file_name}.txt', list(terminology_to_ids.keys()))
-    return
 
 
 @app.cell
@@ -527,9 +528,8 @@ def _(mo):
 
 
 @app.cell
-def _(cluster, fused, number_of_clusters, selected_file_name):
+def _(cluster, fused, number_of_clusters):
     fused_labels = cluster.spectral_clustering(fused, n_clusters=number_of_clusters)
-    # np.savetxt(f'fused_snf_clusters_{number_of_clusters}_{selected_file_name}.txt', fused_labels)
     return (fused_labels,)
 
 
@@ -541,9 +541,21 @@ def _(fused, fused_labels, metrics):
 
 
 @app.cell
-def _():
-    # TODO visualize clusters formation
-    return
+def _(ids_to_terminology, fused_labels, np, number_of_clusters, selected_filename, json):
+    # notes
+    # terminology_to_ids: terminology ids from db to index db used during execution
+    # ids_to_terminology: index to terminology ids
+    # fused labels: list with assigned clusters
+    terminology_id_clusters = {}
+    for _index, _cluster in enumerate(fused_labels):
+        _terminology_id = ids_to_terminology.get(_index)
+        terminology_id_clusters[_terminology_id] = _cluster
+
+    np.savetxt(
+        f"fused_snf_clusters_{number_of_clusters}_{selected_filename}.txt",
+        json.dumps(terminology_id_clusters),
+    )
+    return terminology_id_clusters
 
 
 if __name__ == "__main__":
