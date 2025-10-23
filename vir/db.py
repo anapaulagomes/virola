@@ -155,23 +155,29 @@ def read_dimension(dimension):
     return result.pl()
 
 
-def count_terminologies():
+def count_terminologies(model_name=None):
     con = get_connection()
+    where_clause = ""
+    if model_name:
+        where_clause = f"WHERE model = {model_name}"
     result = con.execute(
-        """
+        f"""
         SELECT COUNT(*)
-        FROM medical_terminologies
+        FROM medical_terminologies {where_clause}
         """
     ).fetchone()
     return result
 
 
-def fetch_terminologies():
+def fetch_terminologies(model_name=None):
     con = get_connection()
+    where_clause = ""
+    if model_name:
+        where_clause = f"WHERE model = {model_name}"
     result = con.execute(
-        """
+        f"""
         SELECT id, code, code_type, code || ':' || code_type AS label
-        FROM medical_terminologies
+        FROM medical_terminologies {where_clause}
         ORDER BY id
         """,
     ).pl()
