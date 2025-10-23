@@ -75,7 +75,7 @@ def _():
 
 @app.cell
 def _(load_dotenv):
-    load_dotenv()
+    _ = load_dotenv()
     return
 
 
@@ -87,7 +87,8 @@ def _(mo):
 
 @app.cell
 def _(fetch_terminologies):
-    terminology_labels = fetch_terminologies()
+    embeddings_model_name = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+    terminology_labels = fetch_terminologies(embeddings_model_name)
     return (terminology_labels,)
 
 
@@ -120,8 +121,8 @@ def _(INTERIM_DATA_DIR, mo):
 
 @app.cell
 def _(pl, terminology_labels, files_dropdown):
-    selected_file_name = files_dropdown.value
-    df = pl.read_parquet(selected_file_name)
+    selected_filename = files_dropdown.value
+    df = pl.read_parquet(selected_filename)
     df = df.drop(["unique_id", "state", "city", "region", "population_range"])  # make it per city
     df = df.group_by(["year", "week", "sex", "age_group", "code_type", "code"]).agg(
         pl.col("quantity").sum()
@@ -133,7 +134,7 @@ def _(pl, terminology_labels, files_dropdown):
     df.head()
     return (
         df,
-        selected_file_name,
+        selected_filename,
     )
 
 
@@ -541,7 +542,15 @@ def _(fused, fused_labels, metrics):
 
 
 @app.cell
-def _(ids_to_terminology, fused_labels, np, number_of_clusters, selected_filename, json):
+def _(
+    ids_to_terminology,
+    fused_labels,
+    np,
+    number_of_clusters,
+    selected_filename,
+    json,
+    embeddings_model_name,
+):
     # notes
     # terminology_to_ids: terminology ids from db to index db used during execution
     # ids_to_terminology: index to terminology ids
@@ -552,7 +561,7 @@ def _(ids_to_terminology, fused_labels, np, number_of_clusters, selected_filenam
         terminology_id_clusters[_terminology_id] = _cluster
 
     np.savetxt(
-        f"fused_snf_clusters_{number_of_clusters}_{selected_filename}.txt",
+        f"fused_snf_clusters_{number_of_clusters}_{selected_filename}_{embeddings_model_name.replace('/', '_')}.txt",
         json.dumps(terminology_id_clusters),
     )
     return terminology_id_clusters
