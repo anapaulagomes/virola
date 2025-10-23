@@ -173,7 +173,7 @@ def fetch_terminologies(model_name=None):
     con = get_connection()
     where_clause = ""
     if model_name:
-        where_clause = f"WHERE model = {model_name}"
+        where_clause = f"WHERE model = '{model_name}'"
     result = con.execute(
         f"""
         SELECT id, code, code_type, code || ':' || code_type AS label
