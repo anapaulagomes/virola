@@ -36,7 +36,6 @@ def plot_categories(df, column, x_categoryorder=None, title=None):
 def scatter_plot_year_per_week(
     df, year_column, week_column, color_column=None, color_schema="viridis", title=None
 ):
-    # FIXME receive title
     _year_week = df.group_by([year_column, week_column]).len("count")
     _params = {}
     if color_column:
