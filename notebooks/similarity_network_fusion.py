@@ -36,12 +36,14 @@ def _():
     from aeon.distances import dtw_pairwise_distance
     from dotenv import load_dotenv
     from sklearn import cluster
+    from sklearn.metrics.pairwise import cosine_similarity
     from snf import compute, metrics
 
     return (
         Path,
         cluster,
         compute,
+        cosine_similarity,
         dtw_pairwise_distance,
         json,
         load_dotenv,
@@ -324,6 +326,54 @@ def _():
 
 
 @app.cell
+def _():
+    return
+
+
+@app.cell
+def _(df, pl):
+    df_demographics = (
+        df.with_columns(
+            (pl.col("sex").cast(pl.Utf8) + "-" + pl.col("age_group").cast(pl.Utf8)).alias(
+                "sex_age"
+            )
+        )
+        .group_by(["terminology_id", "sex", "age_group", "sex_age"])
+        .agg(pl.col("quantity").sum().alias("total"))
+    )
+    df_demographics
+    return (df_demographics,)
+
+
+@app.cell
+def _(df_demographics):
+    pivoted_df_demographics = df_demographics.pivot(
+        index="terminology_id",  # rows
+        on="sex_age",  # new columns
+        values="total",  # cell value
+    ).fill_null(0)
+    pivoted_df_demographics
+    return (pivoted_df_demographics,)
+
+
+@app.cell
+def _(pivoted_df_demographics, cosine_similarity, pl):
+    def demographics_view(df):
+        ids = df["terminology_id"]
+        feature_cols = df.columns[1:]
+        features_matrix = df.select(feature_cols).to_numpy()
+        sim_matrix_np = cosine_similarity(features_matrix)
+        id_labels = ids.to_list()
+        id_labels_str = [str(i) for i in id_labels]
+        sim_df = pl.DataFrame(sim_matrix_np, schema=id_labels_str)
+        sim_df = sim_df.with_columns(terminology_id=ids).select(["terminology_id"] + id_labels_str)
+        return sim_df
+
+    demo_view = demographics_view(pivoted_df_demographics)
+    return (demo_view,)
+
+
+@app.cell
 def _(np):
     def stable_affinity_from_distance(a_distance_matrix, K=30, mu=0.5, eps=1e-8):
         """
@@ -410,9 +460,9 @@ def _(mo):
 
 
 @app.cell
-def _(clinical_mat, temporal_matrix_normalized):
+def _(clinical_mat, temporal_matrix_normalized, demo_view):
     # all views
-    affinities = [clinical_mat, temporal_matrix_normalized]
+    affinities = [clinical_mat, temporal_matrix_normalized, demo_view]
     return (affinities,)
 
 
