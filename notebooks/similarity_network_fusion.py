@@ -387,7 +387,7 @@ def _(mo):
 
 
 @app.cell
-def _(cosine_similarity, pl):
+def _(cosine_similarity, pl, terminology_to_ids):
     def demographics_view(df):
         df_demographics = (
             df.with_columns(
@@ -403,25 +403,42 @@ def _(cosine_similarity, pl):
             on="sex_age",  # new columns
             values="total",  # cell value
         ).fill_null(0)
-        ids = pivoted_df_demographics["terminology_id"]
+
+        # calculate similarity using cosine
         feature_cols = pivoted_df_demographics.columns[1:]
         features_matrix = pivoted_df_demographics.select(feature_cols).to_numpy()
         sim_matrix_np = cosine_similarity(features_matrix)
-        id_labels = ids.to_list()
-        id_labels_str = [str(i) for i in id_labels]
+
+        # make sure they have the same order from the other views
+        id_labels_str = [str(i) for i in terminology_to_ids.keys()]
         sim_df = pl.DataFrame(sim_matrix_np, schema=id_labels_str)
-        sim_df = sim_df.with_columns(terminology_id=ids).select(["terminology_id"] + id_labels_str)
+
+        # ids = pivoted_df_demographics["terminology_id"]
+        terminology_id_order = {
+            terminology_id: index for index, terminology_id in enumerate(terminology_to_ids.keys())
+        }
+
+        sim_df = (  # FIXME change from demographics columns to terminology ids columns
+            sim_df.with_columns(
+                sorted_terminology_id=pl.col("terminology_id").replace(terminology_id_order)
+            )
+            .sort("sorted_terminology_id")
+            .drop("sorted_terminology_id")
+            .select(["terminology_id"] + id_labels_str)  # order both rows and columns
+        )
         return sim_df
 
     # TODO guarantee the order of the ids
-    return (demographics_view,)
+    return
 
 
 @app.cell
-def _(demographics_view, df):
-    demo_view = demographics_view(df)
-    demo_view
-    return (demo_view,)
+def _():
+    # demo_view = demographics_view(df)
+    # demo_view
+
+    # TODO check proportions, too
+    return
 
 
 @app.cell
@@ -469,6 +486,7 @@ def _(np):
         np.fill_diagonal(affinity_matrix, 0.0)
 
         return affinity_matrix
+
     return (stable_affinity_from_distance,)
 
 
