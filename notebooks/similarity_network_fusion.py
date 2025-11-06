@@ -499,7 +499,7 @@ def _(np, stable_affinity_from_distance, temporal_matrix):
 
 @app.cell
 def _(plt, temporal_matrix_normalized):
-    plt.imshow(temporal_matrix_normalized[:100, :100], cmap="viridis")
+    plt.matshow(temporal_matrix_normalized, cmap="viridis")
     plt.colorbar()
     plt.title("Affinity matrix (temporal - DTW)")
     plt.show()
@@ -507,20 +507,20 @@ def _(plt, temporal_matrix_normalized):
 
 
 @app.cell
-def _(clinical_mat, plt):
-    plt.imshow(clinical_mat[:100, :100], cmap="viridis")
+def _(clinical_mat, embeddings_model_name, plt):
+    plt.matshow(clinical_mat, cmap="viridis")
     plt.colorbar()
-    plt.title("Affinity matrix (temporal - DTW)")
+    plt.title(f"Affinity matrix (clinical - {embeddings_model_name})")
     plt.show()
     return
 
 
 @app.cell
-def _(demo_view, plt):
-    plt.imshow(demo_view[:100, :100], cmap="viridis")
-    plt.colorbar()
-    plt.title("Affinity matrix (demo - cosine)")
-    plt.show()
+def _():
+    # plt.imshow(demo_view[:100, :100], cmap="viridis")
+    # plt.colorbar()
+    # plt.title("Affinity matrix (demo - cosine)")
+    # plt.show()
     return
 
 
@@ -549,9 +549,9 @@ def _(mo):
 
 
 @app.cell
-def _(clinical_mat, demo_view, temporal_matrix_normalized):
+def _(clinical_mat, temporal_matrix_normalized):
     # all views
-    affinities = [clinical_mat, temporal_matrix_normalized, demo_view]
+    affinities = [clinical_mat, temporal_matrix_normalized]
     return (affinities,)
 
 
