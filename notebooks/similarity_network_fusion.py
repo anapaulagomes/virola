@@ -59,7 +59,7 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import CLUSTERING_DIR, INTERIM_DATA_DIR
+    from vir.config import CLUSTERING_DIR, DATA_DIR, INTERIM_DATA_DIR
     from vir.db import (
         fetch_terminologies,
         read_dimension,
@@ -67,6 +67,7 @@ def _():
 
     return (
         CLUSTERING_DIR,
+        DATA_DIR,
         INTERIM_DATA_DIR,
         fetch_terminologies,
         read_dimension,
@@ -86,8 +87,21 @@ def _(mo):
 
 
 @app.cell
+def _(DATA_DIR, pl):
+    include_codes = []
+    indicative_codes = pl.read_csv(
+        f"{DATA_DIR}/indicative_probabilities_sentence-transformers_all-MiniLM-L6-v2_codes.csv"
+    )
+    for _data in indicative_codes.iter_rows(named=True):
+        if _data["indicative_probability"] > 0.50:
+            include_codes.append(f"{_data['code']}:{_data['code_type']}")
+    return (include_codes,)
+
+
+@app.cell
 def _(fetch_terminologies):
-    embeddings_model_name = "medicalai/ClinicalBERT"
+    # embeddings_model_name = "medicalai/ClinicalBERT"
+    embeddings_model_name = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
     terminology_labels = fetch_terminologies(embeddings_model_name)
     return embeddings_model_name, terminology_labels
 
@@ -96,6 +110,12 @@ def _(fetch_terminologies):
 def _(terminology_labels):
     terminology_labels
     return
+
+
+@app.cell
+def _():
+    indicative_codes_enabled = False
+    return (indicative_codes_enabled,)
 
 
 @app.cell
@@ -120,7 +140,22 @@ def _(INTERIM_DATA_DIR, mo):
 
 
 @app.cell
-def _(files_dropdown, pl, terminology_labels):
+def _(files_dropdown):
+    dataset_name = files_dropdown.value[
+        files_dropdown.value.find("municipios") + 11 : files_dropdown.value.find(".parquet")
+    ]
+    dataset_name
+    return (dataset_name,)
+
+
+@app.cell
+def _(
+    files_dropdown,
+    include_codes,
+    indicative_codes_enabled,
+    pl,
+    terminology_labels,
+):
     selected_filename = files_dropdown.value
     df = pl.read_parquet(selected_filename)
     df = df.drop(["unique_id", "state", "city", "region", "population_range"])  # make it per city
@@ -131,8 +166,16 @@ def _(files_dropdown, pl, terminology_labels):
         {"id": "terminology_id", "label": "terminology_label"}
     )
     df = df.filter(pl.col("year").ge(2022))
+    if indicative_codes_enabled:
+        df = df.filter(pl.col("terminology_label").is_in(include_codes))
     df.head()
     return (df,)
+
+
+@app.cell
+def _(df, indicative_codes_enabled):
+    df.shape, indicative_codes_enabled
+    return
 
 
 @app.cell
@@ -201,6 +244,12 @@ def _(empty_matrix, np, pl, read_dimension, terminology_to_ids):
 def _(load_clinical_dimension):
     clinical_mat = load_clinical_dimension()
     return (clinical_mat,)
+
+
+@app.cell
+def _(clinical_mat):
+    clinical_mat
+    return
 
 
 @app.cell
@@ -420,7 +469,6 @@ def _(np):
         np.fill_diagonal(affinity_matrix, 0.0)
 
         return affinity_matrix
-
     return (stable_affinity_from_distance,)
 
 
@@ -613,9 +661,11 @@ def _(
     CLUSTERING_DIR,
     K,
     Path,
+    dataset_name,
     embeddings_model_name,
     fused_labels,
     ids_to_terminology,
+    indicative_codes_enabled,
     json,
     number_of_clusters,
 ):
@@ -629,10 +679,13 @@ def _(
         terminology_id_clusters.append(
             {"terminology_id": _terminology_id, "cluster": str(_cluster)}
         )
+    indicative_codes_label = ""
+    if indicative_codes_enabled:
+        indicative_codes_label = "_with_indicative_codes"
 
     _terminology_id_clusters_file = Path(
         CLUSTERING_DIR
-        / f"snf_k{K}_{number_of_clusters}_clusters__{embeddings_model_name.replace('/', '_')}.txt"
+        / f"snf_{dataset_name}__k{K}_{number_of_clusters}_clusters__{embeddings_model_name.replace('/', '_')}{indicative_codes_label}.txt"
     )
     _terminology_id_clusters_file.write_text(json.dumps(terminology_id_clusters))
     return
