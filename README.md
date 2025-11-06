@@ -34,3 +34,8 @@ python vir/modeling/train.py data/processed/processed_optimized_marechal_thaumat
 
 ABP008 is duplicated and it was renamed to ABP008-1 and ABP008-2 for distinction
 in `cid10_ciap2_ab.csv`.
+
+### LLM support
+
+It is possible to describe the clusters using LLMs. For this, install: llm install llm-ollama
+You will also need to have Ollama installed: https://ollama.com/download/
