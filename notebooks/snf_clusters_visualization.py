@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.15.5"
+__generated_with = "0.17.6"
 app = marimo.App(width="medium")
 
 
@@ -153,27 +153,39 @@ def _(df_with_clusters, pl):
         .agg(pl.col("terminology_id").n_unique().alias("unique_ids"))
         .sort("cluster")  # Opcional: para ordenar pelo nome do cluster
     )
-    min_clusters_min = clusters_distribution["unique_ids"].min()
-    min_clusters_median = clusters_distribution["unique_ids"].median()
-    min_clusters_max = clusters_distribution["unique_ids"].max()
-    return min_clusters_max, min_clusters_median, min_clusters_min
+    clusters_median_size = clusters_distribution["unique_ids"].median()
+    return clusters_distribution, clusters_median_size
 
 
 @app.cell(hide_code=True)
 def _(mo):
-    mo.md(r"""## Data-Driven Syndrome Detection""")
+    mo.md(r"""
+    ## Data-Driven Syndrome Detection
+    """)
     return
 
 
 @app.cell
+def _(clusters_distribution, px):
+    _df = clusters_distribution.group_by("unique_ids").len()
+    unique_codes_histogram = px.bar(
+        _df,
+        x="unique_ids",
+        y="len",
+        labels={"unique_ids": "Number of unique codes", "len": "Number of clusters"},
+        log_x=True,
+    )
+    return (unique_codes_histogram,)
+
+
+@app.cell
 def _(
+    clusters_median_size,
     df_with_clusters,
     found_clusters,
-    min_clusters_max,
-    min_clusters_median,
-    min_clusters_min,
     mo,
     number_of_clusters,
+    unique_codes_histogram,
 ):
     mo.stop(df_with_clusters is None)
 
@@ -184,9 +196,9 @@ def _(
             bordered=True,
         ),
         mo.stat(
-            label="Min | Median | Max",
-            value=f"{min_clusters_min} | {min_clusters_median} | {min_clusters_max}",
-            caption="Size of the clusters (nr. of codes that belong to each one)",
+            label="Median",
+            value=f"{clusters_median_size}",
+            caption="Median nr. of codes that belong to each cluster",
         ),
         mo.stat(
             label="Nr. of rows",
@@ -205,10 +217,7 @@ def _(
     _title = "## General info"
 
     mo.vstack(
-        [
-            mo.md(_title),
-            mo.hstack(_cards, widths="equal", align="center"),
-        ]
+        [mo.md(_title), mo.hstack(_cards, widths="equal", align="center"), unique_codes_histogram]
     )
     return
 
