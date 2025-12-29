@@ -1,0 +1,24 @@
+CIAP2 relacionada,Descrição AB,Código AB
+R96,Asma,ABP009
+T91,Beribéri,ABP008
+A77,Dengue,ABP019
+T91,Desnutrição,ABP008
+T90,Diabetes,ABP006
+R95,DPOC,ABP010
+A78,Hanseníase,ABP018
+K86,Hipertensão Arterial,ABP005
+A78,IST,ABP020
+T82,Obesidade,ABP007
+W78,Pré-natal,ABP001
+A98,Puericultura,ABP004
+W18,Puerpério (até 42 dias),ABP002
+Não possui,Rastreamento de Câncer de mama,ABP023
+Não possui,Rastreamento de Câncer do colo do útero,ABP022
+K22,Rastreamento de Risco cardiovascular,ABP024
+57,Reabilitação,ABP015
+Não possui,Saúde Mental,ABP014
+Não possui,Saúde Sexual e Reprodutiva,ABP003
+P17,Tabagismo,ABP011
+A70,Tuberculose,ABP017
+P16,Usuário de álcool,ABP012
+P19,Usuário de outras drogas,ABP013

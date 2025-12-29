@@ -1,0 +1,92 @@
+type,section,code,
+procedimentos,procedimentos,-30,Exame médico/avaliação de saúde - completo
+procedimentos,procedimentos,-31,Exame médico/avaliação de saúde - parcial
+procedimentos,procedimentos,-32,Teste de sensibilidade
+procedimentos,procedimentos,-33,Exame microbiológico/imunológico
+procedimentos,procedimentos,-34,Análise de sangue
+procedimentos,procedimentos,-35,Análise de urina
+procedimentos,procedimentos,-36,Análise de fezes
+procedimentos,procedimentos,-37,Citologia esfoliativa/histologia
+procedimentos,procedimentos,-38,Outras análises laboratoriais NE
+procedimentos,procedimentos,-39,Teste de função física
+procedimentos,procedimentos,-40,Endoscopia diagnóstica
+procedimentos,procedimentos,-41,Radiologia diagnóstica
+procedimentos,procedimentos,-42,Eletrocardiograma
+procedimentos,procedimentos,-43,Outros procedimentos diagnósticos
+procedimentos,procedimentos,-44,Vacinação/medicação preventiva
+procedimentos,procedimentos,-45,Educação em saúde/aconselhamento/dieta
+procedimentos,procedimentos,-46,Consulta com profissional de APS
+procedimentos,procedimentos,-47,Consulta com especialista
+procedimentos,procedimentos,-48,Esclarecimento/discussão do motivo da consulta
+procedimentos,procedimentos,-49,Outros procedimentos preventivos
+procedimentos,procedimentos,-50,Medicação/prescrição/renovação/ injeção
+procedimentos,procedimentos,-51,Incisão/drenagem/aspiração/remoção
+procedimentos,procedimentos,-52,Excisão /biopsia/remoção/debridamento/cauterização
+procedimentos,procedimentos,-53,Cateterização/intubação
+procedimentos,procedimentos,-54,Reparação/sutura/gesso/prótese
+procedimentos,procedimentos,-55,Injeção local /infiltração
+procedimentos,procedimentos,-56,Ligadura/compressa /tamponamento
+procedimentos,procedimentos,-57,Medicina física/reabilitação
+procedimentos,procedimentos,-58,Aconselhamento/escuta terapêutica
+procedimentos,procedimentos,-59,Outros procedimentos terapêuticos/pequena cirurgia NE
+procedimentos,procedimentos,-60,Resultados de análises/procedimentos
+procedimentos,procedimentos,-61,Contra referência de outro prestador – resultado de exames/teste/ análise
+procedimentos,procedimentos,-62,Procedimento administrativo
+procedimentos,procedimentos,-63,Consulta de seguimento não especificada
+procedimentos,procedimentos,-64,Episódio / problema iniciado pelo prestador
+procedimentos,procedimentos,-65,Episódio / problema iniciado por outro NE
+procedimentos,procedimentos,-66,Referenciado a outro prestador /enfermeiro/assistente social/terapeuta
+procedimentos,procedimentos,-67,Referenciado para médico/especialista/clínica/hospital
+procedimentos,procedimentos,-68,Outras referenciações NE
+procedimentos,procedimentos,-69,Outro motivo de consulta NE
+Sinais/Sintomas,Geral e Inespecífico,A01,Dor generalizada /múltipla
+Sinais/Sintomas,Geral e Inespecífico,A02,Arrepios/ calafrios
+Sinais/Sintomas,Geral e Inespecífico,A03,Febre
+Sinais/Sintomas,Geral e Inespecífico,A04,Debilidade/cansaço geral/fadiga
+Sinais/Sintomas,Geral e Inespecífico,A05,Sentir-se doente
+Sinais/Sintomas,Geral e Inespecífico,A06,Desmaio/síncope
+Sinais/Sintomas,Geral e Inespecífico,A07,Coma
+Sinais/Sintomas,Geral e Inespecífico,A08,Inchaço
+Sinais/Sintomas,Geral e Inespecífico,A09,Problemas de sudorese
+Sinais/Sintomas,Geral e Inespecífico,A10,Sangramento/Hemorragia NE
+Sinais/Sintomas,Geral e Inespecífico,A11,Dores torácicas NE
+Sinais/Sintomas,Geral e Inespecífico,A13,Receio/Medo do tratamento
+Sinais/Sintomas,Geral e Inespecífico,A16,Criança irritável
+Sinais/Sintomas,Geral e Inespecífico,A18,Preocupação com aparência
+Sinais/Sintomas,Geral e Inespecífico,A20,Pedido/discussão eutanásia
+Sinais/Sintomas,Geral e Inespecífico,A21,Fator de risco de malignidade
+Sinais/Sintomas,Geral e Inespecífico,A23,Fator de risco NE
+Sinais/Sintomas,Geral e Inespecífico,A25,Medo de morrer/medo da morte
+Sinais/Sintomas,Geral e Inespecífico,A26,Medo de câncer NE
+Sinais/Sintomas,Geral e Inespecífico,A27,Medo de outra doença NE
+Sinais/Sintomas,Geral e Inespecífico,A28,Limitação funcional/incapacidade NE
+Sinais/Sintomas,Geral e Inespecífico,A29,Outros sinais/sintomas gerais
+Infecções,Geral e Inespecífico,A70,Tuberculose
+Infecções,Geral e Inespecífico,A71,Sarampo
+Infecções,Geral e Inespecífico,A72,Varicela
+Infecções,Geral e Inespecífico,A73,Malária
+Infecções,Geral e Inespecífico,A74,Rubéola
+Infecções,Geral e Inespecífico,A75,Mononucleose infecciosa
+Infecções,Geral e Inespecífico,A76,Outro exantema viral
+Infecções,Geral e Inespecífico,A77,Dengue e outras doenças virais NE
+Infecções,Geral e Inespecífico,A78,Hanseníase e outras doenças infecciosas NE
+Neoplasias,Geral e Inespecífico,A79,Carcinomatose (localização primária desconhecida)
+Traumatismos,Geral e Inespecífico,A80,Lesão traumática/acidente NE
+Traumatismos,Geral e Inespecífico,A81,Politraumatismos/ferimentos múltiplos
+Traumatismos,Geral e Inespecífico,A82,Efeito secundário de lesão traumática
+Traumatismos,Geral e Inespecífico,A84,Intoxicação por medicamento
+Traumatismos,Geral e Inespecífico,A85,Efeito adverso de fármaco dose correta
+Traumatismos,Geral e Inespecífico,A86,Efeito tóxico de substância não medicinal
+Traumatismos,Geral e Inespecífico,A87,Complicações de tratamento médico
+Traumatismos,Geral e Inespecífico,A88,Efeito adverso de fator físico
+Traumatismos,Geral e Inespecífico,A89,Efeito da prótese
+Anomalias Congénitas,Geral e Inespecífico,A90,Malformação congênita NE/múltiplas
+Outros diagnósticos,Geral e Inespecífico,A91,Investigação com resultado anormal NE
+Outros diagnósticos,Geral e Inespecífico,A92,Alergia/reação alérgica NE
+Outros diagnósticos,Geral e Inespecífico,A93,Recém nascido prematuro
+Anomalias Congénitas,Geral e Inespecífico,A94,"Morbidade perinatal, outra"
+Outros diagnósticos,Geral e Inespecífico,A95,Mortalidade perinatal
+Outros diagnósticos,Geral e Inespecífico,A96,Morte
+Outros diagnósticos,Geral e Inespecífico,A97,Sem doença
+Anomalias Congénitas,Geral e Inespecífico,A98,Medicina preventiva/manutenção da saúde
+Outros diagnósticos,Geral e Inespecífico,A99,Outras doenças gerais NE
