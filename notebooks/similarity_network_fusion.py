@@ -1,13 +1,12 @@
 import marimo
 
-__generated_with = "0.15.5"
+__generated_with = "0.17.6"
 app = marimo.App(width="medium")
 
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
+    mo.md(r"""
     # Similarity Network Fusion
 
     ## Dimensions 🎲
@@ -17,8 +16,7 @@ def _(mo):
     * **Demographic**: sex and gender characteristics
 
     Calculate the similarity in all these dimensions, having the diagnosis as the central factor.
-    """
-    )
+    """)
     return
 
 
@@ -82,7 +80,9 @@ def _(load_dotenv):
 
 @app.cell
 def _(mo):
-    mo.md(r"""## Data loading""")
+    mo.md(r"""
+    ## Data loading
+    """)
     return
 
 
@@ -114,7 +114,7 @@ def _(terminology_labels):
 
 @app.cell
 def _():
-    indicative_codes_enabled = False
+    indicative_codes_enabled = True
     return (indicative_codes_enabled,)
 
 
@@ -207,13 +207,17 @@ def _(empty_matrix):
 
 @app.cell
 def _(mo):
-    mo.md(r"""## Dimensions""")
+    mo.md(r"""
+    ## Dimensions
+    """)
     return
 
 
 @app.cell
 def _(mo):
-    mo.md(r"""### Clinical dimension""")
+    mo.md(r"""
+    ### Clinical dimension
+    """)
     return
 
 
@@ -260,13 +264,11 @@ def _(clinical_mat):
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
+    mo.md(r"""
     ### Temporal dimension ⌛
 
     * Features: week, year
-    """
-    )
+    """)
     return
 
 
@@ -345,44 +347,12 @@ def _(load_temporal_dimension):
 
 
 @app.cell
-def _():
-    # FIXME add column city
-    # if not dimension_exists("temporal"):
-    #     mo.md("Salvando a dimensão temporal no banco de dados...")
-    #
-    #     to_db = {
-    #         "terminology_id_1": [],
-    #         "terminology_id_2": [],
-    #         "value": [],
-    #     }
-    #     for _out in range(len([1, 2])):
-    #         for _in in range(len([1, 2])):
-    #             print(
-    #                 ids_to_terminology[_out], ids_to_terminology[_in], temporal_matrix[_out][_in]
-    #             )
-    #             to_db["terminology_id_1"].append(ids_to_terminology[_out])
-    #             to_db["terminology_id_2"].append(ids_to_terminology[_in])
-    #             to_db["value"].append(temporal_matrix[_out][_in])
-    #
-    #     df_to_insert = pl.DataFrame(to_db).with_columns(pl.lit("temporal").alias("dimension"))
-    #
-    #     insert_or_update_dimension(df_to_insert)
-    #
-    #     mo.md("✅ Dimensão temporal salva.")
-    # else:
-    #     mo.md("A dimensão temporal já existe no banco de dados.")
-    return
-
-
-@app.cell
 def _(mo):
-    mo.md(
-        r"""
+    mo.md(r"""
     ### Demographics dimension 🧑‍🍼
 
     * Features: sex, age group
-    """
-    )
+    """)
     return
 
 
@@ -412,38 +382,26 @@ def _(cosine_similarity, pl, terminology_to_ids):
         # make sure they have the same order from the other views
         id_labels_str = [str(i) for i in terminology_to_ids.keys()]
         sim_df = pl.DataFrame(sim_matrix_np, schema=id_labels_str)
-
-        # ids = pivoted_df_demographics["terminology_id"]
-        terminology_id_order = {
-            terminology_id: index for index, terminology_id in enumerate(terminology_to_ids.keys())
-        }
-
-        sim_df = (  # FIXME change from demographics columns to terminology ids columns
-            sim_df.with_columns(
-                sorted_terminology_id=pl.col("terminology_id").replace(terminology_id_order)
-            )
-            .sort("sorted_terminology_id")
-            .drop("sorted_terminology_id")
-            .select(["terminology_id"] + id_labels_str)  # order both rows and columns
-        )
+        #     .with_columns(
+        #     terminology_id=pl.Series(list(terminology_to_ids.keys()))
+        # ).select(["terminology_id"] + id_labels_str)  # order both rows and columns
         return sim_df
 
-    # TODO guarantee the order of the ids
-    return
+    return (demographics_view,)
 
 
 @app.cell
-def _():
-    # demo_view = demographics_view(df)
-    # demo_view
-
-    # TODO check proportions, too
-    return
+def _(demographics_view, df):
+    demo_view = demographics_view(df)
+    demo_view
+    return (demo_view,)
 
 
 @app.cell
 def _(mo):
-    mo.md(r"""## SNF ✨""")
+    mo.md(r"""
+    ## SNF ✨
+    """)
     return
 
 
@@ -516,11 +474,11 @@ def _(clinical_mat, embeddings_model_name, plt):
 
 
 @app.cell
-def _():
-    # plt.imshow(demo_view[:100, :100], cmap="viridis")
-    # plt.colorbar()
-    # plt.title("Affinity matrix (demo - cosine)")
-    # plt.show()
+def _(demo_view, plt):
+    plt.matshow(demo_view, cmap="viridis")
+    plt.colorbar()
+    plt.title("Affinity matrix (demographics)")
+    plt.show()
     return
 
 
@@ -544,14 +502,26 @@ def _(demo_view, np):
 
 @app.cell
 def _(mo):
-    mo.md(r"""## Affinities""")
+    mo.md(r"""
+    ## Affinities
+    """)
     return
 
 
 @app.cell
-def _(clinical_mat, temporal_matrix_normalized):
+def _(clinical_mat, demo_view, temporal_matrix_normalized):
+    assert clinical_mat.shape == temporal_matrix_normalized.shape == demo_view.shape, (
+        clinical_mat.shape,
+        temporal_matrix_normalized.shape,
+        demo_view.shape,
+    )
+    return
+
+
+@app.cell
+def _(clinical_mat, demo_view, temporal_matrix_normalized):
     # all views
-    affinities = [clinical_mat, temporal_matrix_normalized]
+    affinities = [clinical_mat, temporal_matrix_normalized, demo_view]
     return (affinities,)
 
 
@@ -641,14 +611,14 @@ def _(plt, results, run_k_validation):
 @app.cell
 def _():
     # hyperparameters chosen based on K validation step
-    K = 150
-    number_of_clusters = 20
+    K = 10
+    number_of_clusters = 60
     return K, number_of_clusters
 
 
 @app.cell
 def _(K, affinities, compute, np):
-    fused = compute.snf(affinities, K=K)  # 5 min
+    fused = compute.snf(affinities, K=K)  # alpha = 1 - 5 min
     print(np.isnan(fused).any())  # nan might occurr due to divisions to 0
     fused = np.nan_to_num(fused, nan=0.0, posinf=1.0, neginf=0.0)
     # np.savetxt(f'fused_snf_{selected_filename}.txt', fused)
@@ -656,8 +626,25 @@ def _(K, affinities, compute, np):
 
 
 @app.cell
+def _(fused):
+    fused
+    return
+
+
+@app.cell
+def _(fused, plt):
+    plt.matshow(fused, cmap="viridis")
+    plt.colorbar()
+    plt.title("Fused matrices")
+    plt.show()
+    return
+
+
+@app.cell
 def _(mo):
-    mo.md(r"""## Clustering 🩻""")
+    mo.md(r"""
+    ## Clustering 🩻
+    """)
     return
 
 
@@ -671,6 +658,19 @@ def _(cluster, fused, number_of_clusters):
 def _(fused, fused_labels, metrics):
     silhouette = metrics.silhouette_score(fused, fused_labels)  # nan se tiver apenas uma amostra!
     silhouette
+    return
+
+
+@app.cell
+def _(cluster, fused, metrics):
+    experiments_cluster_silhouette = {}
+
+    for _nr_cluster in [20, 40, 60, 100, 150]:
+        _fused_labels = cluster.spectral_clustering(fused, n_clusters=_nr_cluster)
+        _silhouette = metrics.silhouette_score(fused, _fused_labels)
+        experiments_cluster_silhouette[_nr_cluster] = _silhouette
+
+    experiments_cluster_silhouette
     return
 
 
@@ -703,7 +703,7 @@ def _(
 
     _terminology_id_clusters_file = Path(
         CLUSTERING_DIR
-        / f"snf_{dataset_name}__k{K}_{number_of_clusters}_clusters__{embeddings_model_name.replace('/', '_')}{indicative_codes_label}.txt"
+        / f"snf_{dataset_name}__k{K}_{number_of_clusters}_clusters__{embeddings_model_name.replace('/', '_')}{indicative_codes_label}_tcd.txt"
     )
     _terminology_id_clusters_file.write_text(json.dumps(terminology_id_clusters))
     return
