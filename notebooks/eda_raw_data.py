@@ -331,7 +331,7 @@ def _(chi2_contingency, np, pl):
             n = table.values.sum()
             r, k = table.shape
             return np.sqrt(chi2 / (n * (min(k, r) - 1)))
-        except:
+        except:  # noqa E722
             return 0.0
 
     return (cramers_v,)
