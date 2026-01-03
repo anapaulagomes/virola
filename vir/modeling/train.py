@@ -10,22 +10,14 @@ app = typer.Typer()
 def main(
     processed_path: Path,
     label: str = None,
-    model: str = "hdbscan",
+    model: str = None,
 ):
     if label is None:
         label = ""
     match model:
-        case "hdbscan":
-            from vir.modeling.clustering.hdbscan import main as hdbscan_main
-
-            hdbscan_main(processed_path, label)
-        case "dbscan":
-            from vir.modeling.clustering.dbscan import main as dbscan_main
-
-            dbscan_main(processed_path, label)
         case _:
             raise ValueError(f"Unknown model: {model}")
-    logger.success("Clustering completed.")
+    logger.warning("Clustering disabled. This is a placeholder.")
 
 
 if __name__ == "__main__":
