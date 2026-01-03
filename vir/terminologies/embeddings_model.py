@@ -65,7 +65,6 @@ def _(torch):
 
 @app.cell
 def _(DEFAULT_MODEL):
-    # model_name = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
     model_name = DEFAULT_MODEL
     return (model_name,)
 
