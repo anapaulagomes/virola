@@ -6,12 +6,7 @@ Find public health threats to be monitored from your data
 
 ### Requirements
 
-#### LLM support
-
-It is possible to describe the clusters using LLMs. For this, install: `llm install llm-ollama`
-You will also need to have Ollama installed: https://ollama.com/download/
-
-#### Additional files
+#### Dependencies
 
 Create a terminology file:
 
@@ -25,10 +20,22 @@ Create a database with medical embeddings:
 uv run python vir/terminologies/embeddings_model.py
 ```
 
+Download `indicative_codes_yes_no` from labeled data folder and place to `data/indicative_codes_yes_no.csv`.
+Then spin the command below to run the model:
+
+```bash
+uv run python notebooks/model_indicative_codes.py
+```
+
+#### LLM support
+
+It is possible to describe the clusters using LLMs. For this, install: `llm install llm-ollama`
+You will also need to have Ollama installed: https://ollama.com/download/
+
 ### Data cleaning
 
 ```
-uv run notebooks/02_data_cleaning.py -- --city "Carandaí"
+uv run vir/modeling/data_cleaning.py -- --city "Carandaí"
 ```
 
 ### Feature engineering
