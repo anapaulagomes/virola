@@ -57,7 +57,7 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import CLUSTERING_DIR, DATA_DIR, INTERIM_DATA_DIR
+    from vir.config import CLUSTERING_DIR, INDICATIVE_MODEL_RESULTS, INTERIM_DATA_DIR
     from vir.db import (
         fetch_terminologies,
         read_dimension,
@@ -65,7 +65,7 @@ def _():
 
     return (
         CLUSTERING_DIR,
-        DATA_DIR,
+        INDICATIVE_MODEL_RESULTS,
         INTERIM_DATA_DIR,
         fetch_terminologies,
         read_dimension,
@@ -87,11 +87,9 @@ def _(mo):
 
 
 @app.cell
-def _(DATA_DIR, pl):
+def _(INDICATIVE_MODEL_RESULTS, pl):
     include_codes = []
-    indicative_codes = pl.read_csv(
-        f"{DATA_DIR}/indicative_probabilities_sentence-transformers_all-MiniLM-L6-v2_codes.csv"
-    )
+    indicative_codes = pl.read_csv(INDICATIVE_MODEL_RESULTS)
     for _data in indicative_codes.iter_rows(named=True):
         if _data["indicative_probability"] > 0.50:
             include_codes.append(f"{_data['code']}:{_data['code_type']}")

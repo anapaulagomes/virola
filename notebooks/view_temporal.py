@@ -24,12 +24,10 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import DATA_DIR, INTERIM_DATA_DIR
-    from vir.db import (
-        fetch_terminologies,
-    )
+    from vir.config import INDICATIVE_MODEL_RESULTS, INTERIM_DATA_DIR
+    from vir.db import DEFAULT_MODEL, fetch_terminologies
 
-    return DATA_DIR, INTERIM_DATA_DIR, fetch_terminologies
+    return INDICATIVE_MODEL_RESULTS, DEFAULT_MODEL, INTERIM_DATA_DIR, fetch_terminologies
 
 
 @app.cell
@@ -67,9 +65,8 @@ def _(mo):
 
 
 @app.cell
-def _(fetch_terminologies):
-    embeddings_model_name = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
-    terminology_labels = fetch_terminologies(embeddings_model_name)
+def _(DEFAULT_MODEL, fetch_terminologies):
+    terminology_labels = fetch_terminologies(DEFAULT_MODEL)
     return (terminology_labels,)
 
 
@@ -88,12 +85,10 @@ def _():
 
 
 @app.cell
-def _(DATA_DIR, indicative_codes_enabled, pl):
+def _(INDICATIVE_MODEL_RESULTS, indicative_codes_enabled, pl):
     include_codes = []
     if indicative_codes_enabled:
-        indicative_codes = pl.read_csv(
-            f"{DATA_DIR}/indicative_probabilities_sentence-transformers_all-MiniLM-L6-v2_codes.csv"
-        )
+        indicative_codes = pl.read_csv(INDICATIVE_MODEL_RESULTS)
         for _data in indicative_codes.iter_rows(named=True):
             if _data["indicative_probability"] > 0.50:
                 include_codes.append(f"{_data['code']}:{_data['code_type']}")
@@ -335,7 +330,6 @@ def _(TimeSeriesKMeans, X_norm, n_jobs):
         )
         km = km.fit(X_norm)
         sum_of_squared_distances.append(km.inertia_)
-
     return (sum_of_squared_distances,)
 
 

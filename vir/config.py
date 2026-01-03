@@ -31,6 +31,7 @@ RAW_DATA_FILE = RAW_DATA_DIR / "aesop_raw_dados_2017_20250223_20municipios.parqu
 
 EMBEDDING_COMPONENTS = 64
 CHUNK_SIZE = 100_000  # Records per chunk - adjust based on available RAM
+INDICATIVE_MODEL_RESULTS = f"{DATA_DIR}/indicative_probabilities.csv"
 
 # Memory recommendations by RAM:
 # 8GB RAM: CHUNK_SIZE = 50_000
