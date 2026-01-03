@@ -3,7 +3,7 @@ import duckdb
 from vir.config import DATA_DIR
 
 PROJECT_DB = DATA_DIR / "virola.db"
-DEFAULT_MODEL = "medicalai/ClinicalBERT"
+DEFAULT_MODEL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
 MODEL_DIMENSIONS = 768
 
 
