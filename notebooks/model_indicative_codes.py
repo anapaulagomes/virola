@@ -291,6 +291,20 @@ def _(df_results, mo, pl):
 
 
 @app.cell
+def _(df_results, pl, best_threshold):
+    # active learning for items closest to the decision boundary
+    candidates = (
+        df_results.filter(pl.col("predicted_label").is_in([0, 1]))
+        .with_columns(
+            (pl.col("indicative_prob") - best_threshold).abs().alias("distance_to_boundary")
+        )
+        .sort("distance_to_boundary")
+        .head(10)
+    )
+    return (candidates,)
+
+
+@app.cell
 def _(df_results, mo, pl):
     mo.md("""### Sanity check
     Verify that the "High Confidence" predictions make sense.
