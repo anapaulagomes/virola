@@ -285,13 +285,7 @@ def _(MinMaxScaler, TimeSeriesKMedoids, X, make_pipeline):
 
 @app.cell
 def _(X, pipeline):
-    preds = pipeline.named_steps["timeserieskmedoids"].predict(X)
-    return (preds,)
-
-
-@app.cell
-def _(preds):
-    preds
+    pipeline.named_steps["timeserieskmedoids"].predict(X)
     return
 
 
@@ -302,10 +296,14 @@ def _(pipeline):
 
 
 @app.cell
-def _(X, number_of_clusters, pipeline, plot_cluster_algorithm):
-    _fig, _ = plot_cluster_algorithm(
-        pipeline.named_steps["timeserieskmedoids"], X, number_of_clusters
-    )
+def _(MinMaxScaler, X):
+    Xt = MinMaxScaler().fit_transform(X)
+    return (Xt,)
+
+
+@app.cell
+def _(Xt, pipeline, plot_cluster_algorithm):
+    _fig, _ = plot_cluster_algorithm(pipeline.named_steps["timeserieskmedoids"], Xt, 3)
     _fig
     return
 
