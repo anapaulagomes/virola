@@ -16,18 +16,45 @@ def _():
     import os
 
     import plotly.express as px
+    import plotly.graph_objects as go
     import polars as pl
+    from aeon.clustering import TimeSeriesKMedoids
+    from aeon.distances import pairwise_distance
+    from aeon.transformations.collection import MinMaxScaler
+    from aeon.visualisation import plot_cluster_algorithm, plot_series_collection
     from dotenv import load_dotenv
+    from sklearn.metrics import silhouette_score
+    from sklearn.pipeline import make_pipeline
 
-    return load_dotenv, os, pl, px
+    return (
+        MinMaxScaler,
+        TimeSeriesKMedoids,
+        go,
+        load_dotenv,
+        make_pipeline,
+        os,
+        pairwise_distance,
+        pl,
+        plot_cluster_algorithm,
+        plot_series_collection,
+        px,
+        silhouette_score,
+    )
 
 
 @app.cell
 def _():
     from vir.config import INDICATIVE_MODEL_RESULTS, INTERIM_DATA_DIR
+    from vir.data_filters import filter_most_representative_rows
     from vir.db import DEFAULT_MODEL, fetch_terminologies
 
-    return INDICATIVE_MODEL_RESULTS, DEFAULT_MODEL, INTERIM_DATA_DIR, fetch_terminologies
+    return (
+        DEFAULT_MODEL,
+        INDICATIVE_MODEL_RESULTS,
+        INTERIM_DATA_DIR,
+        fetch_terminologies,
+        filter_most_representative_rows,
+    )
 
 
 @app.cell
@@ -90,7 +117,7 @@ def _(INDICATIVE_MODEL_RESULTS, indicative_codes_enabled, pl):
     if indicative_codes_enabled:
         indicative_codes = pl.read_csv(INDICATIVE_MODEL_RESULTS)
         for _data in indicative_codes.iter_rows(named=True):
-            if _data["indicative_probability"] > 0.50:
+            if _data["indicative_prob"] > 0.50:
                 include_codes.append(f"{_data['code']}:{_data['code_type']}")
     return (include_codes,)
 
@@ -148,25 +175,52 @@ def _(
     return (df,)
 
 
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
+@app.cell
+def _(df):
+    df.columns
+    return
 
-    """)
+
+@app.cell
+def _(df, filter_most_representative_rows):
+    top_10 = filter_most_representative_rows(df).top_k(k=10, by="quantity")
+    return (top_10,)
+
+
+@app.cell
+def _(df, pl, px, top_10):
+    _fig = px.line(
+        df.filter(pl.col("terminology_label").is_in(top_10["terminology_label"]))
+        .group_by(["terminology_label", "year", "week"])
+        .agg(pl.col("quantity").sum())
+        .sort(["year", "week"]),
+        x="week",
+        y="quantity",
+        color="terminology_label",
+        markers=True,
+        facet_row="year",
+        # log_y=True,
+    )
+    _fig
     return
 
 
 @app.cell
 def _(df, pl):
-    df_week = df.group_by(["terminology_id", "week"]).agg(pl.col("quantity").sum().alias("total"))
+    more_than_12_weeks = (
+        df.group_by("terminology_id")
+        .agg(pl.col("week").count().alias("week_count"))
+        .filter(pl.col("week_count").ge(12))
+    )
+
+    df_week = (
+        df.filter(pl.col("terminology_id").is_in(more_than_12_weeks["terminology_id"]))
+        .group_by(["terminology_id", "week"])
+        .agg(pl.col("quantity").sum().alias("total"))
+    )
+
     df_week
     return (df_week,)
-
-
-@app.cell
-def _(df_week):
-    df_week
-    return
 
 
 @app.cell
@@ -191,30 +245,15 @@ def _(df_week, ordered_week):
 
 
 @app.cell
-def _(mo):
-    mo.md(r"""
-    Dynamic Time Warping is used to calculate the distance between each time series in a collection of time series.
-    Our collection of time series here is composed by diagnosis and the frequency of cases in given week/year.
-    """)
-    return
-
-
-@app.cell
-def _(temporal_pivot):
-    temporal_sample = temporal_pivot.sample(500)
-    return (temporal_sample,)
-
-
-@app.cell
-def _(ordered_week, temporal_sample):
-    only_weeks = temporal_sample.select(ordered_week).to_numpy()
-    return (only_weeks,)
+def _(ordered_week, temporal_pivot):
+    X = temporal_pivot.select(ordered_week).to_numpy()
+    return (X,)
 
 
 @app.cell
 def _(mo):
     mo.md(r"""
-    ### Normalization
+    ### Clustering
 
     The time series were aggregated by week, so we can capture cyclic behaviour.
     Now it is time to normalize, so less frequent diagnosis can be part of the representation.
@@ -223,74 +262,30 @@ def _(mo):
 
 
 @app.cell
-def _(only_weeks):
-    only_weeks
+def _(X, plot_series_collection):
+    plot_series_collection(X)
     return
 
 
 @app.cell
-def _(only_weeks):
-    from aeon.utils.numba.general import z_normalise_series_2d
-
-    X_norm = z_normalise_series_2d(only_weeks)
-    X_norm
-    return (X_norm,)
+def _(X, n_jobs, pairwise_distance):
+    distance_matrix = pairwise_distance(X, method="msm", n_jobs=n_jobs, c=1)
+    return (distance_matrix,)
 
 
 @app.cell
-def _():
-    # dtw took 14 min with n jobs = -1
-    # 25 min with 16 threads
-    # dtw_results = dtw_pairwise_distance(
-    #     only_weeks,
-    #     n_jobs=int(os.getenv("NUMBER_OF_THREADS", -1)),
-    # )
-    # dtw_results
-    return
+def _(MinMaxScaler, TimeSeriesKMedoids, X, make_pipeline):
+    pipeline = make_pipeline(
+        MinMaxScaler(), TimeSeriesKMedoids(distance="msm", random_state=42, n_clusters=3)
+    )
+
+    pipeline.fit(X)
+    return (pipeline,)
 
 
 @app.cell
-def _(dtw_results, np):
-    def load_temporal_dimension():
-        temporal_matrix = dtw_results.copy()
-
-        np.fill_diagonal(temporal_matrix, 0)  # enforce 0
-        return temporal_matrix
-
-    return
-
-
-@app.cell
-def _():
-    # temporal_matrix = load_temporal_dimension()
-    return
-
-
-@app.cell
-def _():
-    from aeon.visualisation import plot_series_collection
-
-    return (plot_series_collection,)
-
-
-@app.cell
-def _(X_norm, plot_series_collection):
-    plot_series_collection(X_norm)
-    return
-
-
-@app.cell
-def _(X_norm, n_jobs):
-    from aeon.clustering import TimeSeriesKMeans
-
-    clst = TimeSeriesKMeans(distance="dtw", averaging_method="ba", n_jobs=n_jobs)
-    clst.fit(X_norm)
-    return TimeSeriesKMeans, clst
-
-
-@app.cell
-def _(clst, only_weeks):
-    preds = clst.predict(only_weeks)
+def _(X, pipeline):
+    preds = pipeline.named_steps["timeserieskmedoids"].predict(X)
     return (preds,)
 
 
@@ -301,8 +296,17 @@ def _(preds):
 
 
 @app.cell
-def _(clst):
-    clst.inertia_
+def _(pipeline):
+    pipeline.named_steps["timeserieskmedoids"].inertia_
+    return
+
+
+@app.cell
+def _(X, number_of_clusters, pipeline, plot_cluster_algorithm):
+    _fig, _ = plot_cluster_algorithm(
+        pipeline.named_steps["timeserieskmedoids"], X, number_of_clusters
+    )
+    _fig
     return
 
 
@@ -311,57 +315,98 @@ def _(mo):
     mo.md(r"""
     ### Deciding the ideal number of clusters
 
-    Elbow curve
+    * Elbow curve
+    * Silhouette score
     """)
     return
 
 
 @app.cell
-def _(TimeSeriesKMeans, X_norm, n_jobs):
-    sum_of_squared_distances = []
+def _(go):
+    def plot_silhouette_vs_inertia(cluster_range, silhouette_scores, inertia_scores):
+        _fig = go.Figure()
 
-    for n_clusters in range(2, 11):
-        km = TimeSeriesKMeans(
-            n_clusters=n_clusters,
-            distance="msm",
-            averaging_method="ba",
-            n_jobs=n_jobs,
-            random_state=42,
+        _fig.add_trace(
+            go.Scatter(
+                x=list(cluster_range),
+                y=silhouette_scores,
+                name="Silhouette Score",
+                mode="lines+markers",
+                marker=dict(size=10, color="firebrick"),
+                line=dict(width=3),
+            )
         )
-        km = km.fit(X_norm)
-        sum_of_squared_distances.append(km.inertia_)
-    return (sum_of_squared_distances,)
+
+        _fig.add_trace(
+            go.Scatter(
+                x=list(cluster_range),
+                y=inertia_scores,
+                name="Inertia (distances sum)",
+                mode="lines+markers",
+                marker=dict(size=8, color="royalblue", symbol="diamond"),
+                line=dict(width=2, dash="dot"),
+                yaxis="y2",
+            )
+        )
+
+        _fig.update_layout(
+            title="Silhouette vs Inertia (MSM)",
+            xaxis_title="Nr. of clusters (k)",
+            yaxis=dict(title="Silhouette Score"),
+            yaxis2=dict(title="Inertia", overlaying="y", side="right", showgrid=False),
+            template="plotly_white",
+            hovermode="x unified",
+            legend=dict(x=0.5, y=1.1, orientation="h", xanchor="center"),
+        )
+        return _fig
+
+    return (plot_silhouette_vs_inertia,)
 
 
 @app.cell
-def _(sum_of_squared_distances):
-    sum_of_squared_distances
-    return
+def _(
+    MinMaxScaler,
+    TimeSeriesKMedoids,
+    distance_matrix,
+    make_pipeline,
+    silhouette_score,
+):
+    silhouette_scores = []
+    inertia_scores = []
+    cluster_range = range(2, 11)
+
+    print("Beginning clustering analysis...")
+
+    for _n_clusters in cluster_range:
+        _pipeline = make_pipeline(
+            MinMaxScaler(),
+            TimeSeriesKMedoids(
+                n_clusters=_n_clusters, distance="msm", random_state=42, distance_params={"c": 0.1}
+            ),
+        )
+
+        _pipeline.fit(distance_matrix)
+        _labels = _pipeline.named_steps["timeserieskmedoids"].labels_
+        _inertia = _pipeline.named_steps["timeserieskmedoids"].inertia_
+
+        # SILHOUETTE: Calculamos usando a MESMA matriz de distâncias MSM
+        # Isso garante consistência matemática (não usar Euclidiana para validar MSM)
+        score = silhouette_score(distance_matrix, _labels, metric="precomputed")
+        silhouette_scores.append(score)
+        inertia_scores.append(_inertia)
+
+        print(f"k={_n_clusters} | Silhouette MSM: {score:.4f}")
+    return cluster_range, inertia_scores, silhouette_scores
 
 
 @app.cell
-def _(px, sum_of_squared_distances):
-    px.line(x=list(range(2, 11)), y=sum_of_squared_distances)
-    return
-
-
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _(preds):
-    number_of_clusters = len(set(preds))
-    number_of_clusters
-    return (number_of_clusters,)
-
-
-@app.cell
-def _(clst, number_of_clusters, only_weeks):
-    from aeon.visualisation import plot_cluster_algorithm
-
-    plot_cluster_algorithm(clst, only_weeks, number_of_clusters)
+def _(
+    cluster_range,
+    inertia_scores,
+    plot_silhouette_vs_inertia,
+    silhouette_scores,
+):
+    plot_silhouette_vs_inertia(cluster_range, silhouette_scores, inertia_scores)
     return
 
 
