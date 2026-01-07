@@ -13,8 +13,12 @@ def _():
 
 @app.cell
 def _():
+    from datetime import datetime
+    from pathlib import Path
+
     import numpy as np
     import plotly.express as px
+    import plotly.graph_objects as go
     import polars as pl
     import torch
     from datasets import Dataset
@@ -24,10 +28,13 @@ def _():
 
     return (
         Dataset,
+        Path,
         SetFitModel,
         Trainer,
         TrainingArguments,
         average_precision_score,
+        datetime,
+        go,
         np,
         pl,
         precision_recall_curve,
@@ -61,16 +68,26 @@ def _(mo):
 
 
 @app.cell
-def _(np):
+def _(Path, np):
     seed_number = 42
     np.random.seed(seed_number)
     label_col = "indicative"
-    output_path = "data/processed/indicative_probabilities_setfit.csv"
-    return label_col, output_path, seed_number
+
+    # paths
+    output_path = Path("data/processed/indicative_probabilities_setfit.csv")
+    active_learning_labels_path = Path("data/active_learning_labels.csv")
+    active_learning_metrics_path = Path("data/active_learning_metrics.csv")
+    return (
+        active_learning_labels_path,
+        active_learning_metrics_path,
+        label_col,
+        output_path,
+        seed_number,
+    )
 
 
 @app.cell
-def _(label_col, pl, seed_number):
+def _(active_learning_labels_path, label_col, pl, seed_number):
     df = pl.read_csv("data/indicative_codes_yes_no.csv")
     mapping = {"yes": 1, "no": 0}
 
@@ -83,6 +100,30 @@ def _(label_col, pl, seed_number):
             .map_elements(lambda answer: mapping.get(answer, -1), return_dtype=pl.Int8)
         ]
     )
+
+    # merge with active learning labels if they exist
+    if active_learning_labels_path.exists():
+        df_al = pl.read_csv(active_learning_labels_path)
+        df_al = df_al.with_columns(
+            pl.col("indicative")
+            .str.strip_chars()
+            .str.to_lowercase()
+            .map_elements(lambda answer: mapping.get(answer, -1), return_dtype=pl.Int8)
+        )
+        # update labels in df with active learning labels
+        df = (
+            df.join(
+                df_al.select(["description", "indicative"]),
+                on="description",
+                how="left",
+                suffix="_al",
+            )
+            .with_columns(
+                pl.coalesce([pl.col("indicative_al"), pl.col("indicative")]).alias("indicative")
+            )
+            .drop("indicative_al")
+        )
+        print(f"📚 Merged {len(df_al)} active learning labels")
 
     df_labeled = df.filter(pl.col(label_col).is_in([0, 1]))
     df_all_codes = df.filter(pl.col(label_col).eq(-1))
@@ -98,7 +139,7 @@ def _(label_col, pl, seed_number):
     df_labeled = df_labeled.sample(fraction=1.0, seed=seed_number)
     texts = df_labeled["description"].to_list()
     labels = df_labeled[label_col].to_numpy()
-    return df_all_codes, labels, texts
+    return df_all_codes, df_labeled, labels, texts
 
 
 @app.cell
@@ -291,17 +332,247 @@ def _(df_results, mo, pl):
 
 
 @app.cell
-def _(df_results, pl, best_threshold):
-    # active learning for items closest to the decision boundary
-    candidates = (
-        df_results.filter(pl.col("predicted_label").is_in([0, 1]))
-        .with_columns(
-            (pl.col("indicative_prob") - best_threshold).abs().alias("distance_to_boundary")
-        )
-        .sort("distance_to_boundary")
-        .head(10)
+def _(mo):
+    mo.md(r"""
+    ## Active Learning 🎯
+
+    Scientifically sound approach:
+    - 70% uncertainty sampling (near decision boundary)
+    - 30% random sampling (for diversity)
+    - Metadata tracking for reproducibility
+    """)
+    return
+
+
+@app.cell
+def _(mo):
+    # configuration
+    al_batch_size = mo.ui.slider(
+        start=5, stop=30, value=10, step=1, label="Batch size", show_value=True
     )
-    return (candidates,)
+    al_uncertainty_ratio = mo.ui.slider(
+        start=0.5,
+        stop=1.0,
+        value=0.7,
+        step=0.1,
+        label="Uncertainty ratio (vs random)",
+        show_value=True,
+    )
+    mo.hstack([al_batch_size, al_uncertainty_ratio], justify="start")
+    return al_batch_size, al_uncertainty_ratio
+
+
+@app.cell
+def _(
+    al_batch_size,
+    al_uncertainty_ratio,
+    best_threshold,
+    df_all_codes,
+    df_labeled,
+    np,
+    pl,
+    seed_number,
+):
+    # exclude already labeled samples from pool
+    _already_labeled = set(df_labeled["description"].to_list())
+    _pool = df_all_codes.filter(~pl.col("description").is_in(_already_labeled))
+
+    # calculate uncertainty scores for all pool samples
+    _pool_with_scores = _pool.with_columns(
+        (pl.col("indicative") - best_threshold).abs().alias("distance_to_boundary")
+    )
+
+    # mixed sampling strategy
+    _n_uncertain = int(al_batch_size.value * al_uncertainty_ratio.value)
+    _n_random = al_batch_size.value - _n_uncertain
+
+    # uncertainty sampling: closest to decision boundary
+    _uncertain_candidates = _pool_with_scores.sort("distance_to_boundary").head(_n_uncertain)
+
+    # random sampling: from remaining pool
+    np.random.seed(seed_number)
+    _remaining_pool = _pool_with_scores.filter(
+        ~pl.col("description").is_in(_uncertain_candidates["description"])
+    )
+    _random_candidates = _remaining_pool.sample(n=min(_n_random, len(_remaining_pool)))
+
+    # combine both strategies
+    al_candidates = pl.concat([_uncertain_candidates, _random_candidates]).with_columns(
+        pl.Series(
+            name="sampling_strategy",
+            values=["uncertainty"] * len(_uncertain_candidates)
+            + ["random"] * len(_random_candidates),
+        )
+    )
+
+    print(
+        f"📊 Selected {_n_uncertain} uncertain + {_n_random} random = {len(al_candidates)} total"
+    )
+    return (al_candidates,)
+
+
+@app.cell
+def _(al_candidates, mo):
+    # create labeling interface
+    _widgets = []
+    for _row in al_candidates.iter_rows(named=True):
+        desc = _row["description"]
+        prob = _row["indicative"]
+        strategy = _row["sampling_strategy"]
+        icon = "🎲" if strategy == "random" else "⚖️"
+
+        radio = mo.ui.radio(
+            options={"yes": "✅ Indicative", "no": "🚫 Non-Indicative", "skip": "⏭️ Skip"},
+            value="skip",
+            label=f"{icon} **[{prob:.1%}]** {desc}",
+        )
+        _widgets.append(radio)
+
+    al_labeling_form = mo.ui.form(
+        mo.ui.array(_widgets),  # Usar array ao invés de vstack
+        submit_button_label="💾 Save Labels",
+        bordered=True,
+    )
+    al_labeling_form
+    return (al_labeling_form,)
+
+
+@app.cell
+def _(
+    active_learning_labels_path,
+    active_learning_metrics_path,
+    al_candidates,
+    al_labeling_form,
+    average_precision_score,
+    best_threshold,
+    datetime,
+    mo,
+    pl,
+    test_labels,
+    y_pred_probs,
+):
+    if al_labeling_form.value:
+        _labeled_samples = []
+        _timestamp = datetime.now().isoformat()
+
+        # collect labeled samples
+        for _idx, _row in enumerate(al_candidates.iter_rows(named=True)):
+            label_value = al_labeling_form.value[_idx]
+            if label_value and label_value != "skip":
+                _labeled_samples.append(
+                    {
+                        "description": _row["description"],
+                        "indicative": label_value,
+                        "indicative_prob": _row["indicative"],
+                        "distance_to_boundary": _row["distance_to_boundary"],
+                        "sampling_strategy": _row["sampling_strategy"],
+                        "timestamp": _timestamp,
+                    }
+                )
+
+        if _labeled_samples:
+            _df_new = pl.DataFrame(_labeled_samples)
+
+            # append to existing labels
+            if active_learning_labels_path.exists():
+                _existing = pl.read_csv(active_learning_labels_path)
+                _df_new = pl.concat([_existing, _df_new])
+
+            _df_new.write_csv(active_learning_labels_path)
+
+            # track iteration metrics
+            _iteration = (
+                pl.read_csv(active_learning_metrics_path).height
+                if active_learning_metrics_path.exists()
+                else 0
+            )
+            _metrics_row = pl.DataFrame(
+                {
+                    "iteration": [_iteration + 1],
+                    "n_samples_added": [len(_labeled_samples)],
+                    "total_labeled": [len(_df_new)],
+                    "test_avg_precision": [average_precision_score(test_labels, y_pred_probs)],
+                    "best_threshold": [best_threshold],
+                    "timestamp": [_timestamp],
+                }
+            )
+
+            if active_learning_metrics_path.exists():
+                _existing_metrics = pl.read_csv(active_learning_metrics_path)
+                _metrics_row = pl.concat([_existing_metrics, _metrics_row])
+
+            _metrics_row.write_csv(active_learning_metrics_path)
+
+            mo.md(
+                f"""
+            ✅ **Saved {len(_labeled_samples)} labels** (iteration {_iteration + 1})
+
+            Files updated:
+            - `{active_learning_labels_path}`
+            - `{active_learning_metrics_path}`
+
+            **Next:** Restart the notebook to retrain with new labels
+            """
+            )
+        else:
+            mo.md("⚠️ No labels selected (all skipped)")
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Learning Curve
+
+    Track model performance across active learning iterations.
+    """)
+    return
+
+
+@app.cell
+def _(active_learning_metrics_path, go, mo, pl):
+    if active_learning_metrics_path.exists():
+        _metrics_df = pl.read_csv(active_learning_metrics_path)
+
+        _fig = go.Figure()
+        _fig.add_trace(
+            go.Scatter(
+                x=_metrics_df["total_labeled"],
+                y=_metrics_df["test_avg_precision"],
+                mode="lines+markers",
+                name="Average Precision",
+                marker=dict(size=10),
+                line=dict(width=2),
+            )
+        )
+        _fig.update_layout(
+            title="Active Learning Progress",
+            xaxis_title="Total Labeled Samples",
+            yaxis_title="Test Set Average Precision",
+            yaxis=dict(range=[0, 1]),
+            hovermode="x unified",
+        )
+
+        mo.vstack(
+            [
+                _fig,
+                mo.md(f"**Current iteration:** {_metrics_df.height}"),
+                mo.ui.table(
+                    _metrics_df.select(
+                        [
+                            "iteration",
+                            "n_samples_added",
+                            "total_labeled",
+                            "test_avg_precision",
+                            "best_threshold",
+                        ]
+                    )
+                ),
+            ]
+        )
+    else:
+        mo.md("No active learning iterations yet. Label some samples to start tracking progress.")
+    return
 
 
 @app.cell
