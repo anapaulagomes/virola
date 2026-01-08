@@ -47,16 +47,24 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import INDICATIVE_MODEL_RESULTS, INTERIM_DATA_DIR
     from vir.data_filters import filter_most_representative_rows
-    from vir.db import DEFAULT_MODEL, fetch_terminologies
+    from vir.db import DEFAULT_MODEL
+    from vir.notebook_widgets import (
+        create_file_dropdown,
+        extract_dataset_name,
+        load_and_prepare_dataframe,
+        load_indicative_codes,
+        load_terminology_labels,
+    )
 
     return (
         DEFAULT_MODEL,
-        INDICATIVE_MODEL_RESULTS,
-        INTERIM_DATA_DIR,
-        fetch_terminologies,
+        create_file_dropdown,
+        extract_dataset_name,
         filter_most_representative_rows,
+        load_and_prepare_dataframe,
+        load_indicative_codes,
+        load_terminology_labels,
     )
 
 
@@ -107,8 +115,8 @@ def _(mo):
 
 
 @app.cell
-def _(DEFAULT_MODEL, fetch_terminologies):
-    terminology_labels = fetch_terminologies(DEFAULT_MODEL)
+def _(DEFAULT_MODEL, load_terminology_labels):
+    terminology_labels = load_terminology_labels(DEFAULT_MODEL)
     return (terminology_labels,)
 
 
@@ -121,20 +129,9 @@ def _(mo):
 
 
 @app.cell
-def _():
-    indicative_codes_enabled = True
-    return (indicative_codes_enabled,)
-
-
-@app.cell
-def _(INDICATIVE_MODEL_RESULTS, indicative_codes_enabled, pl):
-    include_codes = []
-    if indicative_codes_enabled:
-        indicative_codes = pl.read_csv(INDICATIVE_MODEL_RESULTS)
-        for _data in indicative_codes.iter_rows(named=True):
-            if _data["indicative_prob"] > 0.50:
-                include_codes.append(f"{_data['code']}:{_data['code_type']}")
-    return (include_codes,)
+def _(load_indicative_codes):
+    include_codes, indicative_codes_enabled = load_indicative_codes(threshold=0.50, enabled=True)
+    return (include_codes, indicative_codes_enabled)
 
 
 @app.cell
@@ -146,46 +143,21 @@ def _(mo):
 
 
 @app.cell
-def _(INTERIM_DATA_DIR, mo):
-    _all_options = [
-        str(_file.resolve()) for _file in INTERIM_DATA_DIR.glob("**/cleaned_*.parquet")
-    ]
-    default = [
-        _option
-        for _option in _all_options
-        if "cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet" in _option
-    ]
-
-    files_dropdown = mo.ui.dropdown(
-        options=_all_options,
-        label="Choose dataset",
-        searchable=True,
-        value=default[0] if default else None,
-    )
+def _(create_file_dropdown):
+    files_dropdown = create_file_dropdown()
     files_dropdown
     return (files_dropdown,)
 
 
 @app.cell
-def _(
-    files_dropdown,
-    include_codes,
-    indicative_codes_enabled,
-    pl,
-    terminology_labels,
-):
-    selected_filename = files_dropdown.value
-    df = pl.read_parquet(selected_filename)
-    df = df.drop(["unique_id", "state", "city", "region", "population_range"])  # make it per city
-    df = df.group_by(["year", "week", "sex", "age_group", "code_type", "code"]).agg(
-        pl.col("quantity").sum()
+def _(files_dropdown, include_codes, load_and_prepare_dataframe, terminology_labels):
+    df = load_and_prepare_dataframe(
+        file_path=files_dropdown.value,
+        terminology_labels=terminology_labels,
+        include_codes=include_codes,
+        year_min=2022,
+        year_max=2024,
     )
-    df = df.join(terminology_labels, on=["code", "code_type"]).rename(
-        {"id": "terminology_id", "label": "terminology_label"}
-    )
-    df = df.filter(pl.col("year").is_between(2022, 2024))
-    if indicative_codes_enabled:
-        df = df.filter(pl.col("terminology_label").is_in(include_codes))
     df.head()
     return (df,)
 
