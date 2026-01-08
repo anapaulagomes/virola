@@ -27,6 +27,8 @@ FIGURES_DIR = REPORTS_DIR / "figures"
 
 RAW_DATA_FILE = RAW_DATA_DIR / "aesop_raw_dados_2017_20250223_20municipios.parquet"
 
+VIEWS_CACHE_DIR = DATA_DIR / "views"
+
 # FIXME create dirs if not exist
 
 EMBEDDING_COMPONENTS = 64
