@@ -15,6 +15,7 @@ def _():
 def _():
     import os
 
+    import numpy as np
     import plotly.express as px
     import plotly.graph_objects as go
     import polars as pl
@@ -23,7 +24,7 @@ def _():
     from aeon.transformations.collection import MinMaxScaler
     from aeon.visualisation import plot_cluster_algorithm, plot_series_collection
     from dotenv import load_dotenv
-    from sklearn.metrics import silhouette_score
+    from sklearn.metrics import silhouette_samples, silhouette_score
     from sklearn.pipeline import make_pipeline
 
     return (
@@ -32,12 +33,14 @@ def _():
         go,
         load_dotenv,
         make_pipeline,
+        np,
         os,
         pairwise_distance,
         pl,
         plot_cluster_algorithm,
         plot_series_collection,
         px,
+        silhouette_samples,
         silhouette_score,
     )
 
@@ -66,7 +69,19 @@ def _(load_dotenv):
 @app.cell
 def _(os):
     n_jobs = int(os.getenv("NUMBER_OF_THREADS", -1))
-    return (n_jobs,)
+    tableau_colors = [
+        "#4E79A7",  # Blue
+        "#F28E2B",  # Orange
+        "#E15759",  # Red
+        "#76B7B2",  # Cyan
+        "#59A14F",  # Green
+        "#EDC948",  # Yellow
+        "#B07AA1",  # Purple
+        "#FF9DA7",  # Pink
+        "#9C755F",  # Brown
+        "#BAB0AC",  # Gray
+    ]
+    return n_jobs, tableau_colors
 
 
 @app.cell
@@ -268,9 +283,11 @@ def _(X, plot_series_collection):
 
 
 @app.cell
-def _(X, n_jobs, pairwise_distance):
-    distance_matrix = pairwise_distance(X, method="msm", n_jobs=n_jobs, c=1)
-    return (distance_matrix,)
+def _(mo):
+    mo.md(r"""
+    **Note**: Distance matrix will be computed after Grid Search with optimal c parameter.
+    """)
+    return
 
 
 @app.cell
@@ -306,6 +323,108 @@ def _(Xt, pipeline, plot_cluster_algorithm):
     _fig, _ = plot_cluster_algorithm(pipeline.named_steps["timeserieskmedoids"], Xt, 3)
     _fig
     return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Grid Search for optimal c parameter
+
+    The `c` parameter in MSM controls the cost of split/merge operations.
+    Low values make these operations cheaper (more flexibility),
+    high values make them more expensive (more rigidity).
+
+    Find the `c` that maximizes Silhouette Score for k=3 or k=4, as these are the natural number of clusters identified in the data.
+    """)
+    return
+
+
+@app.cell
+def _(mo):
+    k_for_grid_search = mo.ui.slider(start=2, stop=5, value=3, label="k for c Grid Search")
+    k_for_grid_search
+    return (k_for_grid_search,)
+
+
+@app.cell
+def _(
+    MinMaxScaler,
+    TimeSeriesKMedoids,
+    X,
+    k_for_grid_search,
+    make_pipeline,
+    n_jobs,
+    pairwise_distance,
+    pl,
+    silhouette_score,
+):
+    c_values = [0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
+    grid_search_results = []
+
+    print(f"Grid Search for k={k_for_grid_search.value}...")
+    print("-" * 60)
+
+    for _c in c_values:
+        _dist_matrix = pairwise_distance(X, method="msm", n_jobs=n_jobs, c=_c)
+        _pipeline = make_pipeline(
+            MinMaxScaler(),
+            TimeSeriesKMedoids(
+                n_clusters=k_for_grid_search.value,
+                distance="msm",
+                random_state=42,
+                distance_params={"c": _c},
+            ),
+        )
+
+        _pipeline.fit(_dist_matrix)
+        _labels = _pipeline.named_steps["timeserieskmedoids"].labels_
+        _silhouette = silhouette_score(_dist_matrix, _labels, metric="precomputed")
+
+        grid_search_results.append(
+            {"c": _c, "silhouette": _silhouette, "k": k_for_grid_search.value}
+        )
+
+        print(f"c={_c:6.2f} | Silhouette={_silhouette:.4f}")
+
+    grid_df = pl.DataFrame(grid_search_results)
+    best_c_row = grid_df.sort("silhouette", descending=True)[0]
+    best_c = best_c_row["c"][0]
+    best_silhouette = best_c_row["silhouette"][0]
+
+    print("-" * 60)
+    print(f"🏆 BEST c = {best_c} (Silhouette = {best_silhouette:.4f})")
+    return best_c, grid_df
+
+
+@app.cell
+def _(grid_df, px):
+    _fig = px.line(
+        grid_df,
+        x="c",
+        y="silhouette",
+        markers=True,
+        title="Grid Search: Silhouette Score vs c parameter (MSM)",
+        labels={"c": "Parameter c", "silhouette": "Silhouette Score"},
+        color_discrete_sequence=["#E15759"],  # Tableau Red
+    )
+    _fig.update_traces(marker=dict(size=10))
+    _fig
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Distance matrix with optimal c
+    """)
+    return
+
+
+@app.cell
+def _(X, best_c, n_jobs, pairwise_distance):
+    # Compute final distance matrix with best c
+    optimal_distance_matrix = pairwise_distance(X, method="msm", n_jobs=n_jobs, c=best_c)
+    return (optimal_distance_matrix,)
 
 
 @app.cell
@@ -365,31 +484,36 @@ def _(go):
 def _(
     MinMaxScaler,
     TimeSeriesKMedoids,
-    distance_matrix,
+    best_c,
     make_pipeline,
+    optimal_distance_matrix,
     silhouette_score,
 ):
     silhouette_scores = []
     inertia_scores = []
-    cluster_range = range(2, 11)
+    cluster_range = range(2, 5)
 
-    print("Beginning clustering analysis...")
+    print("Beginning clustering analysis with optimal distance matrix...")
 
     for _n_clusters in cluster_range:
         _pipeline = make_pipeline(
             MinMaxScaler(),
             TimeSeriesKMedoids(
-                n_clusters=_n_clusters, distance="msm", random_state=42, distance_params={"c": 0.1}
+                n_clusters=_n_clusters,
+                distance="msm",
+                random_state=42,
+                distance_params={"c": best_c},
             ),
         )
 
-        _pipeline.fit(distance_matrix)
+        _pipeline.fit(optimal_distance_matrix)
         _labels = _pipeline.named_steps["timeserieskmedoids"].labels_
+
         _inertia = _pipeline.named_steps["timeserieskmedoids"].inertia_
 
-        # SILHOUETTE: Calculamos usando a MESMA matriz de distâncias MSM
-        # Isso garante consistência matemática (não usar Euclidiana para validar MSM)
-        score = silhouette_score(distance_matrix, _labels, metric="precomputed")
+        # SILHOUETTE: Compute using the SAME MSM distance matrix
+        # This ensures mathematical consistency (don't use Euclidean to validate MSM)
+        score = silhouette_score(optimal_distance_matrix, _labels, metric="precomputed")
         silhouette_scores.append(score)
         inertia_scores.append(_inertia)
 
@@ -405,6 +529,123 @@ def _(
     silhouette_scores,
 ):
     plot_silhouette_vs_inertia(cluster_range, silhouette_scores, inertia_scores)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Detailed Silhouette Score per Cluster
+
+    This plot shows the **individual** silhouette score of each sample,
+    grouped by cluster. Useful to identify:
+    - Well-formed clusters (high and uniform scores)
+    - Problematic clusters (low or negative scores)
+    - Misclassified samples (negative scores = closer to another cluster)
+
+    **How to interpret**:
+    - Score > 0.5: Well-classified sample
+    - Score 0.3-0.5: Reasonable classification
+    - Score < 0.3: Weak classification
+    - Score < 0: Sample probably in wrong cluster
+    """)
+    return
+
+
+@app.cell
+def _(go, np, silhouette_samples, tableau_colors):
+    def plot_silhouette_per_cluster(distance_matrix, labels, n_clusters):
+        sample_silhouette_values = silhouette_samples(
+            distance_matrix, labels, metric="precomputed"
+        )
+
+        # global average silhouette
+        avg_silhouette = np.mean(sample_silhouette_values)
+
+        _fig = go.Figure()
+
+        y_lower = 10
+
+        for i in range(n_clusters):
+            cluster_silhouette_values = sample_silhouette_values[labels == i]
+            cluster_silhouette_values = np.sort(cluster_silhouette_values)
+
+            cluster_size = cluster_silhouette_values.shape[0]
+            y_upper = y_lower + cluster_size
+
+            _fig.add_trace(
+                go.Bar(
+                    x=cluster_silhouette_values,
+                    y=list(range(y_lower, y_upper)),
+                    orientation="h",
+                    name=f"Cluster {i}",
+                    marker=dict(color=tableau_colors[i % len(tableau_colors)]),
+                    hovertemplate="Cluster %{fullData.name}<br>Silhouette: %{x:.3f}<extra></extra>",
+                )
+            )
+
+            y_lower = y_upper + 10  # Space between clusters
+
+        # add vertical line for average
+        _fig.add_vline(
+            x=avg_silhouette,
+            line_dash="dash",
+            line_color="red",
+            line_width=2,
+            annotation_text=f"Average: {avg_silhouette:.3f}",
+            annotation_position="top",
+        )
+
+        _fig.update_layout(
+            title=f"Silhouette Score per Sample (k={n_clusters})",
+            xaxis_title="Silhouette Score",
+            yaxis_title="Samples (grouped by cluster)",
+            template="plotly_white",
+            showlegend=True,
+            height=600,
+            bargap=0,
+        )
+        return _fig
+
+    return (plot_silhouette_per_cluster,)
+
+
+@app.cell
+def _(mo):
+    k_for_silhouette_detail = mo.ui.slider(
+        start=2, stop=10, value=3, label="k for detailed Silhouette plot"
+    )
+    k_for_silhouette_detail
+    return (k_for_silhouette_detail,)
+
+
+@app.cell
+def _(
+    MinMaxScaler,
+    TimeSeriesKMedoids,
+    best_c,
+    k_for_silhouette_detail,
+    make_pipeline,
+    optimal_distance_matrix,
+    plot_silhouette_per_cluster,
+):
+    _pipeline_detail = make_pipeline(
+        MinMaxScaler(),
+        TimeSeriesKMedoids(
+            n_clusters=k_for_silhouette_detail.value,
+            distance="msm",
+            random_state=42,
+            distance_params={"c": best_c},
+        ),
+    )
+
+    _pipeline_detail.fit(optimal_distance_matrix)
+    _labels_detail = _pipeline_detail.named_steps["timeserieskmedoids"].labels_
+
+    _fig = plot_silhouette_per_cluster(
+        optimal_distance_matrix, _labels_detail, k_for_silhouette_detail.value
+    )
+    _fig
     return
 
 
