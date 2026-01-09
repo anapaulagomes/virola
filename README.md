@@ -44,6 +44,14 @@ uv run vir/modeling/data_cleaning.py -- --city "Carandaí"
 uv run python vir/modeling/feature_engineering.py data/interim/cleaned_aesop_raw...
 ```
 
+### Views
+
+#### Clinical
+
+Storage: DuckDB
+Execution time: Insert clinical dimensions to the db 8 min
+Visual inspection: [Embedding Atlas](https://github.com/apple/embedding-atlas)
+
 ## Notes
 
 ### Terminology
