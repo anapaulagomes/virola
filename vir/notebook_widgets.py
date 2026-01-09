@@ -11,6 +11,7 @@ from vir.config import (
     INDICATIVE_MODEL_THRESHOLD,
     INTERIM_DATA_DIR,
 )
+from vir.data_filters import filter_min_temporal_coverage
 from vir.db import DEFAULT_MODEL, fetch_terminologies
 
 
@@ -123,20 +124,19 @@ def load_and_prepare_dataframe(
     """
     df = pl.read_parquet(file_path)
 
-    # Drop unnecessary columns
+    # drop unnecessary columns
     df = df.drop(["unique_id", "state", "city", "region", "population_range"])
 
-    # Group by dimensions
+    # guarantee that there are no orphans from dropped columns
     df = df.group_by(["year", "week", "sex", "age_group", "code_type", "code"]).agg(
         pl.col("quantity").sum()
     )
 
-    # Join with terminology labels
     df = df.join(terminology_labels, on=["code", "code_type"]).rename(
         {"id": "terminology_id", "label": "terminology_label"}
     )
 
-    # Filter by year range
+    # filter by year range
     if year_min is not None and year_max is not None:
         df = df.filter(pl.col("year").is_between(year_min, year_max))
     elif year_min is not None:
@@ -144,8 +144,11 @@ def load_and_prepare_dataframe(
     elif year_max is not None:
         df = df.filter(pl.col("year").le(year_max))
 
-    # Filter by indicative codes
+    # filter by indicative codes
     if include_codes:
         df = df.filter(pl.col("terminology_label").is_in(include_codes))
+
+    # ensure temporal representation
+    df = filter_min_temporal_coverage(df)
 
     return df
