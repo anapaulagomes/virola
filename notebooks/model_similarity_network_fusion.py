@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.17.6"
+__generated_with = "0.19.0"
 app = marimo.App(width="medium")
 
 
@@ -22,53 +22,38 @@ def _(mo):
 
 @app.cell
 def _():
-    import json
-    import os
     import time
-    from pathlib import Path
 
     import marimo as mo
     import matplotlib.pyplot as plt
     import numpy as np
-    import polars as pl
-    from aeon.distances import dtw_pairwise_distance
     from dotenv import load_dotenv
     from sklearn import cluster
-    from sklearn.metrics.pairwise import cosine_similarity
     from snf import compute, metrics
 
-    return (
-        Path,
-        cluster,
-        compute,
-        cosine_similarity,
-        dtw_pairwise_distance,
-        json,
-        load_dotenv,
-        metrics,
-        mo,
-        np,
-        os,
-        pl,
-        plt,
-        time,
-    )
+    return cluster, compute, load_dotenv, metrics, mo, np, plt, time
 
 
 @app.cell
 def _():
-    from vir.config import CLUSTERING_DIR, INDICATIVE_MODEL_RESULTS, INTERIM_DATA_DIR
-    from vir.db import (
-        fetch_terminologies,
-        read_dimension,
+    from vir.notebook_widgets import (
+        create_file_dropdown,
+        extract_dataset_name,
+        load_and_prepare_dataframe,
+        load_indicative_codes,
+        load_terminology_labels,
     )
+    from vir.views import ClinicalView, DemographicView, TemporalView
 
     return (
-        CLUSTERING_DIR,
-        INDICATIVE_MODEL_RESULTS,
-        INTERIM_DATA_DIR,
-        fetch_terminologies,
-        read_dimension,
+        ClinicalView,
+        DemographicView,
+        TemporalView,
+        create_file_dropdown,
+        extract_dataset_name,
+        load_and_prepare_dataframe,
+        load_indicative_codes,
+        load_terminology_labels,
     )
 
 
@@ -76,6 +61,12 @@ def _():
 def _(load_dotenv):
     _ = load_dotenv()
     return
+
+
+@app.cell
+def _():
+    run_k_validation = True
+    return (run_k_validation,)
 
 
 @app.cell
@@ -87,447 +78,124 @@ def _(mo):
 
 
 @app.cell
-def _(INDICATIVE_MODEL_RESULTS, pl):
-    include_codes = []
-    indicative_codes = pl.read_csv(INDICATIVE_MODEL_RESULTS)
-    for _data in indicative_codes.iter_rows(named=True):
-        if _data["indicative_probability"] > 0.50:
-            include_codes.append(f"{_data['code']}:{_data['code_type']}")
+def _(load_terminology_labels):
+    terminology_labels = load_terminology_labels()
+    return (terminology_labels,)
+
+
+@app.cell
+def _(load_indicative_codes):
+    include_codes, indicative_codes_enabled = load_indicative_codes()
     return (include_codes,)
 
 
 @app.cell
-def _(fetch_terminologies):
-    # embeddings_model_name = "medicalai/ClinicalBERT"
-    embeddings_model_name = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
-    terminology_labels = fetch_terminologies(embeddings_model_name)
-    return embeddings_model_name, terminology_labels
-
-
-@app.cell
-def _(terminology_labels):
-    terminology_labels
-    return
-
-
-@app.cell
-def _():
-    indicative_codes_enabled = True
-    return (indicative_codes_enabled,)
-
-
-@app.cell
-def _(INTERIM_DATA_DIR, mo):
-    _all_options = [
-        str(_file.resolve()) for _file in INTERIM_DATA_DIR.glob("**/cleaned_*.parquet")
-    ]
-    default = [
-        _option
-        for _option in _all_options
-        if "cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet" in _option
-    ]
-
-    files_dropdown = mo.ui.dropdown(
-        options=_all_options,
-        label="Choose dataset",
-        searchable=True,
-        value=default[0] if default else None,
-    )
+def _(create_file_dropdown):
+    files_dropdown = create_file_dropdown()
     files_dropdown
     return (files_dropdown,)
-
-
-@app.cell
-def _(files_dropdown):
-    dataset_name = files_dropdown.value[
-        files_dropdown.value.find("municipios") + 11 : files_dropdown.value.find(".parquet")
-    ]
-    dataset_name
-    return (dataset_name,)
 
 
 @app.cell
 def _(
     files_dropdown,
     include_codes,
-    indicative_codes_enabled,
-    pl,
+    load_and_prepare_dataframe,
     terminology_labels,
 ):
-    selected_filename = files_dropdown.value
-    df = pl.read_parquet(selected_filename)
-    df = df.drop(["unique_id", "state", "city", "region", "population_range"])  # make it per city
-    df = df.group_by(["year", "week", "sex", "age_group", "code_type", "code"]).agg(
-        pl.col("quantity").sum()
+    df = load_and_prepare_dataframe(
+        file_path=files_dropdown.value,
+        terminology_labels=terminology_labels,
+        include_codes=include_codes,
+        year_min=2022,
+        year_max=2024,
     )
-    df = df.join(terminology_labels, on=["code", "code_type"]).rename(
-        {"id": "terminology_id", "label": "terminology_label"}
-    )
-    df = df.filter(pl.col("year").ge(2022))
-    if indicative_codes_enabled:
-        df = df.filter(pl.col("terminology_label").is_in(include_codes))
     df.head()
     return (df,)
-
-
-@app.cell
-def _(df, indicative_codes_enabled):
-    df.shape, indicative_codes_enabled
-    return
-
-
-@app.cell
-def _(df):
-    # TODO note: the order of diagnosis code is determined by df["terminology_id"].unique() == terminology_to_ids.keys()
-    terminology_to_ids = {
-        terminology_id: _index
-        for _index, terminology_id in enumerate(df["terminology_id"].unique())
-    }
-    ids_to_terminology = {
-        _index: terminology_id
-        for _index, terminology_id in enumerate(df["terminology_id"].unique())
-    }
-    return ids_to_terminology, terminology_to_ids
-
-
-@app.cell
-def _(np, terminology_to_ids):
-    matrix_len = len(terminology_to_ids)
-    empty_matrix = np.zeros((matrix_len, matrix_len), dtype=np.float32)
-    return (empty_matrix,)
-
-
-@app.cell
-def _(empty_matrix):
-    empty_matrix
-    return
 
 
 @app.cell
 def _(mo):
     mo.md(r"""
     ## Dimensions
+
+    Each view computes a distance matrix, then converts to affinity using adaptive Gaussian kernel.
     """)
     return
+
+
+@app.cell
+def _(df, extract_dataset_name, files_dropdown):
+    view_params = {"df": df, "dataset_name": extract_dataset_name(files_dropdown.value)}
+    return (view_params,)
+
+
+@app.cell
+def _(ClinicalView, DemographicView, TemporalView, view_params):
+    # Instantiate views
+    clinical_view = ClinicalView(**view_params)
+    temporal_view = TemporalView(**view_params)
+    demographic_view = DemographicView(**view_params)
+
+    # Get distance matrices (cached)
+    clinical_distance = clinical_view.get_matrix()
+    temporal_distance = temporal_view.get_matrix()
+    demographic_distance = demographic_view.get_matrix()
+
+    print(f"Clinical distance shape: {clinical_distance.shape}")
+    print(f"Temporal distance shape: {temporal_distance.shape}")
+    print(f"Demographic distance shape: {demographic_distance.shape}")
+    return clinical_view, demographic_view, temporal_view
 
 
 @app.cell
 def _(mo):
     mo.md(r"""
-    ### Clinical dimension
+    ## Convert distances to affinities
+
+    Using adaptive Gaussian kernel with k-nearest neighbor based local scaling.
     """)
     return
 
 
 @app.cell
-def _(empty_matrix, np, pl, read_dimension, terminology_to_ids):
-    def load_clinical_dimension():
-        clinical_df = read_dimension("clinical")
-        _ids = list(terminology_to_ids.keys())
-        clinical_df = clinical_df.filter(
-            pl.col("terminology_id_1").is_in(_ids) & pl.col("terminology_id_2").is_in(_ids)
-        )
+def _(clinical_view, demographic_view, temporal_view):
+    # Convert to affinity matrices using BaseView.to_affinity()
+    # k=20 is the standard value for SNF
+    clinical_affinity = clinical_view.to_affinity(k=20, mu=0.5)
+    temporal_affinity = temporal_view.to_affinity(k=20, mu=0.5)
+    demographic_affinity = demographic_view.to_affinity(k=20, mu=0.5)
 
-        i = clinical_df["terminology_id_1"].replace_strict(terminology_to_ids).to_numpy()
-        j = clinical_df["terminology_id_2"].replace_strict(terminology_to_ids).to_numpy()
-        v = clinical_df["value"].to_numpy()  # scale later
-
-        clinical_matrix = empty_matrix.copy()
-        clinical_matrix[i, j] = v
-        clinical_matrix[j, i] = v
-
-        np.fill_diagonal(clinical_matrix, 0)  # enforce 0
-        return clinical_matrix
-
-    return (load_clinical_dimension,)
-
-
-@app.cell
-def _(load_clinical_dimension):
-    clinical_mat = load_clinical_dimension()
-    return (clinical_mat,)
-
-
-@app.cell
-def _(clinical_mat):
-    clinical_mat
-    return
-
-
-@app.cell
-def _(clinical_mat):
-    len(clinical_mat)
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    ### Temporal dimension ⌛
-
-    * Features: week, year
-    """)
-    return
-
-
-@app.cell
-def _(df, pl):
-    df_year_week = (
-        df.with_columns(
-            (pl.col("year").cast(pl.Utf8) + "-" + pl.col("week").cast(pl.Utf8)).alias("year_week")
-        )
-        .group_by(["terminology_id", "year", "week", "year_week"])
-        .agg(pl.col("quantity").sum().alias("total"))
+    print(
+        f"Clinical affinity range: [{clinical_affinity.min():.4f}, {clinical_affinity.max():.4f}]"
     )
-    df_year_week
-    return (df_year_week,)
-
-
-@app.cell
-def _(df_year_week):
-    ordered_year_week = (
-        df_year_week.select("year_week", "year", "week")
-        .unique()
-        .sort(["year", "week"])  # chronological order
-        .get_column("year_week")
-        .to_list()
+    print(
+        f"Temporal affinity range: [{temporal_affinity.min():.4f}, {temporal_affinity.max():.4f}]"
     )
-    return (ordered_year_week,)
-
-
-@app.cell
-def _(df_year_week, ordered_year_week):
-    temporal_pivot = (
-        df_year_week.pivot(
-            index="terminology_id",  # rows
-            on="year_week",  # new columns
-            values="total",  # cell value
-        )
-        .fill_null(0)
-        .select(["terminology_id"] + ordered_year_week)
+    print(
+        f"Demographic affinity range: [{demographic_affinity.min():.4f}, {demographic_affinity.max():.4f}]"
     )
-    temporal_pivot
-    return (temporal_pivot,)
+    return clinical_affinity, demographic_affinity, temporal_affinity
 
 
 @app.cell
-def _(dtw_pairwise_distance, ordered_year_week, os, temporal_pivot):
-    dtw_results = dtw_pairwise_distance(
-        temporal_pivot.select(ordered_year_week).to_numpy(),
-        n_jobs=int(os.getenv("NUMBER_OF_THREADS", -1)),
+def _(clinical_affinity, demographic_affinity, temporal_affinity):
+    assert clinical_affinity.shape == temporal_affinity.shape == demographic_affinity.shape, (
+        clinical_affinity.shape,
+        temporal_affinity.shape,
+        demographic_affinity.shape,
     )
-    dtw_results
-    return (dtw_results,)
 
-
-@app.cell
-def _():
-    # dtw took 14 min with n jobs = -1
-    # 25 min with 16 threads
-    return
-
-
-@app.cell
-def _(dtw_results, np):
-    def load_temporal_dimension():
-        temporal_matrix = dtw_results.copy()
-
-        np.fill_diagonal(temporal_matrix, 0)  # enforce 0
-        return temporal_matrix
-
-    return (load_temporal_dimension,)
-
-
-@app.cell
-def _(load_temporal_dimension):
-    temporal_matrix = load_temporal_dimension()
-    return (temporal_matrix,)
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    ### Demographics dimension 🧑‍🍼
-
-    * Features: sex, age group
-    """)
-    return
-
-
-@app.cell
-def _(cosine_similarity, pl, terminology_to_ids):
-    def demographics_view(df):
-        df_demographics = (
-            df.with_columns(
-                (pl.col("sex").cast(pl.Utf8) + "-" + pl.col("age_group").cast(pl.Utf8)).alias(
-                    "sex_age"
-                )
-            )
-            .group_by(["terminology_id", "sex", "age_group", "sex_age"])
-            .agg(pl.col("quantity").sum().alias("total"))
-        )
-        pivoted_df_demographics = df_demographics.pivot(
-            index="terminology_id",  # rows
-            on="sex_age",  # new columns
-            values="total",  # cell value
-        ).fill_null(0)
-
-        # calculate similarity using cosine
-        feature_cols = pivoted_df_demographics.columns[1:]
-        features_matrix = pivoted_df_demographics.select(feature_cols).to_numpy()
-        sim_matrix_np = cosine_similarity(features_matrix)
-
-        # make sure they have the same order from the other views
-        id_labels_str = [str(i) for i in terminology_to_ids.keys()]
-        sim_df = pl.DataFrame(sim_matrix_np, schema=id_labels_str)
-        #     .with_columns(
-        #     terminology_id=pl.Series(list(terminology_to_ids.keys()))
-        # ).select(["terminology_id"] + id_labels_str)  # order both rows and columns
-        return sim_df
-
-    return (demographics_view,)
-
-
-@app.cell
-def _(demographics_view, df):
-    demo_view = demographics_view(df)
-    demo_view
-    return (demo_view,)
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    ## SNF ✨
-    """)
-    return
-
-
-@app.cell
-def _(np):
-    def stable_affinity_from_distance(a_distance_matrix, K=30, mu=0.5, eps=1e-8):
-        """
-        This function converts a distance matrix into an affinity (similarity) matrix
-        using an adaptive Gaussian kernel, following the idea from Similarity Network Fusion (SNF).
-        It prevents numerical instability when sigma (the adaptive scale) becomes very small,
-        which can otherwise lead to overflow or NaN values.
-        """
-        distance_matrix = np.nan_to_num(
-            a_distance_matrix, nan=0.0, posinf=np.nanmax(a_distance_matrix), neginf=0.0
-        )
-
-        # ensure perfect symmetry (averaging the matrix with its transpose)
-        distance_matrix = (distance_matrix + distance_matrix.T) / 2.0
-
-        np.fill_diagonal(distance_matrix, 0.0)
-
-        # normalize all distances to the range [0, 1]
-        distance_matrix = distance_matrix / (np.nanmax(distance_matrix) + eps)
-
-        # sort distances within each row to find K nearest neighbors
-        sorted_distances = np.sort(distance_matrix, axis=1)
-
-        # compute the average distance to the K nearest neighbors for each sample
-        mean_neighbor_distance = np.vstack(sorted_distances[:, 1 : K + 1].mean(axis=1) + eps)
-
-        # compute adaptive local scale sigma according to SNF definition
-        sigma = (mean_neighbor_distance + mean_neighbor_distance.T + distance_matrix) / 3.0
-
-        # avoid extremely small sigma values (numerical underflow)
-        sigma = np.clip(mu * sigma, eps, None)
-
-        # compute Gaussian affinity kernel
-        affinity_matrix = np.exp(-(distance_matrix**2) / (2.0 * sigma**2))
-        affinity_matrix = np.nan_to_num(affinity_matrix, nan=0.0, posinf=0.0, neginf=0.0)
-        np.fill_diagonal(affinity_matrix, 0.0)
-
-        return affinity_matrix
-
-    return (stable_affinity_from_distance,)
-
-
-@app.cell
-def _(np, stable_affinity_from_distance, temporal_matrix):
-    temporal_matrix_normalized = stable_affinity_from_distance(temporal_matrix, K=20, mu=0.5)
-    print(np.nanmin(temporal_matrix_normalized), np.nanmax(temporal_matrix_normalized))
-    return (temporal_matrix_normalized,)
-
-
-@app.cell
-def _(plt, temporal_matrix_normalized):
-    plt.matshow(temporal_matrix_normalized, cmap="viridis")
-    plt.colorbar()
-    plt.title("Affinity matrix (temporal - DTW)")
-    plt.show()
-    return
-
-
-@app.cell
-def _(clinical_mat, embeddings_model_name, plt):
-    plt.matshow(clinical_mat, cmap="viridis")
-    plt.colorbar()
-    plt.title(f"Affinity matrix (clinical - {embeddings_model_name})")
-    plt.show()
-    return
-
-
-@app.cell
-def _(demo_view, plt):
-    plt.matshow(demo_view, cmap="viridis")
-    plt.colorbar()
-    plt.title("Affinity matrix (demographics)")
-    plt.show()
-    return
-
-
-@app.cell
-def _(np, temporal_matrix_normalized):
-    np.nanmin(temporal_matrix_normalized), np.nanmax(temporal_matrix_normalized)
-    return
-
-
-@app.cell
-def _(clinical_mat, np):
-    np.nanmin(clinical_mat), np.nanmax(clinical_mat)
-    return
-
-
-@app.cell
-def _(demo_view, np):
-    np.nanmin(demo_view), np.nanmax(demo_view)
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    ## Affinities
-    """)
-    return
-
-
-@app.cell
-def _(clinical_mat, demo_view, temporal_matrix_normalized):
-    assert clinical_mat.shape == temporal_matrix_normalized.shape == demo_view.shape, (
-        clinical_mat.shape,
-        temporal_matrix_normalized.shape,
-        demo_view.shape,
-    )
-    return
-
-
-@app.cell
-def _(clinical_mat, demo_view, temporal_matrix_normalized):
-    # all views
-    affinities = [clinical_mat, temporal_matrix_normalized, demo_view]
+    affinities = [clinical_affinity, temporal_affinity, demographic_affinity]
     return (affinities,)
 
 
 @app.cell
 def _(mo):
-    mo.md(r"""### Finding the perfect K""")
-    run_k_validation = False
-    return (run_k_validation,)
+    mo.md(r"""
+    ### Validation
+    """)
+    return
 
 
 @app.cell
@@ -669,41 +337,6 @@ def _(cluster, fused, metrics):
         experiments_cluster_silhouette[_nr_cluster] = _silhouette
 
     experiments_cluster_silhouette
-    return
-
-
-@app.cell
-def _(
-    CLUSTERING_DIR,
-    K,
-    Path,
-    dataset_name,
-    embeddings_model_name,
-    fused_labels,
-    ids_to_terminology,
-    indicative_codes_enabled,
-    json,
-    number_of_clusters,
-):
-    # notes
-    # terminology_to_ids: terminology ids from db to index db used during execution
-    # ids_to_terminology: index to terminology ids
-    # fused labels: list with assigned clusters
-    terminology_id_clusters = []
-    for _index, _cluster in enumerate(fused_labels):
-        _terminology_id = ids_to_terminology.get(_index)
-        terminology_id_clusters.append(
-            {"terminology_id": _terminology_id, "cluster": str(_cluster)}
-        )
-    indicative_codes_label = ""
-    if indicative_codes_enabled:
-        indicative_codes_label = "_with_indicative_codes"
-
-    _terminology_id_clusters_file = Path(
-        CLUSTERING_DIR
-        / f"snf_{dataset_name}__k{K}_{number_of_clusters}_clusters__{embeddings_model_name.replace('/', '_')}{indicative_codes_label}_tcd.txt"
-    )
-    _terminology_id_clusters_file.write_text(json.dumps(terminology_id_clusters))
     return
 
 
