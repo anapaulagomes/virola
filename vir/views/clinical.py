@@ -5,7 +5,15 @@ from typing import Any, Dict
 import numpy as np
 import polars as pl
 
-from vir.db import DEFAULT_MODEL, read_dimension
+from vir.config import logger
+from vir.db import (
+    DEFAULT_MODEL,
+    create_dimensions_table_if_not_exists,
+    dimension_exists,
+    get_connection,
+    insert_clinical_dimensions,
+    read_dimension,
+)
 from vir.views.base import BaseView
 
 
@@ -43,7 +51,7 @@ class ClinicalView(BaseView):
         id_to_idx = {tid: idx for idx, tid in enumerate(terminology_ids)}
 
         # Read precomputed clinical similarities from database
-        clinical_df = read_dimension("clinical")
+        clinical_df = self._get_or_create_clinical_dimension()
 
         # Filter to only include terminology IDs in our dataset
         clinical_df = clinical_df.filter(
@@ -93,7 +101,6 @@ class ClinicalView(BaseView):
         Returns:
             DataFrame with terminology_id and embedding columns
         """
-        from vir.db import get_connection
 
         terminology_ids = self.df["terminology_id"].unique().to_list()
         model_name = self.params.get("model", DEFAULT_MODEL)
@@ -130,3 +137,11 @@ class ClinicalView(BaseView):
             "mean_norm": float(np.mean(np.linalg.norm(embeddings, axis=1))),
             "std_norm": float(np.std(np.linalg.norm(embeddings, axis=1))),
         }
+
+    def _get_or_create_clinical_dimension(self):
+        if dimension_exists("clinical") is False:
+            logger.info("Creating dimensions table...")
+            create_dimensions_table_if_not_exists()
+            logger.info("Inserting clinical dimensions...")
+            insert_clinical_dimensions()
+        return read_dimension("clinical")
