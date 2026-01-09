@@ -21,7 +21,6 @@ class ClinicalView(BaseView):
     """
     Clinical view: captures semantic and ontological similarity between diagnoses.
 
-    Follows APPROACH.md specification:
     - Input: Diagnosis embeddings (cambridgeltl/SapBERT-from-PubMedBERT-fulltext)
     - Embedding construction: Mean pooling of token embeddings (precomputed in DB)
     - Preprocessing: Row-wise L2 normalization (done during embedding generation)
@@ -43,27 +42,22 @@ class ClinicalView(BaseView):
         Returns:
             Distance matrix (NxN numpy array)
         """
-        # Get unique terminology IDs from input dataframe
+        # get unique terminology IDs from input dataframe
         terminology_ids = sorted(self.df["terminology_id"].unique().to_list())
         n_diagnoses = len(terminology_ids)
 
-        # Create mapping from terminology_id to matrix index
+        # create mapping from terminology_id to matrix index
         id_to_idx = {tid: idx for idx, tid in enumerate(terminology_ids)}
 
-        # Read precomputed clinical similarities from database
         clinical_df = self._get_or_create_clinical_dimension()
-
-        # Filter to only include terminology IDs in our dataset
         clinical_df = clinical_df.filter(
             pl.col("terminology_id_1").is_in(terminology_ids)
             & pl.col("terminology_id_2").is_in(terminology_ids)
         )
 
-        # Initialize similarity matrix
         similarity_matrix = np.zeros((n_diagnoses, n_diagnoses), dtype=np.float32)
 
-        # Fill similarity matrix from database values
-        # Database stores upper triangle (id_1 < id_2)
+        # fill similarity matrix from database values
         for row in clinical_df.iter_rows(named=True):
             id1 = row["terminology_id_1"]
             id2 = row["terminology_id_2"]
@@ -72,14 +66,14 @@ class ClinicalView(BaseView):
             idx1 = id_to_idx[id1]
             idx2 = id_to_idx[id2]
 
-            # Symmetric matrix
+            # symmetric matrix
             similarity_matrix[idx1, idx2] = similarity
             similarity_matrix[idx2, idx1] = similarity
 
-        # Set diagonal to 1 (perfect similarity with self)
+        # set diagonal to 1 (perfect similarity with self)
         np.fill_diagonal(similarity_matrix, 1.0)
 
-        # Convert similarity to distance: distance = 1 - similarity
+        # convert similarity to distance: distance = 1 - similarity
         distance_matrix = 1.0 - similarity_matrix
 
         return distance_matrix
@@ -126,8 +120,6 @@ class ClinicalView(BaseView):
             Dictionary with embedding statistics
         """
         embeddings_df = self.get_embeddings()
-
-        # Convert embeddings to numpy array
         embeddings = np.array([emb for emb in embeddings_df["embedding"].to_list()])
 
         return {
