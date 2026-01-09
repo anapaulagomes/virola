@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.17.6"
+__generated_with = "0.19.0"
 app = marimo.App(width="medium")
 
 
@@ -55,8 +55,10 @@ def _():
         load_indicative_codes,
         load_terminology_labels,
     )
+    from vir.views import TemporalView
 
     return (
+        TemporalView,
         create_file_dropdown,
         extract_dataset_name,
         filter_most_representative_rows,
@@ -128,8 +130,8 @@ def _(mo):
 
 @app.cell
 def _(load_indicative_codes):
-    include_codes, indicative_codes_enabled = load_indicative_codes(threshold=0.50, enabled=True)
-    return (include_codes, indicative_codes_enabled)
+    include_codes, indicative_codes_enabled = load_indicative_codes()
+    return (include_codes,)
 
 
 @app.cell
@@ -148,7 +150,12 @@ def _(create_file_dropdown):
 
 
 @app.cell
-def _(files_dropdown, include_codes, load_and_prepare_dataframe, terminology_labels):
+def _(
+    files_dropdown,
+    include_codes,
+    load_and_prepare_dataframe,
+    terminology_labels,
+):
     df = load_and_prepare_dataframe(
         file_path=files_dropdown.value,
         terminology_labels=terminology_labels,
@@ -191,47 +198,19 @@ def _(df, pl, px, top_10):
 
 
 @app.cell
-def _(df, pl):
-    more_than_12_weeks = (
-        df.group_by("terminology_id")
-        .agg(pl.col("week").count().alias("week_count"))
-        .filter(pl.col("week_count").ge(12))
+def _(TemporalView, df, extract_dataset_name, files_dropdown, n_jobs):
+    # Create temporal view with MSM parameters
+    temporal_view = TemporalView(
+        df=df,
+        dataset_name=extract_dataset_name(files_dropdown.value),
+        params={"min_weeks": 12, "c": 1.0, "n_jobs": n_jobs},
     )
 
-    df_week = (
-        df.filter(pl.col("terminology_id").is_in(more_than_12_weeks["terminology_id"]))
-        .group_by(["terminology_id", "week"])
-        .agg(pl.col("quantity").sum().alias("total"))
-    )
+    # Get time series matrix and pivot table
+    X = temporal_view.get_time_series()
+    temporal_pivot = temporal_view.get_temporal_pivot()
 
-    df_week
-    return (df_week,)
-
-
-@app.cell
-def _():
-    ordered_week = [str(_week) for _week in range(1, 53)]
-    return (ordered_week,)
-
-
-@app.cell
-def _(df_week, ordered_week):
-    temporal_pivot = (
-        df_week.pivot(
-            index="terminology_id",  # rows
-            on="week",  # new columns
-            values="total",  # cell value
-        )
-        .fill_null(0)
-        .select(["terminology_id"] + ordered_week)
-    )
     temporal_pivot
-    return (temporal_pivot,)
-
-
-@app.cell
-def _(ordered_week, temporal_pivot):
-    X = temporal_pivot.select(ordered_week).to_numpy()
     return (X,)
 
 
@@ -391,9 +370,14 @@ def _(mo):
 
 
 @app.cell
-def _(X, best_c, n_jobs, pairwise_distance):
-    # Compute final distance matrix with best c
-    optimal_distance_matrix = pairwise_distance(X, method="msm", n_jobs=n_jobs, c=best_c)
+def _(TemporalView, df, extract_dataset_name, files_dropdown):
+    temporal_view_optimal = TemporalView(
+        df=df,
+        dataset_name=extract_dataset_name(files_dropdown.value),
+    )
+
+    # get optimal distance matrix (cached for reuse)
+    optimal_distance_matrix = temporal_view_optimal.get_matrix()
     return (optimal_distance_matrix,)
 
 
