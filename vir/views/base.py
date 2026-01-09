@@ -192,3 +192,57 @@ class BaseView(ABC):
             "size_mb": self.cache.volume() / (1024 * 1024),
             "entries": len(self.cache),
         }
+
+    def to_affinity(
+        self,
+        distance_matrix: Optional[np.ndarray] = None,
+        k: int = 20,
+        mu: float = 0.5,
+        eps: float = 1e-8,
+    ) -> np.ndarray:
+        """
+        Convert distance matrix to affinity (similarity) matrix using adaptive Gaussian kernel.
+
+        Uses local scaling based on k-nearest neighbors, following SNF methodology.
+        This applies the same transformation as stable_affinity_from_distance() from
+        the SNF pipeline.
+
+        Args:
+            distance_matrix: Distance matrix to convert. If None, uses get_matrix()
+            k: Number of nearest neighbors for adaptive sigma computation
+            mu: Scaling factor for sigma to prevent numerical underflow
+            eps: Small epsilon to prevent division by zero
+
+        Returns:
+            Affinity matrix (NxN numpy array, range [0, 1])
+        """
+        if distance_matrix is None:
+            distance_matrix = self.get_matrix()
+
+        # Handle NaN/Inf values
+        distance_matrix = np.nan_to_num(
+            distance_matrix,
+            nan=0.0,
+            posinf=np.nanmax(distance_matrix),
+            neginf=0.0,
+        )
+
+        # Ensure perfect symmetry
+        distance_matrix = (distance_matrix + distance_matrix.T) / 2.0
+        np.fill_diagonal(distance_matrix, 0.0)
+
+        # Normalize distances to [0, 1]
+        distance_matrix = distance_matrix / (np.nanmax(distance_matrix) + eps)
+
+        # Compute adaptive local scale sigma (k-NN based)
+        sorted_distances = np.sort(distance_matrix, axis=1)
+        mean_neighbor_distance = np.vstack(sorted_distances[:, 1 : k + 1].mean(axis=1) + eps)
+        sigma = (mean_neighbor_distance + mean_neighbor_distance.T + distance_matrix) / 3.0
+        sigma = np.clip(mu * sigma, eps, None)
+
+        # Apply Gaussian kernel
+        affinity_matrix = np.exp(-(distance_matrix**2) / (2.0 * sigma**2))
+        affinity_matrix = np.nan_to_num(affinity_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        np.fill_diagonal(affinity_matrix, 0.0)
+
+        return affinity_matrix
