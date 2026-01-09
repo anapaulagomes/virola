@@ -48,7 +48,6 @@ def _():
 @app.cell
 def _():
     from vir.data_filters import filter_most_representative_rows
-    from vir.db import DEFAULT_MODEL
     from vir.notebook_widgets import (
         create_file_dropdown,
         extract_dataset_name,
@@ -58,7 +57,6 @@ def _():
     )
 
     return (
-        DEFAULT_MODEL,
         create_file_dropdown,
         extract_dataset_name,
         filter_most_representative_rows,
@@ -115,8 +113,8 @@ def _(mo):
 
 
 @app.cell
-def _(DEFAULT_MODEL, load_terminology_labels):
-    terminology_labels = load_terminology_labels(DEFAULT_MODEL)
+def _(load_terminology_labels):
+    terminology_labels = load_terminology_labels()
     return (terminology_labels,)
 
 
