@@ -77,19 +77,7 @@ def _(load_dotenv):
 @app.cell
 def _(os):
     n_jobs = int(os.getenv("NUMBER_OF_THREADS", -1))
-    tableau_colors = [
-        "#4E79A7",  # Blue
-        "#F28E2B",  # Orange
-        "#E15759",  # Red
-        "#76B7B2",  # Cyan
-        "#59A14F",  # Green
-        "#EDC948",  # Yellow
-        "#B07AA1",  # Purple
-        "#FF9DA7",  # Pink
-        "#9C755F",  # Brown
-        "#BAB0AC",  # Gray
-    ]
-    return n_jobs, tableau_colors
+    return (n_jobs,)
 
 
 @app.cell
@@ -507,7 +495,7 @@ def _(mo):
 
 
 @app.cell
-def _(go, np, silhouette_samples, tableau_colors):
+def _(go, np, silhouette_samples, TABLEAU_COLORS):
     def plot_silhouette_per_cluster(distance_matrix, labels, n_clusters):
         sample_silhouette_values = silhouette_samples(
             distance_matrix, labels, metric="precomputed"
@@ -533,7 +521,7 @@ def _(go, np, silhouette_samples, tableau_colors):
                     y=list(range(y_lower, y_upper)),
                     orientation="h",
                     name=f"Cluster {i}",
-                    marker=dict(color=tableau_colors[i % len(tableau_colors)]),
+                    marker=dict(color=TABLEAU_COLORS[i % len(TABLEAU_COLORS)]),
                     hovertemplate="Cluster %{fullData.name}<br>Silhouette: %{x:.3f}<extra></extra>",
                 )
             )
