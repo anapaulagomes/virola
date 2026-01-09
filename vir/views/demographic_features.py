@@ -33,106 +33,81 @@ class DemographicFeaturesView(BaseView):
 
     view_type = "demographic_features"
 
-    # Age group mappings (adjust based on your data)
+    # Age group mappings based on actual data (from vir.features.AGE_GROUP)
+    # AGE_GROUP = ["< 1 ano", "1 a 15 anos", "16 a 59 anos", "Maior que 60 anos"]
     AGE_GROUP_MAPPING = {
-        "child": ["0-4", "5-9", "10-14", "15-17", "0-17", "0-18"],
-        "young_adult": ["18-24", "18-39", "20-29", "30-39"],
-        "adult": ["18-64", "40-49", "50-59", "60-64"],
-        "elderly": ["65+", "65-74", "75+", "65-100"],
+        "child": ["< 1 ano", "1 a 15 anos"],  # 0-15 years
+        "young_adult": [
+            "16 a 59 anos"
+        ],  # 16-59 years (overlaps with adult, but needed for feature)
+        "adult": ["16 a 59 anos"],  # 16-59 years
+        "elderly": ["Maior que 60 anos"],  # 60+ years
         "reproductive_female": [
-            "15-49",
-            "15-17",
-            "18-24",
-            "25-29",
-            "30-34",
-            "35-39",
-            "40-44",
-            "45-49",
-        ],
+            "16 a 59 anos"
+        ],  # Approximation: 16-59 years (can't distinguish 15-49 exactly)
+    }
+
+    # Feature definitions for dynamic feature generation
+    _FEATURE_DEFINITIONS = {
+        "female": {
+            "sex_condition": "Feminino",
+            "age_groups": None,
+        },
+        "child": {
+            "sex_condition": None,
+            "age_groups": "child",
+        },
+        "adult": {
+            "sex_condition": None,
+            "age_groups": "adult",
+        },
+        "elderly": {
+            "sex_condition": None,
+            "age_groups": "elderly",
+        },
+        "young_adult": {
+            "sex_condition": None,
+            "age_groups": "young_adult",
+        },
+        "reproductive_female": {
+            "sex_condition": "Feminino",
+            "age_groups": "reproductive_female",
+        },
     }
 
     @cached_property
     def _features_df(self) -> pl.DataFrame:
         """
         Extracts and caches demographic features for each diagnosis using efficient Polars operations.
-        This fixes the performance bottleneck and incorrect calculations of the original implementation.
+        Features are dynamically generated from _FEATURE_DEFINITIONS for better maintainability.
         """
-        # A small epsilon to add to denominators to avoid division by zero errors.
         epsilon = 1e-9
 
-        # Calculate total quantity per diagnosis.
+        # Calculate total quantity per diagnosis
         total_per_diag = self.df.group_by("terminology_id").agg(
             pl.col("quantity").sum().alias("total")
         )
 
-        # If there's no data, return an empty frame with the correct schema.
+        # Handle empty data case
         if total_per_diag.is_empty() or total_per_diag["total"].sum() == 0:
             schema = {
                 "terminology_id": pl.Int64,
-                "female_ratio": pl.Float32,
-                "child_ratio": pl.Float32,
-                "adult_ratio": pl.Float32,
-                "elderly_ratio": pl.Float32,
-                "young_adult_ratio": pl.Float32,
-                "reproductive_female_ratio": pl.Float32,
+                **{f"{name}_ratio": pl.Float32 for name in self._FEATURE_DEFINITIONS.keys()},
             }
             return pl.DataFrame({k: [] for k in schema}, schema=schema)
 
-        # Calculate counts for all features in a single pass over the data.
-        feature_counts = self.df.group_by("terminology_id").agg(
-            pl.when(pl.col("sex") == "Feminino")
-            .then(pl.col("quantity"))
-            .otherwise(0)
-            .sum()
-            .alias("female_count"),
-            pl.when(pl.col("age_group").is_in(self.AGE_GROUP_MAPPING["child"]))
-            .then(pl.col("quantity"))
-            .otherwise(0)
-            .sum()
-            .alias("child_count"),
-            pl.when(pl.col("age_group").is_in(self.AGE_GROUP_MAPPING["adult"]))
-            .then(pl.col("quantity"))
-            .otherwise(0)
-            .sum()
-            .alias("adult_count"),
-            pl.when(pl.col("age_group").is_in(self.AGE_GROUP_MAPPING["elderly"]))
-            .then(pl.col("quantity"))
-            .otherwise(0)
-            .sum()
-            .alias("elderly_count"),
-            pl.when(pl.col("age_group").is_in(self.AGE_GROUP_MAPPING["young_adult"]))
-            .then(pl.col("quantity"))
-            .otherwise(0)
-            .sum()
-            .alias("young_adult_count"),
-            pl.when(
-                (pl.col("sex") == "Feminino")
-                & (pl.col("age_group").is_in(self.AGE_GROUP_MAPPING["reproductive_female"]))
-            )
-            .then(pl.col("quantity"))
-            .otherwise(0)
-            .sum()
-            .alias("reproductive_female_count"),
-        )
+        # Calculate all feature counts in one aggregation
+        feature_counts = self.df.group_by("terminology_id").agg(self._calculate_all_counts())
 
-        # Join the feature counts with the total counts.
+        # Join counts with totals
         features_df = total_per_diag.join(
             feature_counts, on="terminology_id", how="left"
         ).fill_null(0)
 
-        # Compute the final feature ratios.
-        features_df = features_df.with_columns(
-            (pl.col("female_count") / (pl.col("total") + epsilon)).alias("female_ratio"),
-            (pl.col("child_count") / (pl.col("total") + epsilon)).alias("child_ratio"),
-            (pl.col("adult_count") / (pl.col("total") + epsilon)).alias("adult_ratio"),
-            (pl.col("elderly_count") / (pl.col("total") + epsilon)).alias("elderly_ratio"),
-            (pl.col("young_adult_count") / (pl.col("total") + epsilon)).alias("young_adult_ratio"),
-            (pl.col("reproductive_female_count") / (pl.col("total") + epsilon)).alias(
-                "reproductive_female_ratio"
-            ),
-        ).sort("terminology_id")
+        # Calculate all ratios
+        features_df = self._add_ratio_columns(features_df, epsilon)
 
-        return features_df
+        return features_df.sort("terminology_id")
 
     def get_terminology_ids(self) -> pl.Series:
         """
@@ -142,6 +117,48 @@ class DemographicFeaturesView(BaseView):
             A Polars Series containing the sorted terminology_id values.
         """
         return self._features_df["terminology_id"]
+
+    @classmethod
+    def _get_feature_columns(cls) -> list[str]:
+        """Get list of demographic feature column names."""
+        return [f"{name}_ratio" for name in cls._FEATURE_DEFINITIONS.keys()]
+
+    def _build_count_expression(self, feature_name: str, feature_def: dict) -> pl.Expr:
+        """Build a polars expression for counting a specific feature."""
+        condition = pl.lit(True)
+
+        if feature_def["sex_condition"]:
+            condition = condition & (pl.col("sex") == feature_def["sex_condition"])
+
+        if feature_def["age_groups"]:
+            age_list = self.AGE_GROUP_MAPPING[feature_def["age_groups"]]
+            condition = condition & pl.col("age_group").is_in(age_list)
+
+        return (
+            pl.when(condition)
+            .then(pl.col("quantity"))
+            .otherwise(0)
+            .sum()
+            .alias(f"{feature_name}_count")
+        )
+
+    def _calculate_all_counts(self) -> list[pl.Expr]:
+        """Generate count aggregation expressions for all features."""
+        return [
+            self._build_count_expression(name, definition)
+            for name, definition in self._FEATURE_DEFINITIONS.items()
+        ]
+
+    def _add_ratio_columns(self, features_df: pl.DataFrame, epsilon: float) -> pl.DataFrame:
+        """Add ratio columns for all count columns."""
+        ratio_expressions = []
+        for feature_name in self._FEATURE_DEFINITIONS.keys():
+            count_col = f"{feature_name}_count"
+            ratio_col = f"{feature_name}_ratio"
+            ratio_expressions.append(
+                (pl.col(count_col) / (pl.col("total") + epsilon)).alias(ratio_col)
+            )
+        return features_df.with_columns(ratio_expressions)
 
     def compute(self) -> np.ndarray:
         """
@@ -162,15 +179,7 @@ class DemographicFeaturesView(BaseView):
         Returns:
             Feature matrix (N diagnoses × 6 features)
         """
-        feature_cols = [
-            "female_ratio",
-            "child_ratio",
-            "adult_ratio",
-            "elderly_ratio",
-            "young_adult_ratio",
-            "reproductive_female_ratio",
-        ]
-        return self._features_df.select(feature_cols).to_numpy().astype(np.float32)
+        return self._features_df.select(self._get_feature_columns()).to_numpy().astype(np.float32)
 
     def _compute_euclidean_distance(self, features: np.ndarray) -> np.ndarray:
         """
@@ -200,14 +209,4 @@ class DemographicFeaturesView(BaseView):
         Returns:
             DataFrame with features for each diagnosis
         """
-        return self._features_df.select(
-            [
-                "terminology_id",
-                "female_ratio",
-                "child_ratio",
-                "adult_ratio",
-                "elderly_ratio",
-                "young_adult_ratio",
-                "reproductive_female_ratio",
-            ]
-        )
+        return self._features_df.select(["terminology_id"] + self._get_feature_columns())
