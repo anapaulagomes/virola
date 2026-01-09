@@ -25,7 +25,7 @@ def _():
 
 @app.cell
 def _():
-    from vir.db import DEFAULT_MODEL, get_connection
+    from vir.db import get_connection
     from vir.notebook_widgets import (
         create_file_dropdown,
         extract_dataset_name,
@@ -37,7 +37,6 @@ def _():
     from vir.views.demographic_features import DemographicFeaturesView
 
     return (
-        DEFAULT_MODEL,
         DemographicFeaturesView,
         DemographicView,
         create_file_dropdown,
@@ -58,33 +57,18 @@ def _(load_dotenv):
 @app.cell
 def _(mo):
     mo.md(r"""
-    ## 1. Data Loading
+    ## Data Loading
 
-    ### Fetch diagnosis terminology
+    * Fetch diagnosis terminology: this is needed to ensure that they have the same order always
+    * Fetch indicative codes
     """)
     return
 
 
 @app.cell
-def _(DEFAULT_MODEL, get_connection, load_terminology_labels):
-    terminology_labels = load_terminology_labels(DEFAULT_MODEL)
-
-    # Fetch descriptions from database
-    _con = get_connection()
-    terminology_descriptions = _con.execute("""
-        SELECT id, description
-        FROM medical_terminologies
-        ORDER BY id
-    """).pl()
-    return terminology_descriptions, terminology_labels
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    ### Select codes that are indicative
-    """)
-    return
+def _(load_terminology_labels):
+    terminology_descriptions = load_terminology_labels()
+    return (terminology_descriptions,)
 
 
 @app.cell
@@ -114,11 +98,11 @@ def _(
     files_dropdown,
     include_codes,
     load_and_prepare_dataframe,
-    terminology_labels,
+    terminology_descriptions,
 ):
     df = load_and_prepare_dataframe(
         file_path=files_dropdown.value,
-        terminology_labels=terminology_labels,
+        terminology_labels=terminology_descriptions,
         include_codes=include_codes,
         year_min=2022,
         year_max=2024,
@@ -131,7 +115,7 @@ def _(
 @app.cell
 def _(mo):
     mo.md(r"""
-    ## 2. Analysis Configuration
+    ## Analysis Configuration
     """)
     return
 
@@ -146,7 +130,8 @@ def _(mo):
 @app.cell
 def _(mo):
     mo.md(r"""
-    ## 3. View Instantiation
+    ## Views
+
     Instantiate the two view objects that will be compared.
     """)
     return
@@ -167,15 +152,15 @@ def _(DemographicFeaturesView, DemographicView, dataset_name, df):
 @app.cell
 def _(mo):
     mo.md(r"""
-    ## 4. Analysis Helper Functions
+    ### Helper functions
+
     Common functions for clustering, analysis, and visualization to ensure both views are processed identically.
     """)
     return
 
 
 @app.cell
-def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
-    # --- Clustering and Scoring ---
+def _(AgglomerativeClustering, np, pl, silhouette_score):
     def run_clustering(distance_matrix, k, ids):
         """Runs clustering and returns labels and silhouette score."""
         if distance_matrix is None or distance_matrix.shape[0] < k:
@@ -189,7 +174,11 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
         cluster_df = pl.DataFrame({"terminology_id": ids, "cluster": cluster_labels})
         return cluster_labels, score, cluster_df
 
-    # --- Analysis & Summarization ---
+    return (run_clustering,)
+
+
+@app.cell
+def _(pl):
     def get_cluster_summary_stats(df, cluster_df):
         """Computes aggregated statistics (sex/age distributions) for each cluster."""
         if cluster_df.is_empty() or df.is_empty():
@@ -199,7 +188,6 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
         if df_with_clusters.is_empty():
             return pl.DataFrame(), pl.DataFrame()
 
-        # Sex distribution
         sex_dist = df_with_clusters.group_by("cluster", "sex").agg(
             pl.col("quantity").sum().alias("total")
         )
@@ -207,7 +195,6 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
             (pl.col("total") / pl.col("total").sum().over("cluster") * 100).alias("percentage")
         ).sort("cluster", "sex")
 
-        # Age distribution
         age_dist = df_with_clusters.group_by("cluster", "age_group").agg(
             pl.col("quantity").sum().alias("total")
         )
@@ -217,8 +204,12 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
 
         return sex_dist, age_dist
 
+    return (get_cluster_summary_stats,)
+
+
+@app.cell
+def _(pl):
     def get_feature_cluster_means(feature_df, cluster_df):
-        """Calculates the mean of each feature for each cluster."""
         if cluster_df.is_empty() or feature_df.is_empty():
             return pl.DataFrame()
         return (
@@ -226,8 +217,8 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
             .group_by("cluster")
             .agg(
                 pl.len().alias("n_diagnoses"),
-                pl.col("female_ratio").mean().alias("avg_female_ratio"),
                 pl.col("child_ratio").mean().alias("avg_child_ratio"),
+                pl.col("female_ratio").mean().alias("avg_female_ratio"),
                 pl.col("adult_ratio").mean().alias("avg_adult_ratio"),
                 pl.col("elderly_ratio").mean().alias("avg_elderly_ratio"),
                 pl.col("young_adult_ratio").mean().alias("avg_young_adult_ratio"),
@@ -236,6 +227,11 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
             .sort("cluster")
         )
 
+    return (get_feature_cluster_means,)
+
+
+@app.cell
+def _(pl):
     def get_demographic_cluster_summary(df, cluster_df):
         """Calculates demographic profile summary for clusters (works with any view)."""
         if cluster_df.is_empty() or df.is_empty():
@@ -259,27 +255,23 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
                         .sum()
                         / pl.col("quantity").sum()
                     ).alias("avg_female_ratio"),
-                    # Age group ratios (adjust based on your age_group values)
+                    # Age group ratios (using actual age groups from data)
                     (
-                        pl.when(
-                            pl.col("age_group").is_in(
-                                ["0-4", "5-9", "10-14", "15-17", "0-17", "0-18"]
-                            )
-                        )
+                        pl.when(pl.col("age_group").is_in(["< 1 ano", "1 a 15 anos"]))
                         .then(pl.col("quantity"))
                         .otherwise(0)
                         .sum()
                         / pl.col("quantity").sum()
                     ).alias("avg_child_ratio"),
                     (
-                        pl.when(pl.col("age_group").is_in(["18-64", "40-49", "50-59", "60-64"]))
+                        pl.when(pl.col("age_group") == "16 a 59 anos")
                         .then(pl.col("quantity"))
                         .otherwise(0)
                         .sum()
                         / pl.col("quantity").sum()
                     ).alias("avg_adult_ratio"),
                     (
-                        pl.when(pl.col("age_group").is_in(["65+", "65-74", "75+", "65-100"]))
+                        pl.when(pl.col("age_group") == "Maior que 60 anos")
                         .then(pl.col("quantity"))
                         .otherwise(0)
                         .sum()
@@ -292,6 +284,11 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
 
         return summary
 
+    return (get_demographic_cluster_summary,)
+
+
+@app.cell
+def _(pl):
     def get_top_diagnoses(df, cluster_df, terminology_descriptions):
         """Gets the top 5 most frequent diagnoses for each cluster."""
         if cluster_df.is_empty() or df.is_empty():
@@ -319,7 +316,11 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
             .head(5)
         )
 
-    # --- Plotting ---
+    return (get_top_diagnoses,)
+
+
+@app.cell
+def _(px):
     def plot_distance_matrix(matrix, title):
         """Generates a heatmap of the distance matrix."""
         return px.imshow(
@@ -330,6 +331,11 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
             aspect="equal",
         ).update_layout(height=500, width=600)
 
+    return (plot_distance_matrix,)
+
+
+@app.cell
+def _(mo, px):
     def plot_cluster_sex_distribution(sex_dist_df, title):
         """Generates a bar chart for sex distribution by cluster."""
         if sex_dist_df.is_empty():
@@ -345,6 +351,11 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
         )
         return fig
 
+    return (plot_cluster_sex_distribution,)
+
+
+@app.cell
+def _(mo, px):
     def plot_cluster_age_distribution(age_dist_df, title):
         """Generates a stacked bar chart for age distribution by cluster."""
         if age_dist_df.is_empty():
@@ -360,6 +371,11 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
         )
         return fig
 
+    return (plot_cluster_age_distribution,)
+
+
+@app.cell
+def _(mo, pl, px):
     def plot_feature_means_dot_plot(feature_means_df):
         """Generates a dot plot of mean feature values for each cluster."""
         if feature_means_df.is_empty():
@@ -374,10 +390,9 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
             "avg_reproductive_female_ratio",
         ]
 
-        # Melt the dataframe to long format
-        plot_df = feature_means_df.melt(
-            id_vars=["cluster"],
-            value_vars=features_to_plot,
+        plot_df = feature_means_df.unpivot(
+            index=["cluster"],
+            on=features_to_plot,
             variable_name="feature",
             value_name="average_value",
         )
@@ -424,24 +439,13 @@ def _(AgglomerativeClustering, mo, np, pl, px, silhouette_score):
 
         return fig
 
-    return (
-        get_cluster_summary_stats,
-        get_demographic_cluster_summary,
-        get_feature_cluster_means,
-        get_top_diagnoses,
-        plot_cluster_age_distribution,
-        plot_cluster_sex_distribution,
-        plot_distance_matrix,
-        plot_feature_means_dot_plot,
-        run_clustering,
-    )
+    return (plot_feature_means_dot_plot,)
 
 
 @app.cell
 def _(mo):
     mo.md(r"""
-    ## 5. Comparative Analysis
-    Use the helper functions to run a standardized analysis pipeline on both views.
+    ## Comparative Analysis
     """)
     return
 
@@ -449,7 +453,8 @@ def _(mo):
 @app.cell
 def _(mo):
     mo.md(r"""
-    ### 5.1 Feature-Based View
+    ### Feature-Based View
+
     This view extracts interpretable demographic features (age/sex ratios) and uses Euclidean distance.
     """)
     return
@@ -466,34 +471,33 @@ def _(
     run_clustering,
     terminology_descriptions,
 ):
-    # Get matrix and IDs for feature view
-    feature_matrix = feature_view.get_matrix()
-    try:
-        feature_ids = feature_view.get_terminology_ids().to_list()
-    except AttributeError:
-        feature_ids = df.select("terminology_id").unique().to_series().to_list()
-        feature_ids = sorted(feature_ids)
+    feature_matrix = feature_view.get_matrix(force_recompute=True)
+    feature_ids = feature_view.get_terminology_ids().to_list()
 
-    # Run clustering
     feature_labels, feature_score, feature_cluster_df = run_clustering(
         feature_matrix, k_slider.value, feature_ids
     )
 
-    # Get summary stats
     feature_sex_dist, feature_age_dist = get_cluster_summary_stats(df, feature_cluster_df)
     feature_top_diagnoses = get_top_diagnoses(df, feature_cluster_df, terminology_descriptions)
 
-    # Get feature-specific data
     feature_df = feature_view.get_features()
     feature_means = get_feature_cluster_means(feature_df, feature_cluster_df)
     return (
         feature_age_dist,
+        feature_df,
         feature_matrix,
         feature_means,
         feature_score,
         feature_sex_dist,
         feature_top_diagnoses,
     )
+
+
+@app.cell
+def _(feature_df):
+    feature_df
+    return
 
 
 @app.cell
@@ -624,7 +628,7 @@ def _(chi_matrix, chi_score, mo, plot_distance_matrix):
 @app.cell
 def _(mo):
     mo.md("""
-    ### Top 5 Diagnoses per Cluster
+    #### Top 5 Diagnoses per Cluster
     """)
     return
 
@@ -638,7 +642,7 @@ def _(chi_top_diagnoses, mo):
 @app.cell
 def _(mo):
     mo.md("""
-    ### Cluster Demographic Profiles
+    #### Cluster Demographic Profiles
     """)
     return
 
@@ -664,21 +668,20 @@ def _(
 @app.cell
 def _(mo):
     mo.md("""
-    ### Cluster Demographic Profile Summary
+    #### Cluster Demographic Profile Summary
     """)
     return
 
 
 @app.cell
 def _(chi_demographic_summary, mo, pl, px):
-    # Create a comparison plot for chi-square demographic summary
     if chi_demographic_summary.is_empty():
         chi_demo_plot = mo.md("*No demographic summary available.*")
     else:
         _features = ["avg_female_ratio", "avg_child_ratio", "avg_adult_ratio", "avg_elderly_ratio"]
-        _plot_df = chi_demographic_summary.melt(
-            id_vars=["cluster"],
-            value_vars=_features,
+        _plot_df = chi_demographic_summary.unpivot(
+            index=["cluster"],
+            on=_features,
             variable_name="feature",
             value_name="average_value",
         )
@@ -804,7 +807,7 @@ def _(matching_diagnoses, mo):
 
 
 @app.cell
-def _(matching_diagnoses, mo, pl, selected_diagnosis_dropdown):
+def _(feature_df, matching_diagnoses, mo, pl, selected_diagnosis_dropdown):
     if (
         matching_diagnoses.height > 0
         and selected_diagnosis_dropdown
@@ -832,6 +835,7 @@ def _(matching_diagnoses, mo, pl, selected_diagnosis_dropdown):
 
 @app.cell
 def _(
+    feature_df,
     feature_view,
     get_connection,
     matching_diagnoses,
@@ -916,7 +920,7 @@ def _(mo):
     # _, _, cluster_df = run_clustering(matrix, k_slider.value, ids)
 
     # if not cluster_df.is_empty():
-    #     top_diagnoses = get_top_diagnoses(df, cluster_df, terminology_labels)
+    #     top_diagnoses = get_top_diagnoses(df, cluster_df, terminology_descriptions)
     #     cluster_descriptions = {}
     #     for _cluster_id in sorted(top_diagnoses["cluster"].unique().to_list()):
     #         _cluster_terms = top_diagnoses.filter(pl.col("cluster") == _cluster_id)
@@ -942,7 +946,7 @@ def _(mo):
 @app.cell
 def _(mo):
     mo.md(r"""
-    ## 8. Cache Management
+    ## Cache
     """)
     return
 
