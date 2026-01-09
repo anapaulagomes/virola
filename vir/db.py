@@ -187,7 +187,11 @@ def fetch_terminologies(model_name=None):
 def dimension_exists(dimension: str) -> bool:
     """Checks if a given dimension exists in the dimensions table."""
     con = get_connection()
-    result = con.execute(
-        "SELECT 1 FROM dimensions WHERE dimension = ? LIMIT 1", [dimension]
-    ).fetchone()
+    try:
+        result = con.execute(
+            "SELECT 1 FROM dimensions WHERE dimension = ? LIMIT 1", [dimension]
+        ).fetchone()
+    except Exception as e:
+        if "Catalog Error" in e.args[0]:
+            return False
     return result is not None
