@@ -45,3 +45,7 @@ def suffix_from(filename: Path, break_on="20municipios", remove_extension=False)
     if remove_extension:
         return suffix.replace(".parquet", "")
     return suffix
+
+
+def get_n_jobs():
+    return int(os.getenv("NUMBER_OF_THREADS", -1))
