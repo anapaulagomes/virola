@@ -5,7 +5,12 @@ from typing import List, Optional, Tuple
 import marimo as mo
 import polars as pl
 
-from vir.config import INDICATIVE_MODEL_RESULTS, INTERIM_DATA_DIR
+from vir.config import (
+    INDICATIVE_ENABLED,
+    INDICATIVE_MODEL_RESULTS,
+    INDICATIVE_MODEL_THRESHOLD,
+    INTERIM_DATA_DIR,
+)
 from vir.db import DEFAULT_MODEL, fetch_terminologies
 
 
@@ -22,7 +27,9 @@ def load_terminology_labels(model: str = DEFAULT_MODEL) -> pl.DataFrame:
     return fetch_terminologies(model)
 
 
-def load_indicative_codes(threshold: float = 0.50, enabled: bool = True) -> Tuple[List[str], bool]:
+def load_indicative_codes(
+    threshold: float = INDICATIVE_MODEL_THRESHOLD, enabled: bool = INDICATIVE_ENABLED
+) -> Tuple[List[str], bool]:
     """
     Load indicative codes from CSV file.
 
@@ -34,24 +41,13 @@ def load_indicative_codes(threshold: float = 0.50, enabled: bool = True) -> Tupl
         Tuple of (list of code labels, enabled flag)
     """
     include_codes = []
-    if enabled:
-        indicative_codes = pl.read_csv(INDICATIVE_MODEL_RESULTS)
+    if not enabled:
+        return include_codes, False
 
-        # Handle both column name variations
-        prob_col = None
-        if "indicative_probability" in indicative_codes.columns:
-            prob_col = "indicative_probability"
-        elif "indicative_prob" in indicative_codes.columns:
-            prob_col = "indicative_prob"
-        else:
-            raise ValueError(
-                "Could not find indicative probability column. "
-                "Expected 'indicative_probability' or 'indicative_prob'"
-            )
-
-        for row in indicative_codes.iter_rows(named=True):
-            if row[prob_col] > threshold:
-                include_codes.append(f"{row['code']}:{row['code_type']}")
+    indicative_codes = pl.read_csv(INDICATIVE_MODEL_RESULTS)
+    for row in indicative_codes.iter_rows(named=True):
+        if row["indicative_prob"] >= threshold:
+            include_codes.append(f"{row['code']}:{row['code_type']}")
 
     return include_codes, enabled
 

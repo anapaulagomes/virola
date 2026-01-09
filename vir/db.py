@@ -176,7 +176,7 @@ def fetch_terminologies(model_name=None):
         where_clause = f"WHERE model = '{model_name}'"
     result = con.execute(
         f"""
-        SELECT id, code, code_type, code || ':' || code_type AS label
+        SELECT id, code, description, code_type, code || ':' || code_type AS label
         FROM medical_terminologies {where_clause}
         ORDER BY id
         """,
