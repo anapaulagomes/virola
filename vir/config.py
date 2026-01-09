@@ -36,6 +36,7 @@ CHUNK_SIZE = 100_000  # Records per chunk - adjust based on available RAM
 INDICATIVE_MODEL_RESULTS = f"{DATA_DIR}/indicative_probabilities.csv"
 INDICATIVE_MODEL_THRESHOLD = 0.5
 INDICATIVE_ENABLED = True
+MIN_WEEKS = 12
 
 # Memory recommendations by RAM:
 # 8GB RAM: CHUNK_SIZE = 50_000
