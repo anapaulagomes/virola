@@ -1,6 +1,26 @@
 import plotly.express as px
 import polars as pl
 
+TABLEAU_COLORS = [
+    "#4E79A7",  # Blue
+    "#F28E2B",  # Orange
+    "#E15759",  # Red
+    "#76B7B2",  # Cyan
+    "#59A14F",  # Green
+    "#EDC948",  # Yellow
+    "#B07AA1",  # Purple
+    "#FF9DA7",  # Pink
+    "#9C755F",  # Brown
+    "#BAB0AC",  # Gray
+]
+CODE_TYPE_COLOR = {
+    "CID10": px.colors.qualitative.Plotly[0],
+    "CIAP2": px.colors.qualitative.Plotly[1],
+    "AB": px.colors.qualitative.Plotly[2],
+}
+# TODO age group color
+# TODO sex color
+
 
 def plot_null_vs_not_null(df, verbose=False):
     _proportion = []
