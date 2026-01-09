@@ -73,7 +73,7 @@ def _(load_terminology_labels):
 
 @app.cell
 def _(load_indicative_codes):
-    include_codes, indicative_codes_enabled = load_indicative_codes(threshold=0.50, enabled=True)
+    include_codes, indicative_codes_enabled = load_indicative_codes()
     return (include_codes,)
 
 
