@@ -11,5 +11,12 @@ from vir.views.base import BaseView
 from vir.views.clinical import ClinicalView
 from vir.views.demographic import DemographicView
 from vir.views.demographic_features import DemographicFeaturesView
+from vir.views.temporal import TemporalView
 
-__all__ = ["BaseView", "ClinicalView", "DemographicView", "DemographicFeaturesView"]
+__all__ = [
+    "BaseView",
+    "ClinicalView",
+    "DemographicView",
+    "DemographicFeaturesView",
+    "TemporalView",
+]
