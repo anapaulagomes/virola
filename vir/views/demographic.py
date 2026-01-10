@@ -49,20 +49,20 @@ class DemographicView(BaseView):
                 on="sex_age",
                 values="total",
             )
-            .fill_null(0)
+            .fill_null(0)  # TODO check this
             .sort("terminology_id")
         )
 
         return pivoted
 
-    def get_terminology_ids(self) -> pl.Series:
+    def get_terminology_ids(self) -> list:
         """
         Get the sorted list of terminology IDs corresponding to the matrix rows.
 
         Returns:
-            A Polars Series containing the sorted terminology_id values.
+            Ordered list of terminology_id values
         """
-        return self._pivot_df["terminology_id"]
+        return self._pivot_df["terminology_id"].to_list()
 
     def compute(self) -> np.ndarray:
         """

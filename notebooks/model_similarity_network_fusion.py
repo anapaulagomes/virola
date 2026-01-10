@@ -22,20 +22,20 @@ def _(mo):
 
 @app.cell
 def _():
-    import time
-
     import marimo as mo
-    import matplotlib.pyplot as plt
     import numpy as np
+    import plotly.express as px
+    import polars as pl
     from dotenv import load_dotenv
     from sklearn import cluster
     from snf import compute, metrics
 
-    return cluster, compute, load_dotenv, metrics, mo, np, plt, time
+    return cluster, compute, load_dotenv, metrics, mo, np, pl, px
 
 
 @app.cell
 def _():
+    from vir.config import CLUSTERING_DIR
     from vir.notebook_widgets import (
         create_file_dropdown,
         extract_dataset_name,
@@ -46,6 +46,7 @@ def _():
     from vir.views import ClinicalView, DemographicView, TemporalView
 
     return (
+        CLUSTERING_DIR,
         ClinicalView,
         DemographicView,
         TemporalView,
@@ -61,12 +62,6 @@ def _():
 def _(load_dotenv):
     _ = load_dotenv()
     return
-
-
-@app.cell
-def _():
-    run_k_validation = True
-    return (run_k_validation,)
 
 
 @app.cell
@@ -151,20 +146,89 @@ def _(ClinicalView, DemographicView, TemporalView, view_params):
 @app.cell
 def _(mo):
     mo.md(r"""
-    ## Convert distances to affinities
+    ### Align matrices to common diagnosis IDs
 
-    Using adaptive Gaussian kernel with k-nearest neighbor based local scaling.
+    Ensure all three views have the same diagnoses in the same order.
     """)
     return
 
 
 @app.cell
 def _(clinical_view, demographic_view, temporal_view):
-    # Convert to affinity matrices using BaseView.to_affinity()
-    # k=20 is the standard value for SNF
-    clinical_affinity = clinical_view.to_affinity(k=20, mu=0.5)
-    temporal_affinity = temporal_view.to_affinity(k=20, mu=0.5)
-    demographic_affinity = demographic_view.to_affinity(k=20, mu=0.5)
+    clinical_ids = set(clinical_view.get_terminology_ids())
+    temporal_ids = set(temporal_view.get_terminology_ids())
+    demographic_ids = set(demographic_view.get_terminology_ids())
+
+    print(f"Clinical: {len(clinical_ids)} diagnoses")
+    print(f"Temporal: {len(temporal_ids)} diagnoses")
+    print(f"Demographic: {len(demographic_ids)} diagnoses")
+
+    common_ids = sorted(clinical_ids & temporal_ids & demographic_ids)
+    print(f"\nCommon diagnoses: {len(common_ids)}")
+
+    missing_in_temporal = clinical_ids - temporal_ids
+    missing_in_demographic = clinical_ids - demographic_ids
+    if missing_in_temporal:
+        print(f"Missing in temporal: {len(missing_in_temporal)} diagnoses (filtered by min_weeks)")
+    if missing_in_demographic:
+        print(f"Missing in demographic: {len(missing_in_demographic)} diagnoses")
+    return (common_ids,)
+
+
+@app.cell
+def _(clinical_view, common_ids, demographic_view, temporal_view):
+    clinical_distance_aligned = clinical_view.align_to_common_ids(common_ids)
+    temporal_distance_aligned = temporal_view.align_to_common_ids(common_ids)
+    demographic_distance_aligned = demographic_view.align_to_common_ids(common_ids)
+
+    print("Aligned matrix shapes:")
+    print(f"  Clinical: {clinical_distance_aligned.shape}")
+    print(f"  Temporal: {temporal_distance_aligned.shape}")
+    print(f"  Demographic: {demographic_distance_aligned.shape}")
+
+    assert (
+        clinical_distance_aligned.shape
+        == temporal_distance_aligned.shape
+        == demographic_distance_aligned.shape
+    )
+    return (
+        clinical_distance_aligned,
+        demographic_distance_aligned,
+        temporal_distance_aligned,
+    )
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Convert distances to affinities
+
+    Using SNF library's affinity_matrix with adaptive Gaussian kernel.
+    """)
+    return
+
+
+@app.cell
+def _(
+    clinical_distance_aligned,
+    compute,
+    demographic_distance_aligned,
+    temporal_distance_aligned,
+):
+    # Use SNF library's affinity_matrix with adaptive kernel
+    # K is number of neighbors for local scaling (different from SNF's K parameter)
+    affinity_k = 20  # default
+    affinity_mu = 0.5  # default
+
+    clinical_affinity = compute.affinity_matrix(
+        clinical_distance_aligned, K=affinity_k, mu=affinity_mu
+    )
+    temporal_affinity = compute.affinity_matrix(
+        temporal_distance_aligned, K=affinity_k, mu=affinity_mu
+    )
+    demographic_affinity = compute.affinity_matrix(
+        demographic_distance_aligned, K=affinity_k, mu=affinity_mu
+    )
 
     print(
         f"Clinical affinity range: [{clinical_affinity.min():.4f}, {clinical_affinity.max():.4f}]"
@@ -191,103 +255,34 @@ def _(clinical_affinity, demographic_affinity, temporal_affinity):
 
 
 @app.cell
+def _():
+    snf_k_optimal = 10
+    n_clusters_optimal = 100
+    print(f"Using default parameters: K={snf_k_optimal}, n_clusters={n_clusters_optimal}")
+    return n_clusters_optimal, snf_k_optimal
+
+
+@app.cell
 def _(mo):
     mo.md(r"""
-    ### Validation
+    ## SNF Fusion
+
+    Apply SNF with optimal parameters to fuse the three views.
     """)
     return
 
 
 @app.cell
-def _(cluster, compute, metrics, np, time):
-    def evaluate_snf_k_range(affinities, K_values, t=20, n_range=(2, 80)):
-        results = []
+def _(affinities, compute, np, snf_k_optimal):
+    print(f"Running SNF with K={snf_k_optimal}...")
+    fused = compute.snf(affinities, K=snf_k_optimal)
 
-        for K in K_values:
-            start_time = time.time()
-            print(f"\n Running SNF with K={K}...")
-            fused = compute.snf(affinities, K=K, t=t)
-            fused = np.nan_to_num(fused, nan=0.0, posinf=1.0, neginf=0.0)
-
-            n_opt, n_alt = compute.get_n_clusters(fused, range(*n_range))
-            print(f"  Estimated number of clusters: {n_opt} (second best: {n_alt})")
-
-            fused_labels = cluster.spectral_clustering(fused, n_clusters=n_opt)
-
-            silhouette = metrics.silhouette_score(fused, fused_labels)
-            nmi = metrics.nmi([fused_labels])
-
-            end_time = time.time()
-            elapsed = end_time - start_time
-
-            print(f"  Done in {elapsed / 60:.2f} min | Silhouette = {silhouette:.4f}")
-
-            results.append(
-                {
-                    "K": K,
-                    "clusters": n_opt,
-                    "silhouette": float(silhouette),
-                    "nmi": float(nmi),
-                }
-            )
-        return results
-
-    return (evaluate_snf_k_range,)
-
-
-@app.cell
-def _(affinities, evaluate_snf_k_range, run_k_validation):
-    if run_k_validation:
-        K_values = [20, 50, 75, 100, 150]
-        results = evaluate_snf_k_range(affinities, K_values, t=20, n_range=(2, 100))
-    else:
-        results = []
-    return (results,)
-
-
-@app.cell
-def _(plt, results, run_k_validation):
-    if run_k_validation:
-        number_of_neighbors = []
-        silhouettes = []
-        clusters = []
-
-        for result in results:
-            number_of_neighbors.append(result["K"])
-            silhouettes.append(result["silhouette"])
-            clusters.append(result["clusters"])
-
-        _fig, _ax1 = plt.subplots(figsize=(8, 4))
-        _ax1.plot(number_of_neighbors, silhouettes, "-o", color="tab:blue")
-        _ax1.set_xlabel("K (number of neighbors)")
-        _ax1.set_ylabel("Silhouette", color="tab:blue")
-        _ax1.tick_params(axis="y", labelcolor="tab:blue")
-
-        _ax2 = _ax1.twinx()
-        _ax2.plot(number_of_neighbors, clusters, "--s", color="tab:orange")
-        _ax2.set_ylabel("# Clusters (eigengap)", color="tab:orange")
-        _ax2.tick_params(axis="y", labelcolor="tab:orange")
-
-        plt.title("K evaluation in SNF")
-        plt.tight_layout()
-        plt.show()
-    return
-
-
-@app.cell
-def _():
-    # hyperparameters chosen based on K validation step
-    K = 10
-    number_of_clusters = 60
-    return K, number_of_clusters
-
-
-@app.cell
-def _(K, affinities, compute, np):
-    fused = compute.snf(affinities, K=K)  # alpha = 1 - 5 min
-    print(np.isnan(fused).any())  # nan might occurr due to divisions to 0
+    print(f"Contains NaN: {np.isnan(fused).any()}")
+    print(f"Contains Inf: {np.isinf(fused).any()}")
     fused = np.nan_to_num(fused, nan=0.0, posinf=1.0, neginf=0.0)
-    # np.savetxt(f'fused_snf_{selected_filename}.txt', fused)
+
+    print(f"Fused matrix shape: {fused.shape}")
+    print(f"Fused matrix range: [{fused.min():.4f}, {fused.max():.4f}]")
     return (fused,)
 
 
@@ -298,32 +293,86 @@ def _(fused):
 
 
 @app.cell
-def _(fused, plt):
-    plt.matshow(fused, cmap="viridis")
-    plt.colorbar()
-    plt.title("Fused matrices")
-    plt.show()
-    return
-
-
-@app.cell
 def _(mo):
     mo.md(r"""
-    ## Clustering 🩻
+    ## Clustering
     """)
     return
 
 
 @app.cell
-def _(cluster, fused, number_of_clusters):
-    fused_labels = cluster.spectral_clustering(fused, n_clusters=number_of_clusters)
+def _(cluster, fused, n_clusters_optimal, np):
+    # Apply spectral clustering with optimal number of clusters
+    print(f"Performing spectral clustering with n_clusters={n_clusters_optimal}...")
+    fused_labels = cluster.spectral_clustering(fused, n_clusters=n_clusters_optimal)
+
+    # Show cluster distribution
+    unique, counts = np.unique(fused_labels, return_counts=True)
+    print("\nCluster distribution:")
+    for cluster_id, count in zip(unique, counts):
+        print(f"  Cluster {cluster_id}: {count} diagnoses")
     return (fused_labels,)
 
 
 @app.cell
-def _(fused, fused_labels, metrics):
-    silhouette = metrics.silhouette_score(fused, fused_labels)  # nan se tiver apenas uma amostra!
-    silhouette
+def _(clinical_view, fused_labels, pl):
+    df_clusters = pl.DataFrame(
+        {"cluster": fused_labels, "terminology_id": clinical_view.get_terminology_ids()}
+    )
+    df_clusters
+    return (df_clusters,)
+
+
+@app.cell
+def _(fused, fused_labels, metrics, nmi_score):
+    # Compute comprehensive evaluation metrics
+    silhouette = metrics.silhouette_score(fused, fused_labels)
+    # nmi_score = metrics.nmi([fused_labels])  # TODO compare with mappings?
+    zaff = metrics.affinity_zscore(fused, fused_labels, n_perms=1000, seed=42)
+
+    print("Clustering Evaluation Metrics:")
+    print(f"  Silhouette Score: {silhouette:.4f}")
+    print(f"  NMI Score: {nmi_score}")
+    print(f"  Affinity Z-Score: {zaff:.4f}")
+    print("\nInterpretation:")
+    print("  - Silhouette > 0.5: Good clustering")
+    print("  - Affinity Z-Score > 2: Significantly better than random")
+    return
+
+
+@app.cell
+def _(df_clusters, n_clusters_optimal, pl):
+    cluster_sizes = (
+        df_clusters.group_by("cluster").agg(pl.len().alias("size")).sort("size", descending=True)
+    )
+
+    total_clusters = cluster_sizes.height
+    max_size = cluster_sizes["size"].max()
+    median_size = cluster_sizes["size"].median()
+    singletons = cluster_sizes.filter(pl.col("size") == 1).height
+    dust_percent = (singletons / total_clusters) * 100
+
+    print(f"--- Cluster Stats (K={n_clusters_optimal}) ---")
+    print(f"Total Clusters:   {total_clusters}")
+    print(f"Largest Cluster:  {max_size} diagnoses")
+    print(f"Median Size:      {median_size} diagnoses")
+    print(f"Singletons:       {singletons} ({dust_percent:.1f}%)")
+    return (cluster_sizes,)
+
+
+@app.cell
+def _(cluster_sizes, n_clusters_optimal, px):
+    _fig = px.histogram(
+        cluster_sizes,
+        x="size",
+        nbins=50,
+        title=f"Cluster Size Distribution (K={n_clusters_optimal})",
+        labels={"size": "Number of Diagnoses in Cluster"},
+        text_auto=True,
+    )
+
+    _fig.update_layout(xaxis_title="Cluster Size", yaxis_title="Count of Clusters")
+    _fig
     return
 
 
@@ -331,12 +380,27 @@ def _(fused, fused_labels, metrics):
 def _(cluster, fused, metrics):
     experiments_cluster_silhouette = {}
 
-    for _nr_cluster in [20, 40, 60, 100, 150]:
+    for _nr_cluster in [20, 40, 60, 100, 150, 200, 250, 300]:
         _fused_labels = cluster.spectral_clustering(fused, n_clusters=_nr_cluster)
         _silhouette = metrics.silhouette_score(fused, _fused_labels)
         experiments_cluster_silhouette[_nr_cluster] = _silhouette
 
     experiments_cluster_silhouette
+    return
+
+
+@app.cell
+def _(
+    CLUSTERING_DIR,
+    df_clusters,
+    extract_dataset_name,
+    files_dropdown,
+    n_clusters_optimal,
+    snf_k_optimal,
+):
+    df_clusters.write_json(
+        f"{CLUSTERING_DIR}/clusters_{extract_dataset_name(files_dropdown.value)}_nclusters={n_clusters_optimal}_k={snf_k_optimal}.json"
+    )
     return
 
 

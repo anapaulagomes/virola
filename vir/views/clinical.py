@@ -33,6 +33,15 @@ class ClinicalView(BaseView):
 
     view_type = "clinical"
 
+    def get_terminology_ids(self) -> list:
+        """
+        Get the sorted list of terminology IDs in the clinical matrix.
+
+        Returns:
+            Ordered list of terminology_id values
+        """
+        return sorted(self.df["terminology_id"].unique().to_list())
+
     def compute(self) -> np.ndarray:
         """
         Compute clinical distance matrix from precomputed embeddings.
