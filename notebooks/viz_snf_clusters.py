@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.17.6"
+__generated_with = "0.19.0"
 app = marimo.App(width="medium")
 
 
@@ -100,7 +100,7 @@ def _(codes_df, files_dropdown, pl, terminology_labels):
 
 @app.cell
 def _(CLUSTERING_DIR, mo):
-    _all_options = [str(_file.resolve()) for _file in CLUSTERING_DIR.glob("**/*.txt")]
+    _all_options = [str(_file.resolve()) for _file in CLUSTERING_DIR.glob("**/*.json")]
     clusters_results_dropdown = mo.ui.dropdown(
         options=_all_options,
         label="Choose cluster results",
@@ -246,7 +246,6 @@ def _(current_cluster_df, pl):
             f"{term['terminology_description']} ({term['terminology_label']})"
         ] = term["quantity"]
 
-    terminology_labels_count
     return (terminology_labels_count,)
 
 
@@ -296,9 +295,8 @@ def _(
 
 
 @app.cell
-def _(cluster_dropdown):
-    selected_cluster = cluster_dropdown.value
-    selected_cluster
+def _(terminology_labels_count):
+    terminology_labels_count
     return
 
 
@@ -345,11 +343,6 @@ def _(AGE_GROUP, current_cluster_df, plot_categories):
 @app.cell
 def _(current_cluster_df, plot_categories):
     plot_categories(current_cluster_df, "sex", title="Sex distribution")
-    return
-
-
-@app.cell
-def _():
     return
 
 

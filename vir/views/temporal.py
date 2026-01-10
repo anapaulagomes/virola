@@ -67,14 +67,14 @@ class TemporalView(BaseView):
 
         return pivoted
 
-    def get_terminology_ids(self) -> pl.Series:
+    def get_terminology_ids(self) -> list:
         """
         Get sorted list of terminology IDs in the temporal matrix.
 
         Returns:
-            Polars Series of terminology_id values
+            Ordered list of terminology_id values
         """
-        return self._pivot_df["terminology_id"]
+        return self._pivot_df["terminology_id"].to_list()
 
     def compute(self) -> np.ndarray:
         """

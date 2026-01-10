@@ -193,6 +193,62 @@ class BaseView(ABC):
             "entries": len(self.cache),
         }
 
+    @abstractmethod
+    def get_terminology_ids(self) -> list:
+        """
+        Get the ordered list of terminology IDs in the distance matrix.
+
+        Must be implemented by subclasses to ensure proper alignment.
+
+        Returns:
+            Ordered list of terminology IDs corresponding to matrix rows/columns
+        """
+        raise NotImplementedError
+
+    def align_to_common_ids(
+        self, common_ids: list, distance_matrix: Optional[np.ndarray] = None
+    ) -> np.ndarray:
+        """
+        Align distance matrix to a common set of terminology IDs.
+
+        Reorders and filters the matrix to match the provided ID list.
+        Missing IDs are filled with maximum distance (indicating no similarity).
+
+        Args:
+            common_ids: Ordered list of terminology IDs to align to
+            distance_matrix: Matrix to align. If None, uses get_matrix()
+
+        Returns:
+            Aligned distance matrix matching common_ids order
+        """
+        if distance_matrix is None:
+            distance_matrix = self.get_matrix()
+
+        current_ids = self.get_terminology_ids()
+        n_target = len(common_ids)
+
+        # Create mapping from current IDs to matrix indices
+        current_id_to_idx = {tid: idx for idx, tid in enumerate(current_ids)}
+
+        # Create aligned matrix (initialize with max distance)
+        max_dist = np.nanmax(distance_matrix)
+        aligned_matrix = np.full((n_target, n_target), max_dist, dtype=np.float32)
+
+        # Fill in values for common IDs
+        for i, id_i in enumerate(common_ids):
+            if id_i not in current_id_to_idx:
+                continue
+            idx_i = current_id_to_idx[id_i]
+
+            for j, id_j in enumerate(common_ids):
+                if id_j not in current_id_to_idx:
+                    continue
+                idx_j = current_id_to_idx[id_j]
+
+                aligned_matrix[i, j] = distance_matrix[idx_i, idx_j]
+
+        return aligned_matrix
+
     def to_affinity(
         self,
         distance_matrix: Optional[np.ndarray] = None,
