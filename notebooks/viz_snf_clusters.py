@@ -94,7 +94,7 @@ def _(codes_df, files_dropdown, pl, terminology_labels):
         {"id": "terminology_id", "label": "terminology_label"}
     )
     df = df.join(codes_df, on=["terminology_label"])
-    df = df.filter(pl.col("year").ge(2022))
+    df = df.filter(pl.col("year").ge(2022), pl.col("year").le(2024))
     return (df,)
 
 
