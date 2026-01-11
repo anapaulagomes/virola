@@ -65,6 +65,19 @@ def _(load_dotenv):
 
 @app.cell
 def _(mo):
+    args = mo.cli_args() if mo.app_meta().mode == "script" else {}
+    return (args,)
+
+
+@app.cell
+def _(args):
+    year_min = args.get("year_min", 2022)
+    year_max = args.get("year_max", 2024)
+    return year_max, year_min
+
+
+@app.cell
+def _(mo):
     mo.md(r"""
     # Clinical View 🏥
 
@@ -123,34 +136,44 @@ def _(mo):
 
 
 @app.cell
-def _(create_file_dropdown):
-    files_dropdown = create_file_dropdown()
-    files_dropdown
+def _(args, create_file_dropdown):
+    default_dataset = args.get("dataset", "salvador")
+    files_dropdown = create_file_dropdown(default_pattern=default_dataset)
     return (files_dropdown,)
 
 
 @app.cell
-def _(extract_dataset_name, files_dropdown):
-    dataset_name = extract_dataset_name(files_dropdown.value)
+def _(files_dropdown):
+    file_path = files_dropdown.value
+    return (file_path,)
+
+
+@app.cell
+def _(extract_dataset_name, file_path):
+    dataset_name = extract_dataset_name(file_path) if file_path else "unknown"
     dataset_name
     return (dataset_name,)
 
 
 @app.cell
 def _(
-    files_dropdown,
+    file_path,
     include_codes,
     load_and_prepare_dataframe,
+    mo,
     terminology_labels,
+    year_max,
+    year_min,
 ):
     df = load_and_prepare_dataframe(
-        file_path=files_dropdown.value,
+        file_path=file_path,
         terminology_labels=terminology_labels,
         include_codes=include_codes,
-        year_min=2022,
-        year_max=2024,
+        year_min=year_min,
+        year_max=year_max,
     )
-    df.head()
+    if mo.app_meta().mode != "script":
+        df.head()  # Only display in interactive mode
     return (df,)
 
 
@@ -545,6 +568,15 @@ def _(mo):
 @app.cell
 def _(clinical_view):
     clinical_view.get_cache_info()
+    return
+
+
+@app.cell
+def _(cluster_labels, mo, sil_score):
+    if mo.app_meta().mode == "script":
+        n_clusters = len(set(cluster_labels))
+        print("✓ Clinical view analysis completed")
+        print(f"  Number of clusters: {n_clusters} Silhouette score: {sil_score}")
     return
 
 
