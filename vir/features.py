@@ -66,6 +66,8 @@ IBGE_CITY_MAP = {
     },
 }
 
+CITY_NAMES = [city["city"] for city in IBGE_CITY_MAP.values()]
+
 
 def create_weeks_cyclical_features():
     _period = 53  # weeks in year
