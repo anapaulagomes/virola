@@ -1,6 +1,10 @@
+import logging
+
 import polars as pl
 
 from vir.config import PROCESSED_DATA_DIR
+
+logger = logging.getLogger(__file__)
 
 
 def create_cid10_df():
@@ -84,5 +88,13 @@ def create_terminologies_df():
     return codes
 
 
+def main():
+    """Create terminology CSV file from source data."""
+    output_file = PROCESSED_DATA_DIR / "cid10_ciap2_ab.csv"
+    # TODO if there are duplicates, add 1, 2... to it
+    create_terminologies_df().write_csv(str(output_file))
+    logger.info(f"Terminologies file created: {output_file}")
+
+
 if __name__ == "__main__":
-    create_terminologies_df().write_csv(f"{PROCESSED_DATA_DIR}/cid10_ciap2_ab.csv")
+    main()
