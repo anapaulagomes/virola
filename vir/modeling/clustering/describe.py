@@ -23,6 +23,8 @@ class ClusterDescription(BaseModel):
 
 
 def describe_cluster(terminology_labels_count: dict[str, int]):
+    if not terminology_labels_count:
+        return {"short_description": "", "description": ""}
     labels_in_human_format = "\n".join(
         [f"{label} ({count})" for label, count in terminology_labels_count.items()]
     )
