@@ -46,6 +46,19 @@ def _():
 
 @app.cell
 def _(mo):
+    args = mo.cli_args() if mo.app_meta().mode == "script" else {}
+    return (args,)
+
+
+@app.cell
+def _(Path, args):
+    input_file = Path(args.get("input", "data/indicative_codes_yes_no.csv"))
+    output_file = Path(args.get("output", "data/processed/indicative_probabilities.csv"))
+    return input_file, output_file
+
+
+@app.cell
+def _(mo):
     mo.md(r"""
     # Indicative codes for epidemiological surveillance 😷
 
@@ -73,22 +86,20 @@ def _(Path, np):
     np.random.seed(seed_number)
     label_col = "indicative"
 
-    # paths
-    output_path = Path("data/processed/indicative_probabilities_setfit.csv")
+    # paths for active learning (interactive mode only)
     active_learning_labels_path = Path("data/active_learning_labels.csv")
     active_learning_metrics_path = Path("data/active_learning_metrics.csv")
     return (
         active_learning_labels_path,
         active_learning_metrics_path,
         label_col,
-        output_path,
         seed_number,
     )
 
 
 @app.cell
-def _(active_learning_labels_path, label_col, pl, seed_number):
-    df = pl.read_csv("data/indicative_codes_yes_no.csv")
+def _(active_learning_labels_path, input_file, label_col, pl, seed_number):
+    df = pl.read_csv(input_file)
     mapping = {"yes": 1, "no": 0}
 
     df = df.with_columns(
@@ -605,9 +616,9 @@ def _(df_results, mo, pl):
 
 
 @app.cell
-def _(df_results, output_path):
-    df_results.write_csv(output_path)
-    print(f"💾 Results saved to: {output_path}")
+def _(df_results, output_file):
+    df_results.write_csv(output_file)
+    print(f"💾 Results saved to: {output_file}")
     return
 
 
@@ -675,6 +686,13 @@ def _(best_threshold, mo, pl, test_dataset, test_labels, y_pred_probs):
     ).sort("prob", descending=True)
 
     mo.ui.table(false_positives)
+    return
+
+
+@app.cell
+def _(mo):
+    if mo.app_meta().mode == "script":
+        print("✓ Model training completed")
     return
 
 

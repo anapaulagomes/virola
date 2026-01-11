@@ -22,6 +22,8 @@ def _(mo):
 
 @app.cell
 def _():
+    from pathlib import Path
+
     import marimo as mo
     import numpy as np
     import plotly.express as px
@@ -32,11 +34,12 @@ def _():
     from sklearn import cluster
     from snf import compute, metrics
 
-    return cluster, compute, go, load_dotenv, metrics, mo, np, pl, px, umap
+    return Path, cluster, compute, go, load_dotenv, metrics, mo, np, pl, px, umap
 
 
 @app.cell
 def _():
+    from vir.config import CLUSTERING_DIR
     from vir.notebook_widgets import (
         create_file_dropdown,
         extract_dataset_name,
@@ -47,6 +50,7 @@ def _():
     from vir.views import ClinicalView, DemographicView, TemporalView
 
     return (
+        CLUSTERING_DIR,
         ClinicalView,
         DemographicView,
         TemporalView,
@@ -62,6 +66,22 @@ def _():
 def _(load_dotenv):
     _ = load_dotenv()
     return
+
+
+@app.cell
+def _(mo):
+    args = mo.cli_args() if mo.app_meta().mode == "script" else {}
+    return (args,)
+
+
+@app.cell
+def _(CLUSTERING_DIR, Path, args):
+    year_min = args.get("year_min", 2022)
+    year_max = args.get("year_max", 2024)
+    snf_k = args.get("snf_k", 10)
+    n_clusters = args.get("n_clusters", 200)
+    output_dir = Path(args.get("output", str(CLUSTERING_DIR)))
+    return n_clusters, output_dir, snf_k, year_max, year_min
 
 
 @app.cell
@@ -85,27 +105,37 @@ def _(load_indicative_codes):
 
 
 @app.cell
-def _(create_file_dropdown):
-    files_dropdown = create_file_dropdown()
-    files_dropdown
+def _(args, create_file_dropdown):
+    default_dataset = args.get("dataset", "salvador")
+    files_dropdown = create_file_dropdown(default_pattern=default_dataset)
     return (files_dropdown,)
 
 
 @app.cell
+def _(files_dropdown):
+    file_path = files_dropdown.value
+    return (file_path,)
+
+
+@app.cell
 def _(
-    files_dropdown,
+    file_path,
     include_codes,
     load_and_prepare_dataframe,
+    mo,
     terminology_labels,
+    year_max,
+    year_min,
 ):
     df = load_and_prepare_dataframe(
-        file_path=files_dropdown.value,
+        file_path=file_path,
         terminology_labels=terminology_labels,
         include_codes=include_codes,
-        year_min=2022,
-        year_max=2024,
+        year_min=year_min,
+        year_max=year_max,
     )
-    df.head()
+    if mo.app_meta().mode != "script":
+        df.head()
     return (df,)
 
 
@@ -120,8 +150,8 @@ def _(mo):
 
 
 @app.cell
-def _(df, extract_dataset_name, files_dropdown):
-    view_params = {"df": df, "dataset_name": extract_dataset_name(files_dropdown.value)}
+def _(df, extract_dataset_name, file_path):
+    view_params = {"df": df, "dataset_name": extract_dataset_name(file_path)}
     return (view_params,)
 
 
@@ -255,11 +285,9 @@ def _(clinical_affinity, demographic_affinity, temporal_affinity):
 
 
 @app.cell
-def _():
-    snf_k_optimal = 10
-    n_clusters_optimal = 200
-    print(f"Using default parameters: K={snf_k_optimal}, n_clusters={n_clusters_optimal}")
-    return n_clusters_optimal, snf_k_optimal
+def _(n_clusters, snf_k):
+    print(f"Using parameters: K={snf_k}, n_clusters={n_clusters}")
+    return
 
 
 @app.cell
@@ -273,9 +301,9 @@ def _(mo):
 
 
 @app.cell
-def _(affinities, compute, np, snf_k_optimal):
-    print(f"Running SNF with K={snf_k_optimal}...")
-    fused = compute.snf(affinities, K=snf_k_optimal)
+def _(affinities, compute, np, snf_k):
+    print(f"Running SNF with K={snf_k}...")
+    fused = compute.snf(affinities, K=snf_k)
 
     print(f"Contains NaN: {np.isnan(fused).any()}")
     print(f"Contains Inf: {np.isinf(fused).any()}")
@@ -301,10 +329,10 @@ def _(mo):
 
 
 @app.cell
-def _(cluster, fused, n_clusters_optimal, np):
+def _(cluster, fused, n_clusters, np):
     # Apply spectral clustering with optimal number of clusters
-    print(f"Performing spectral clustering with n_clusters={n_clusters_optimal}...")
-    fused_labels = cluster.spectral_clustering(fused, n_clusters=n_clusters_optimal)
+    print(f"Performing spectral clustering with n_clusters={n_clusters}...")
+    fused_labels = cluster.spectral_clustering(fused, n_clusters=n_clusters)
 
     # Show cluster distribution
     unique, counts = np.unique(fused_labels, return_counts=True)
@@ -457,7 +485,7 @@ def _(fused, fused_labels, metrics):
 
 
 @app.cell
-def _(df_clusters, n_clusters_optimal, pl):
+def _(df_clusters, n_clusters, pl):
     cluster_sizes = (
         df_clusters.group_by("cluster").agg(pl.len().alias("size")).sort("size", descending=True)
     )
@@ -468,7 +496,7 @@ def _(df_clusters, n_clusters_optimal, pl):
     singletons = cluster_sizes.filter(pl.col("size") == 1).height
     dust_percent = (singletons / total_clusters) * 100
 
-    print(f"--- Cluster Stats (K={n_clusters_optimal}) ---")
+    print(f"--- Cluster Stats (K={n_clusters}) ---")
     print(f"Total Clusters:   {total_clusters}")
     print(f"Largest Cluster:  {max_size} diagnoses")
     print(f"Median Size:      {median_size} diagnoses")
@@ -477,12 +505,12 @@ def _(df_clusters, n_clusters_optimal, pl):
 
 
 @app.cell
-def _(cluster_sizes, n_clusters_optimal, px):
+def _(cluster_sizes, n_clusters, px):
     _fig = px.histogram(
         cluster_sizes,
         x="size",
         nbins=50,
-        title=f"Cluster Size Distribution (K={n_clusters_optimal})",
+        title=f"Cluster Size Distribution (K={n_clusters})",
         labels={"size": "Number of Diagnoses in Cluster"},
         text_auto=True,
     )
@@ -507,16 +535,27 @@ def _(cluster, fused, metrics):
 
 @app.cell
 def _(
-    CLUSTERING_DIR,
     df_clusters,
     extract_dataset_name,
-    files_dropdown,
-    n_clusters_optimal,
-    snf_k_optimal,
+    file_path,
+    n_clusters,
+    output_dir,
+    snf_k,
 ):
-    df_clusters.write_json(
-        f"{CLUSTERING_DIR}/clusters_{extract_dataset_name(files_dropdown.value)}_nclusters={n_clusters_optimal}_k={snf_k_optimal}.json"
+    output_file = (
+        output_dir
+        / f"clusters_{extract_dataset_name(file_path)}_nclusters={n_clusters}_k={snf_k}.json"
     )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    df_clusters.write_json(output_file)
+    print(f"💾 Results saved to: {output_file}")
+    return (output_file,)
+
+
+@app.cell
+def _(mo):
+    if mo.app_meta().mode == "script":
+        print("✓ SNF clustering completed")
     return
 
 

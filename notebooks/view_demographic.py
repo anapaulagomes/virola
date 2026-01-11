@@ -56,6 +56,19 @@ def _(load_dotenv):
 
 @app.cell
 def _(mo):
+    args = mo.cli_args() if mo.app_meta().mode == "script" else {}
+    return (args,)
+
+
+@app.cell
+def _(args):
+    year_min = args.get("year_min", 2022)
+    year_max = args.get("year_max", 2024)
+    return year_max, year_min
+
+
+@app.cell
+def _(mo):
     mo.md(r"""
     ## Data Loading
 
@@ -86,29 +99,39 @@ def _(mo):
 
 
 @app.cell
-def _(create_file_dropdown):
-    files_dropdown = create_file_dropdown()
-    files_dropdown
+def _(args, create_file_dropdown):
+    default_dataset = args.get("dataset", "salvador")
+    files_dropdown = create_file_dropdown(default_pattern=default_dataset)
     return (files_dropdown,)
+
+
+@app.cell
+def _(files_dropdown):
+    file_path = files_dropdown.value
+    return (file_path,)
 
 
 @app.cell
 def _(
     extract_dataset_name,
-    files_dropdown,
+    file_path,
     include_codes,
     load_and_prepare_dataframe,
+    mo,
     terminology_descriptions,
+    year_max,
+    year_min,
 ):
     df = load_and_prepare_dataframe(
-        file_path=files_dropdown.value,
+        file_path=file_path,
         terminology_labels=terminology_descriptions,
         include_codes=include_codes,
-        year_min=2022,
-        year_max=2024,
+        year_min=year_min,
+        year_max=year_max,
     )
-    dataset_name = extract_dataset_name(files_dropdown.value)
-    df.head()
+    dataset_name = extract_dataset_name(file_path)
+    if mo.app_meta().mode != "script":
+        df.head()
     return dataset_name, df
 
 
@@ -955,6 +978,13 @@ def _(mo):
 def _(chi_square_view, feature_view):
     chi_square_view.get_cache_info()
     feature_view.get_cache_info()
+    return
+
+
+@app.cell
+def _(mo):
+    if mo.app_meta().mode == "script":
+        print("✓ Demographic view analysis completed")
     return
 
 
