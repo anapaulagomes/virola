@@ -75,6 +75,20 @@ def _(load_dotenv):
 
 
 @app.cell
+def _(mo):
+    args = mo.cli_args() if mo.app_meta().mode == "script" else {}
+    return (args,)
+
+
+@app.cell
+def _(args):
+    year_min = args.get("year_min", 2022)
+    year_max = args.get("year_max", 2024)
+    min_weeks = args.get("min_weeks", 12)
+    return min_weeks, year_max, year_min
+
+
+@app.cell
 def _(os):
     n_jobs = int(os.getenv("NUMBER_OF_THREADS", -1))
     return (n_jobs,)
@@ -131,27 +145,37 @@ def _(mo):
 
 
 @app.cell
-def _(create_file_dropdown):
-    files_dropdown = create_file_dropdown()
-    files_dropdown
+def _(args, create_file_dropdown):
+    default_dataset = args.get("dataset", "salvador")
+    files_dropdown = create_file_dropdown(default_pattern=default_dataset)
     return (files_dropdown,)
 
 
 @app.cell
+def _(files_dropdown):
+    file_path = files_dropdown.value
+    return (file_path,)
+
+
+@app.cell
 def _(
-    files_dropdown,
+    file_path,
     include_codes,
     load_and_prepare_dataframe,
+    mo,
     terminology_labels,
+    year_max,
+    year_min,
 ):
     df = load_and_prepare_dataframe(
-        file_path=files_dropdown.value,
+        file_path=file_path,
         terminology_labels=terminology_labels,
         include_codes=include_codes,
-        year_min=2022,
-        year_max=2024,
+        year_min=year_min,
+        year_max=year_max,
     )
-    df.head()
+    if mo.app_meta().mode != "script":
+        df.head()
     return (df,)
 
 
@@ -186,12 +210,12 @@ def _(df, pl, px, top_10):
 
 
 @app.cell
-def _(TemporalView, df, extract_dataset_name, files_dropdown, n_jobs):
+def _(TemporalView, df, extract_dataset_name, file_path, min_weeks, n_jobs):
     # Create temporal view with MSM parameters
     temporal_view = TemporalView(
         df=df,
-        dataset_name=extract_dataset_name(files_dropdown.value),
-        params={"min_weeks": 12, "c": 1.0, "n_jobs": n_jobs},
+        dataset_name=extract_dataset_name(file_path),
+        params={"min_weeks": min_weeks, "c": 1.0, "n_jobs": n_jobs},
     )
 
     # Get time series matrix and pivot table
@@ -588,6 +612,13 @@ def _(
         optimal_distance_matrix, _labels_detail, k_for_silhouette_detail.value
     )
     _fig
+    return
+
+
+@app.cell
+def _(mo):
+    if mo.app_meta().mode == "script":
+        print("✓ Temporal view analysis completed")
     return
 
 

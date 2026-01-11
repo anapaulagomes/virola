@@ -6,6 +6,8 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
+    import os
+
     import marimo as mo
     import numpy as np
     import polars as pl
@@ -26,9 +28,22 @@ def _():
         insert,
         mo,
         np,
+        os,
         pl,
         torch,
     )
+
+
+@app.cell
+def _(mo):
+    args = mo.cli_args() if mo.app_meta().mode == "script" else {}
+    return (args,)
+
+
+@app.cell
+def _(DEFAULT_MODEL, args):
+    model_name = args.get("model", DEFAULT_MODEL)
+    return (model_name,)
 
 
 @app.cell
@@ -61,12 +76,6 @@ def _(torch):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     batch_size = 128
     return batch_size, device
-
-
-@app.cell
-def _(DEFAULT_MODEL):
-    model_name = DEFAULT_MODEL
-    return (model_name,)
 
 
 @app.cell
@@ -178,6 +187,13 @@ def _(
     # un-comment to store in the db
     create_embeddings_table_if_not_exists()
     insert(embeddings_df, model_name)
+    return
+
+
+@app.cell
+def _(mo):
+    if mo.app_meta().mode == "script":
+        print("✓ Embeddings database created successfully")
     return
 
 
