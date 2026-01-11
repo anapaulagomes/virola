@@ -25,17 +25,18 @@ def _():
     import marimo as mo
     import numpy as np
     import plotly.express as px
+    import plotly.graph_objects as go
     import polars as pl
+    import umap
     from dotenv import load_dotenv
     from sklearn import cluster
     from snf import compute, metrics
 
-    return cluster, compute, load_dotenv, metrics, mo, np, pl, px
+    return cluster, compute, go, load_dotenv, metrics, mo, np, pl, px, umap
 
 
 @app.cell
 def _():
-    from vir.config import CLUSTERING_DIR
     from vir.notebook_widgets import (
         create_file_dropdown,
         extract_dataset_name,
@@ -46,7 +47,6 @@ def _():
     from vir.views import ClinicalView, DemographicView, TemporalView
 
     return (
-        CLUSTERING_DIR,
         ClinicalView,
         DemographicView,
         TemporalView,
@@ -257,7 +257,7 @@ def _(clinical_affinity, demographic_affinity, temporal_affinity):
 @app.cell
 def _():
     snf_k_optimal = 10
-    n_clusters_optimal = 100
+    n_clusters_optimal = 200
     print(f"Using default parameters: K={snf_k_optimal}, n_clusters={n_clusters_optimal}")
     return n_clusters_optimal, snf_k_optimal
 
@@ -315,6 +315,122 @@ def _(cluster, fused, n_clusters_optimal, np):
 
 
 @app.cell
+def _(fused, umap):
+    reducer = umap.UMAP()
+    embedding_spectral = reducer.fit_transform(fused)
+    return (embedding_spectral,)
+
+
+@app.cell
+def _(embedding_spectral, fused_labels, go, np, pl):
+    df_viz = pl.DataFrame(
+        {
+            "umap_x": embedding_spectral[:, 0],
+            "umap_y": embedding_spectral[:, 1],
+            "cluster_label": fused_labels,
+        }
+    )
+
+    unique_clusters = sorted(df_viz["cluster_label"].unique().to_list())
+
+    _fig = go.Figure()
+
+    # LAYER A: The "Ghost" Background
+    # This displays ALL points in light grey so you always see global context.
+    _fig.add_trace(
+        go.Scattergl(
+            x=df_viz["umap_x"],
+            y=df_viz["umap_y"],
+            mode="markers",
+            marker=dict(color="rgba(200, 200, 200, 0.3)", size=4),  # Light grey, semi-transparent
+            name="All Data",
+            hoverinfo="skip",  # Don't show hover data for the background noise
+        )
+    )
+
+    # LAYER B: The Individual Cluster Highlights
+    # We create one trace per cluster, but set them to visible=False initially.
+    for label in unique_clusters:
+        # Filter using Polars (very fast)
+        subset = df_viz.filter(pl.col("cluster_label") == label)
+
+        _fig.add_trace(
+            go.Scattergl(
+                x=subset["umap_x"],
+                y=subset["umap_y"],
+                mode="markers",
+                # You can change 'red' to any hex color you prefer (e.g., '#EF553B')
+                marker=dict(color="red", size=6, opacity=1.0),
+                name=f"Cluster {label}",
+                visible=False,  # Hidden by default
+                # Custom hover data
+                customdata=np.stack((subset["cluster_label"],), axis=-1),
+                hovertemplate="<b>Cluster %{customdata[0]}</b><br>x: %{x:.2f}<br>y: %{y:.2f}<extra></extra>",
+            )
+        )
+
+    # --- 3. Construct the Dropdown Logic ---
+    buttons = []
+
+    # Button 1: "Reset/None" (Shows only background)
+    buttons.append(
+        dict(
+            label="Select a Cluster...",
+            method="update",
+            args=[
+                # Trace 0 (Background) is True. All others (1 to 200) are False.
+                {"visible": [True] + [False] * len(unique_clusters)},
+                {"title": "Global View (Spectral + UMAP)"},
+            ],
+        )
+    )
+
+    # Buttons 2...N: One for each cluster
+    for i, label in enumerate(unique_clusters):
+        # Logic:
+        # [0] is Background -> Always True
+        # [i+1] is the current Cluster -> True
+        # All others -> False
+        visibility = [False] * (len(unique_clusters) + 1)
+        visibility[0] = True
+        visibility[i + 1] = True
+
+        buttons.append(
+            dict(
+                label=f"Cluster {label}",
+                method="update",
+                args=[
+                    {"visible": visibility},
+                    {"title": f"Highlighting Cluster {label}"},  # Update chart title dynamically
+                ],
+            )
+        )
+
+    # --- 4. Final Layout ---
+    _fig.update_layout(
+        updatemenus=[
+            dict(
+                active=0,
+                buttons=buttons,
+                direction="down",
+                x=1.15,
+                y=1,  # Place menu to the right
+                xanchor="left",
+                yanchor="top",
+            )
+        ],
+        showlegend=False,  # Hide the legend (the dropdown replaces it)
+        width=1000,
+        height=700,
+        title="Global View (Spectral + UMAP)",
+        plot_bgcolor="white",
+        margin=dict(r=150),  # Add right margin to accommodate dropdown
+    )
+    _fig
+    return
+
+
+@app.cell
 def _(clinical_view, fused_labels, pl):
     df_clusters = pl.DataFrame(
         {"cluster": fused_labels, "terminology_id": clinical_view.get_terminology_ids()}
@@ -324,7 +440,7 @@ def _(clinical_view, fused_labels, pl):
 
 
 @app.cell
-def _(fused, fused_labels, metrics, nmi_score):
+def _(fused, fused_labels, metrics):
     # Compute comprehensive evaluation metrics
     silhouette = metrics.silhouette_score(fused, fused_labels)
     # nmi_score = metrics.nmi([fused_labels])  # TODO compare with mappings?
@@ -332,7 +448,7 @@ def _(fused, fused_labels, metrics, nmi_score):
 
     print("Clustering Evaluation Metrics:")
     print(f"  Silhouette Score: {silhouette:.4f}")
-    print(f"  NMI Score: {nmi_score}")
+    # print(f"  NMI Score: {nmi_score}")
     print(f"  Affinity Z-Score: {zaff:.4f}")
     print("\nInterpretation:")
     print("  - Silhouette > 0.5: Good clustering")
