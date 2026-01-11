@@ -223,8 +223,48 @@ def _(
 
 
 @app.cell
-def _(cluster_labels, mo):
-    cluster_dropdown = mo.ui.dropdown(sorted(cluster_labels), value=1, label="Choose a cluster")
+def _(mo):
+    terminology_search = mo.ui.text(
+        placeholder="Search terminology descriptions...",
+        label="Search terminologies",
+        full_width=True,
+    )
+    terminology_search
+    return (terminology_search,)
+
+
+@app.cell
+def _(cluster_labels, df_with_clusters, pl, terminology_search):
+    # Filter clusters based on search term
+    search_term = terminology_search.value.strip().lower() if terminology_search.value else ""
+
+    if search_term:
+        # Find clusters that contain terminologies with matching descriptions
+        matching_clusters = (
+            df_with_clusters.filter(
+                pl.col("cluster").is_not_null(),
+                df_with_clusters["terminology_description"]
+                .str.to_lowercase()
+                .str.contains(search_term),
+            )["cluster"]
+            .unique()
+            .to_list()
+        )
+
+        filtered_cluster_labels = set(matching_clusters)
+    else:
+        # If search is empty, show all clusters
+        filtered_cluster_labels = cluster_labels
+    return (filtered_cluster_labels,)
+
+
+@app.cell
+def _(filtered_cluster_labels, mo):
+    cluster_dropdown = mo.ui.dropdown(
+        sorted(filtered_cluster_labels) if filtered_cluster_labels else [],
+        value=sorted(filtered_cluster_labels)[0] if filtered_cluster_labels else None,
+        label="Choose a cluster",
+    )
     return (cluster_dropdown,)
 
 
@@ -245,7 +285,6 @@ def _(current_cluster_df, pl):
         terminology_labels_count[
             f"{term['terminology_description']} ({term['terminology_label']})"
         ] = term["quantity"]
-
     return (terminology_labels_count,)
 
 
