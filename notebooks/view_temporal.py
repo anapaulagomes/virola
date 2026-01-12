@@ -56,8 +56,10 @@ def _():
         load_terminology_labels,
     )
     from vir.views import TemporalView
+    from vir.viz import TABLEAU_COLORS
 
     return (
+        TABLEAU_COLORS,
         TemporalView,
         create_file_dropdown,
         extract_dataset_name,

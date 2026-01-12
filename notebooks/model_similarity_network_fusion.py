@@ -80,7 +80,7 @@ def _(CLUSTERING_DIR, Path, args):
     year_max = args.get("year_max", 2024)
     snf_k = args.get("snf_k", 10)
     n_clusters = args.get("n_clusters", 200)
-    output_dir = Path(args.get("output", str(CLUSTERING_DIR)))
+    output_dir = Path(args.get("output") or str(CLUSTERING_DIR))
     return n_clusters, output_dir, snf_k, year_max, year_min
 
 
