@@ -7,7 +7,7 @@ from typing import Optional
 
 import typer
 
-from vir.config import PROJ_ROOT
+from vir.config import CLUSTERING_DIR, PROJ_ROOT
 from vir.dataset import app as helper_app
 from vir.db import DEFAULT_MODEL
 from vir.features import CITY_NAMES
@@ -23,11 +23,13 @@ setup_app = typer.Typer(help="Setup and initialization commands")
 prepare_app = typer.Typer(help="Data preparation pipeline")
 view_app = typer.Typer(help="Analysis views (clinical, demographic, temporal)")
 model_app = typer.Typer(help="Modeling commands")
+pipeline_app = typer.Typer(help="End-to-end pipeline commands")
 
 app.add_typer(setup_app, name="setup")
 app.add_typer(prepare_app, name="prepare")
 app.add_typer(view_app, name="view")
 app.add_typer(model_app, name="model")
+app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(helper_app, name="helpers")
 
 
@@ -265,6 +267,132 @@ def model_snf(
             fg=typer.colors.GREEN,
         )
     sys.exit(exit_code)
+
+
+# ============================================================================
+# Pipeline Commands
+# ============================================================================
+
+
+@pipeline_app.command("run")
+def pipeline_run(
+    city: str = typer.Argument(..., help=f"City name: {', '.join(CITY_NAMES)}"),
+    year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
+    year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
+    min_weeks: int = typer.Option(12, "--min-weeks", help="Minimum weeks for temporal view"),
+    snf_k: int = typer.Option(10, "--snf-k", help="SNF parameter k"),
+    n_clusters: int = typer.Option(200, "--n-clusters", help="Number of clusters"),
+    skip_clean: bool = typer.Option(False, "--skip-clean", help="Skip data cleaning step"),
+):
+    """Run complete pipeline for a city: clean -> views -> model snf."""
+
+    if city not in CITY_NAMES:
+        typer.secho(
+            f"✗ Invalid city name. Available cities: {', '.join(CITY_NAMES)}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+
+    typer.secho(f"\n{'=' * 60}", fg=typer.colors.CYAN)
+    typer.secho(f"Running pipeline for: {city}", fg=typer.colors.CYAN, bold=True)
+    typer.secho(f"{'=' * 60}\n", fg=typer.colors.CYAN)
+
+    # Step 1: Clean data
+    if not skip_clean:
+        typer.secho("Step 1/5: Cleaning data...", fg=typer.colors.BLUE, bold=True)
+        notebook = PROJ_ROOT / "vir/modeling/data_cleaning.py"
+        args = ["--city", city]
+        exit_code = run_marimo_notebook(notebook, args)
+        if exit_code != 0:
+            typer.secho("✗ Data cleaning failed", fg=typer.colors.RED)
+            sys.exit(exit_code)
+        typer.secho("✓ Data cleaning completed\n", fg=typer.colors.GREEN)
+    else:
+        typer.secho("Step 1/5: Skipping data cleaning\n", fg=typer.colors.YELLOW)
+
+    # Construct dataset name based on city (use normalized name for file matching)
+    dataset = city.lower().replace(" ", "_")
+
+    # Step 2: Clinical view
+    typer.secho("Step 2/5: Running clinical view analysis...", fg=typer.colors.BLUE, bold=True)
+    notebook = PROJ_ROOT / "notebooks/view_clinical.py"
+    args = [
+        "--dataset",
+        dataset,
+        "--year-min",
+        str(year_min),
+        "--year-max",
+        str(year_max),
+    ]
+    exit_code = run_marimo_notebook(notebook, args)
+    if exit_code != 0:
+        typer.secho("✗ Clinical view failed", fg=typer.colors.RED)
+        sys.exit(exit_code)
+    typer.secho("✓ Clinical view completed\n", fg=typer.colors.GREEN)
+
+    # Step 3: Demographic view
+    typer.secho("Step 3/5: Running demographic view analysis...", fg=typer.colors.BLUE, bold=True)
+    notebook = PROJ_ROOT / "notebooks/view_demographic.py"
+    args = [
+        "--dataset",
+        dataset,
+        "--year-min",
+        str(year_min),
+        "--year-max",
+        str(year_max),
+    ]
+    exit_code = run_marimo_notebook(notebook, args)
+    if exit_code != 0:
+        typer.secho("✗ Demographic view failed", fg=typer.colors.RED)
+        sys.exit(exit_code)
+    typer.secho("✓ Demographic view completed\n", fg=typer.colors.GREEN)
+
+    # Step 4: Temporal view
+    typer.secho("Step 4/5: Running temporal view analysis...", fg=typer.colors.BLUE, bold=True)
+    notebook = PROJ_ROOT / "notebooks/view_temporal.py"
+    args = [
+        "--dataset",
+        dataset,
+        "--year-min",
+        str(year_min),
+        "--year-max",
+        str(year_max),
+        "--min-weeks",
+        str(min_weeks),
+    ]
+    exit_code = run_marimo_notebook(notebook, args)
+    if exit_code != 0:
+        typer.secho("✗ Temporal view failed", fg=typer.colors.RED)
+        sys.exit(exit_code)
+    typer.secho("✓ Temporal view completed\n", fg=typer.colors.GREEN)
+
+    # Step 5: SNF clustering
+    typer.secho("Step 5/5: Running SNF clustering...", fg=typer.colors.BLUE, bold=True)
+    notebook = PROJ_ROOT / "notebooks/model_similarity_network_fusion.py"
+    args = [
+        "--dataset",
+        dataset,
+        "--year-min",
+        str(year_min),
+        "--year-max",
+        str(year_max),
+        "--snf-k",
+        str(snf_k),
+        "--n-clusters",
+        str(n_clusters),
+        "--output",
+        str(CLUSTERING_DIR),
+    ]
+    exit_code = run_marimo_notebook(notebook, args)
+    if exit_code != 0:
+        typer.secho("✗ SNF clustering failed", fg=typer.colors.RED)
+        sys.exit(exit_code)
+    typer.secho("✓ SNF clustering completed\n", fg=typer.colors.GREEN)
+
+    typer.secho(f"\n{'=' * 60}", fg=typer.colors.GREEN)
+    typer.secho(f"✓ Pipeline completed successfully for {city}!", fg=typer.colors.GREEN, bold=True)
+    typer.secho(f"{'=' * 60}\n", fg=typer.colors.GREEN)
+    typer.secho(f"Results saved to: {CLUSTERING_DIR}", fg=typer.colors.CYAN)
 
 
 if __name__ == "__main__":
