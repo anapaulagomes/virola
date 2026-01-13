@@ -13,7 +13,6 @@ class DemographicView(BaseView):
     """
     Demographic view: captures similarities in age- and sex-specific patient distributions.
 
-    Follows APPROACH.md specification:
     - Input: Diagnosis × demographic bin matrix (age/sex strata)
     - Preprocessing: Pseudocount smoothing + row-wise normalization to probability distributions
     - Distance metric: Chi-square distance
@@ -138,7 +137,6 @@ class DemographicView(BaseView):
         """
 
         def chi2_metric(p: np.ndarray, q: np.ndarray) -> float:
-            """The Chi-square distance formula specified in APPROACH.md."""
             diff_sq = (p - q) ** 2
             sum_pq = p + q
 

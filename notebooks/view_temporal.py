@@ -47,6 +47,7 @@ def _():
 
 @app.cell
 def _():
+    from vir.config import VALIDATION_DIR
     from vir.data_filters import filter_most_representative_rows
     from vir.notebook_widgets import (
         create_file_dropdown,
@@ -61,6 +62,7 @@ def _():
     return (
         TABLEAU_COLORS,
         TemporalView,
+        VALIDATION_DIR,
         create_file_dropdown,
         extract_dataset_name,
         filter_most_representative_rows,
@@ -196,7 +198,7 @@ def _(df, filter_most_representative_rows):
 @app.cell
 def _(df, pl, px, top_10):
     _fig = px.line(
-        df.filter(pl.col("terminology_label").is_in(top_10["terminology_label"]))
+        df.filter(pl.col("terminology_label").is_in(top_10["terminology_label"].implode()))
         .group_by(["terminology_label", "year", "week"])
         .agg(pl.col("quantity").sum())
         .sort(["year", "week"]),
@@ -290,6 +292,15 @@ def _(Xt, pipeline, plot_cluster_algorithm):
 
 @app.cell
 def _(mo):
+    validation_mode_toggle = mo.ui.checkbox(
+        label="Enable validation mode (run grid search for parameter c)", value=False
+    )
+    validation_mode_toggle
+    return (validation_mode_toggle,)
+
+
+@app.cell
+def _(mo):
     mo.md(r"""
     ### Grid Search for optimal c parameter
 
@@ -313,49 +324,68 @@ def _(mo):
 def _(
     MinMaxScaler,
     TimeSeriesKMedoids,
+    VALIDATION_DIR,
     X,
+    extract_dataset_name,
+    files_dropdown,
     k_for_grid_search,
     make_pipeline,
     n_jobs,
     pairwise_distance,
     pl,
     silhouette_score,
+    validation_mode_toggle,
 ):
-    c_values = [0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
-    grid_search_results = []
+    if validation_mode_toggle.value:
+        # Grid search enabled - test multiple c values
+        c_values = [0.01, 0.1, 0.5, 1.0, 5.0, 10.0]
+        grid_search_results = []
 
-    print(f"Grid Search for k={k_for_grid_search.value}...")
-    print("-" * 60)
+        print(f"Grid Search for k={k_for_grid_search.value}...")
+        print("-" * 60)
 
-    for _c in c_values:
-        _dist_matrix = pairwise_distance(X, method="msm", n_jobs=n_jobs, c=_c)
-        _pipeline = make_pipeline(
-            MinMaxScaler(),
-            TimeSeriesKMedoids(
-                n_clusters=k_for_grid_search.value,
-                distance="msm",
-                random_state=42,
-                distance_params={"c": _c},
-            ),
-        )
+        for _c in c_values:
+            _dist_matrix = pairwise_distance(X, method="msm", n_jobs=n_jobs, c=_c)
+            _pipeline = make_pipeline(
+                MinMaxScaler(),
+                TimeSeriesKMedoids(
+                    n_clusters=k_for_grid_search.value,
+                    distance="msm",
+                    random_state=42,
+                    distance_params={"c": _c},
+                ),
+            )
 
-        _pipeline.fit(_dist_matrix)
-        _labels = _pipeline.named_steps["timeserieskmedoids"].labels_
-        _silhouette = silhouette_score(_dist_matrix, _labels, metric="precomputed")
+            _pipeline.fit(_dist_matrix)
+            _labels = _pipeline.named_steps["timeserieskmedoids"].labels_
+            _silhouette = silhouette_score(_dist_matrix, _labels, metric="precomputed")
 
-        grid_search_results.append(
-            {"c": _c, "silhouette": _silhouette, "k": k_for_grid_search.value}
-        )
+            grid_search_results.append(
+                {"c": _c, "silhouette": _silhouette, "k": k_for_grid_search.value}
+            )
 
-        print(f"c={_c:6.2f} | Silhouette={_silhouette:.4f}")
+            print(f"c={_c:6.2f} | Silhouette={_silhouette:.4f}")
 
-    grid_df = pl.DataFrame(grid_search_results)
-    best_c_row = grid_df.sort("silhouette", descending=True)[0]
-    best_c = best_c_row["c"][0]
-    best_silhouette = best_c_row["silhouette"][0]
+        grid_df = pl.DataFrame(grid_search_results)
+        best_c_row = grid_df.sort("silhouette", descending=True)[0]
+        best_c = best_c_row["c"][0]
+        best_silhouette = best_c_row["silhouette"][0]
 
-    print("-" * 60)
-    print(f"🏆 BEST c = {best_c} (Silhouette = {best_silhouette:.4f})")
+        # Save results to JSON
+        VALIDATION_DIR.mkdir(parents=True, exist_ok=True)
+        dataset_name = extract_dataset_name(files_dropdown.value)
+        output_file = VALIDATION_DIR / f"temporal_grid_search_{dataset_name}.json"
+        grid_df.write_json(output_file)
+
+        print("-" * 60)
+        print(f"🏆 BEST c = {best_c} (Silhouette = {best_silhouette:.4f})")
+        print(f"✓ Results saved to: {output_file}")
+
+    else:
+        # Use default optimal value
+        best_c = 1.0  # Known optimal from previous validation
+        grid_df = pl.DataFrame([{"c": best_c, "silhouette": 0.0, "k": 0}])
+        print(f"Using default c={best_c}")
     return best_c, grid_df
 
 
@@ -476,11 +506,8 @@ def _(
 
         _pipeline.fit(optimal_distance_matrix)
         _labels = _pipeline.named_steps["timeserieskmedoids"].labels_
-
         _inertia = _pipeline.named_steps["timeserieskmedoids"].inertia_
 
-        # SILHOUETTE: Compute using the SAME MSM distance matrix
-        # This ensures mathematical consistency (don't use Euclidean to validate MSM)
         score = silhouette_score(optimal_distance_matrix, _labels, metric="precomputed")
         silhouette_scores.append(score)
         inertia_scores.append(_inertia)
@@ -521,7 +548,7 @@ def _(mo):
 
 
 @app.cell
-def _(go, np, silhouette_samples, TABLEAU_COLORS):
+def _(TABLEAU_COLORS, go, np, silhouette_samples):
     def plot_silhouette_per_cluster(distance_matrix, labels, n_clusters):
         sample_silhouette_values = silhouette_samples(
             distance_matrix, labels, metric="precomputed"

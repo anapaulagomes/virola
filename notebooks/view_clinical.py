@@ -185,6 +185,13 @@ def _(df):
 
 @app.cell
 def _(mo):
+    validation_mode_toggle = mo.ui.checkbox(label="Enable validation mode", value=False)
+    validation_mode_toggle
+    return (validation_mode_toggle,)
+
+
+@app.cell
+def _(mo):
     mo.md(r"""
     ## Clinical View
 
@@ -194,7 +201,11 @@ def _(mo):
 
 
 @app.cell
-def _(ClinicalView, dataset_name, df):
+def _(ClinicalView, dataset_name, df, validation_mode_toggle):
+    if validation_mode_toggle.value:
+        # Future: Could implement model comparison here
+        print("ℹ️ Validation mode enabled (no grid search implemented yet)")
+
     clinical_view = ClinicalView(df=df, dataset_name=dataset_name)
     return (clinical_view,)
 
