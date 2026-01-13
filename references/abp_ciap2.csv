@@ -1,8 +1,8 @@
 CIAP2 relacionada,Descrição AB,Código AB
 R96,Asma,ABP009
-T91,Beribéri,ABP008
+T91,Beribéri,ABP008-1
 A77,Dengue,ABP019
-T91,Desnutrição,ABP008
+T91,Desnutrição,ABP008-2
 T90,Diabetes,ABP006
 R95,DPOC,ABP010
 A78,Hanseníase,ABP018
