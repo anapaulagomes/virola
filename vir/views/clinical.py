@@ -108,6 +108,7 @@ class ClinicalView(BaseView):
         terminology_ids = self.df["terminology_id"].unique().to_list()
         model_name = self.params.get("model", DEFAULT_MODEL)
 
+        # TODO move it out
         con = get_connection()
         result = con.execute(
             """

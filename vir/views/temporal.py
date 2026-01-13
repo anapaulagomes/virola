@@ -80,8 +80,7 @@ class TemporalView(BaseView):
         """
         Compute temporal distance matrix using MSM distance.
 
-        Applies Z-score normalization per APPROACH.md to ensure
-        low-volume seasonal diseases match high-volume seasonal diseases.
+        Applies Z-score normalization to ensure low-volume seasonal diseases match high-volume seasonal diseases.
 
         Returns:
             Distance matrix (NxN numpy array)

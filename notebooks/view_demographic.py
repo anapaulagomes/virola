@@ -25,6 +25,7 @@ def _():
 
 @app.cell
 def _():
+    from archive.demographic_features import DemographicFeaturesView
     from vir.db import get_connection
     from vir.notebook_widgets import (
         create_file_dropdown,
@@ -34,7 +35,6 @@ def _():
         load_terminology_labels,
     )
     from vir.views.demographic import DemographicView
-    from vir.views.demographic_features import DemographicFeaturesView
 
     return (
         DemographicFeaturesView,
@@ -152,6 +152,13 @@ def _(mo):
 
 @app.cell
 def _(mo):
+    validation_mode_toggle = mo.ui.checkbox(label="Enable validation mode", value=False)
+    validation_mode_toggle
+    return (validation_mode_toggle,)
+
+
+@app.cell
+def _(mo):
     mo.md(r"""
     ## Views
 
@@ -161,10 +168,18 @@ def _(mo):
 
 
 @app.cell
-def _(DemographicFeaturesView, DemographicView, dataset_name, df):
+def _(DemographicFeaturesView, DemographicView, dataset_name, df, validation_mode_toggle):
+    # Determine pseudocount parameter
+    if validation_mode_toggle.value:
+        # Future: Could implement pseudocount grid search here
+        print("ℹ️ Validation mode enabled (no grid search implemented yet)")
+        best_pseudocount = 0.5
+    else:
+        best_pseudocount = 0.5
+
     # Chi-Square View (Original)
     chi_square_view = DemographicView(
-        df=df, dataset_name=dataset_name, params={"pseudocount": 0.5}
+        df=df, dataset_name=dataset_name, params={"pseudocount": best_pseudocount}
     )
 
     # Feature-Based View (Alternative)

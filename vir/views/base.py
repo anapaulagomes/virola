@@ -8,7 +8,7 @@ import numpy as np
 import polars as pl
 from diskcache import Cache
 
-from vir.config import VIEWS_CACHE_DIR
+from vir.config import VIEWS_CACHE_DIR, get_indicative_label
 
 
 class BaseView(ABC):
@@ -94,8 +94,11 @@ class BaseView(ABC):
         # Hash dataframe content (only relevant columns)
         df_hash = self._hash_dataframe()
 
+        # Get indicative filtering label
+        indic_label = get_indicative_label()
+
         # Combine into cache key
-        cache_key = f"{self.dataset_name}_{param_str}_{df_hash[:8]}"
+        cache_key = f"{self.dataset_name}_{param_str}_{df_hash[:8]}_{indic_label}"
         return cache_key
 
     def _hash_dataframe(self) -> str:

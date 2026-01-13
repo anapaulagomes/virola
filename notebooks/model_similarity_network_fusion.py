@@ -39,7 +39,7 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import CLUSTERING_DIR
+    from vir.config import CLUSTERING_DIR, get_indicative_label
     from vir.notebook_widgets import (
         create_file_dropdown,
         extract_dataset_name,
@@ -56,6 +56,7 @@ def _():
         TemporalView,
         create_file_dropdown,
         extract_dataset_name,
+        get_indicative_label,
         load_and_prepare_dataframe,
         load_indicative_codes,
         load_terminology_labels,
@@ -538,13 +539,15 @@ def _(
     df_clusters,
     extract_dataset_name,
     file_path,
+    get_indicative_label,
     n_clusters,
     output_dir,
     snf_k,
 ):
+    indic_label = get_indicative_label()
     output_file = (
         output_dir
-        / f"clusters_{extract_dataset_name(file_path)}_nclusters={n_clusters}_k={snf_k}.json"
+        / f"clusters_{extract_dataset_name(file_path)}_nclusters={n_clusters}_k={snf_k}_{indic_label}.json"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     df_clusters.write_json(output_file)

@@ -28,6 +28,7 @@ FIGURES_DIR = REPORTS_DIR / "figures"
 RAW_DATA_FILE = RAW_DATA_DIR / "aesop_raw_dados_2017_20250223_20municipios.parquet"
 
 VIEWS_CACHE_DIR = DATA_DIR / "views"
+VALIDATION_DIR = DATA_DIR / "validation"
 
 # FIXME create dirs if not exist
 
@@ -35,8 +36,14 @@ EMBEDDING_COMPONENTS = 64
 CHUNK_SIZE = 100_000  # Records per chunk - adjust based on available RAM
 INDICATIVE_MODEL_RESULTS = f"{PROCESSED_DATA_DIR}/indicative_probabilities.csv"
 INDICATIVE_MODEL_THRESHOLD = 0.5
-INDICATIVE_ENABLED = True
+INDICATIVE_ENABLED = False
 MIN_WEEKS = 12
+
+
+def get_indicative_label() -> str:
+    """Returns a short label indicating if indicative filtering is enabled."""
+    return "indic" if INDICATIVE_ENABLED else "not-indic"
+
 
 # Memory recommendations by RAM:
 # 8GB RAM: CHUNK_SIZE = 50_000
