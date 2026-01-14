@@ -157,6 +157,12 @@ def _(args, create_file_dropdown):
 
 @app.cell
 def _(files_dropdown):
+    files_dropdown
+    return
+
+
+@app.cell
+def _(files_dropdown):
     file_path = files_dropdown.value
     return (file_path,)
 
@@ -181,6 +187,12 @@ def _(
     if mo.app_meta().mode != "script":
         df.head()
     return (df,)
+
+
+@app.cell
+def _(df):
+    df.shape
+    return
 
 
 @app.cell
