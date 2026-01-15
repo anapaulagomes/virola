@@ -1,5 +1,7 @@
 import marimo
 
+from vir.features import IBGE_CITY_MAP
+
 __generated_with = "0.15.2"
 app = marimo.App(width="medium")
 
@@ -318,8 +320,13 @@ def _(INTERIM_DATA_DIR, RAW_DATA_FILE, df, mo, pl, suffix_from):
         # load data clean data
         suffix = suffix_from(RAW_DATA_FILE, break_on="", remove_extension=True)
         if not city:  # all data
-            output_path = INTERIM_DATA_DIR / f"cleaned_{suffix}{label}.parquet"
-            df.write_parquet(output_path)
+            output_path = INTERIM_DATA_DIR / f"cleaned_{suffix}{label}_all_cities.parquet"
+            cities_over_100 = [
+                city["city"]
+                for city in IBGE_CITY_MAP.values()
+                if city["population_range"] != "< 100 mil"
+            ]
+            df.filter(pl.col("city").is_in(cities_over_100)).write_parquet(output_path)
         else:  # sample with a city
             output_path = (
                 INTERIM_DATA_DIR
