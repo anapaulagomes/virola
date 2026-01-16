@@ -1,6 +1,7 @@
 import json
 
 import llm
+from diskcache import Cache
 from pydantic import BaseModel
 
 from vir.config import logger
@@ -14,6 +15,7 @@ TERMINOLOGY LABELS (COUNT)
 
 {labels_in_human_format}
 """
+descriptions_cache = Cache("clusters-description")
 
 
 class ClusterDescription(BaseModel):
@@ -22,11 +24,23 @@ class ClusterDescription(BaseModel):
     abbreviation: str
 
 
+def _cache_description_key(labels: list[str]):
+    return "-".join([label.replace(" ", "_") for label in labels])
+
+
 def describe_cluster(terminology_labels_count: dict[str, int]):
     if not terminology_labels_count:
-        return {"short_description": "", "description": ""}
+        return {"short_description": "", "description": "", "abbreviation": ""}
+    sorted_dict = dict(
+        sorted(terminology_labels_count.items(), key=lambda item: item[1], reverse=True)
+    )
+    cache_key = _cache_description_key(sorted_dict.keys())
+
+    if descriptions_cache.get(cache_key):
+        return descriptions_cache[cache_key]
+
     labels_in_human_format = "\n".join(
-        [f"{label} ({count})" for label, count in terminology_labels_count.items()]
+        [f"{label} ({count})" for label, count in sorted_dict.items()]
     )
     try:
         model = llm.get_model(LLM_MODEL)
@@ -37,4 +51,6 @@ def describe_cluster(terminology_labels_count: dict[str, int]):
     response = model.prompt(
         PROMPT.format(labels_in_human_format=labels_in_human_format), schema=ClusterDescription
     )
-    return json.loads(response.text())
+    cluster_description = json.loads(response.text())
+    descriptions_cache[cache_key] = cluster_description
+    return cluster_description
