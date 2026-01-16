@@ -334,14 +334,23 @@ def _(
 
 
 @app.cell
-def _(terminology_labels_count):
-    terminology_labels_count
+def _(mo, terminology_labels_count):
+    sorted_terminology_labels_count = dict(
+        sorted(terminology_labels_count.items(), key=lambda item: item[1], reverse=True)
+    )
+
+    mo.vstack(
+        [
+            mo.md("### Cluster members"),
+            mo.ui.table(sorted_terminology_labels_count, selection=None),
+        ]
+    )
     return
 
 
 @app.cell
-def _(current_cluster_df):
-    current_cluster_df
+def _(current_cluster_df, mo):
+    mo.vstack([mo.md("### Dataset rows"), current_cluster_df])
     return
 
 
