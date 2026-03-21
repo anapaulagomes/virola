@@ -6,9 +6,8 @@ import marimo as mo
 import polars as pl
 
 from vir.config import (
+    INDICATIVE_CODES_FILE,
     INDICATIVE_ENABLED,
-    INDICATIVE_MODEL_RESULTS,
-    INDICATIVE_MODEL_THRESHOLD,
     INTERIM_DATA_DIR,
 )
 from vir.data_filters import filter_min_temporal_coverage
@@ -29,28 +28,29 @@ def load_terminology_labels(model: str = DEFAULT_MODEL) -> pl.DataFrame:
 
 
 def load_indicative_codes(
-    threshold: float = INDICATIVE_MODEL_THRESHOLD, enabled: bool = INDICATIVE_ENABLED
+    enabled: bool = INDICATIVE_ENABLED,
 ) -> Tuple[List[str], bool]:
     """
-    Load indicative codes from CSV file.
+    Load non-indicative codes to be excluded from analysis.
 
     Args:
-        threshold: Probability threshold for filtering codes
-        enabled: Whether to filter by indicative codes
+        enabled: Whether to apply indicative filtering (default True).
+                 Pass False to skip filtering (include all codes).
 
     Returns:
-        Tuple of (list of code labels, enabled flag)
+        Tuple of (list of code labels to exclude, enabled flag).
+        When enabled=False, returns ([], False) meaning no filter is applied.
     """
-    include_codes = []
     if not enabled:
-        return include_codes, False
+        return [], False
 
-    indicative_codes = pl.read_csv(INDICATIVE_MODEL_RESULTS)
-    for row in indicative_codes.iter_rows(named=True):
-        if row["indicative_prob"] >= threshold:
-            include_codes.append(f"{row['code']}:{row['code_type']}")
+    indicative_codes = pl.read_csv(INDICATIVE_CODES_FILE)
+    exclude_codes = [
+        f"{row['code']}:{row['code_type']}"
+        for row in indicative_codes.filter(pl.col("indicative") == "no").iter_rows(named=True)
+    ]
 
-    return include_codes, enabled
+    return exclude_codes, True
 
 
 def create_file_dropdown(
@@ -96,7 +96,7 @@ def extract_dataset_name(file_path: str) -> str:
 def load_and_prepare_dataframe(
     file_path: str,
     terminology_labels: pl.DataFrame,
-    include_codes: Optional[List[str]] = None,
+    exclude_codes: Optional[List[str]] = None,
     year_min: Optional[int] = 2022,
     year_max: Optional[int] = 2024,
 ) -> pl.DataFrame:
@@ -108,12 +108,12 @@ def load_and_prepare_dataframe(
     - Group by year, week, sex, age_group, code_type, code
     - Join with terminology labels
     - Filter by year range
-    - Filter by indicative codes (if provided)
+    - Exclude non-indicative codes (if provided)
 
     Args:
         file_path: Path to parquet file
         terminology_labels: DataFrame with terminology labels
-        include_codes: Optional list of codes to filter (format: "code:code_type")
+        exclude_codes: Optional list of code labels to exclude (format: "code:code_type")
         year_min: Minimum year (inclusive), None for no filter
         year_max: Maximum year (inclusive), None for no filter
 
@@ -144,9 +144,9 @@ def load_and_prepare_dataframe(
     elif year_max is not None:
         df = df.filter(pl.col("year").le(year_max))
 
-    # filter by indicative codes
-    if include_codes:
-        df = df.filter(pl.col("terminology_label").is_in(include_codes))
+    # exclude non-indicative codes
+    if exclude_codes:
+        df = df.filter(~pl.col("terminology_label").is_in(exclude_codes))
 
     # ensure temporal representation
     df = filter_min_temporal_coverage(df)
