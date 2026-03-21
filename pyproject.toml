@@ -26,6 +26,7 @@ dependencies = [
     "h5py>=3.14.0",
     "hdbscan>=0.8.40",
     "ipython>=9.5.0",
+    "kaleido>=1.2.0",
     "llm>=0.27.1",
     "loguru",
     "marimo>=0.17.6",
