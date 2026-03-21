@@ -1,10 +1,238 @@
 import duckdb
+import polars as pl
 
 from vir.config import DATA_DIR
 
 PROJECT_DB = DATA_DIR / "virola.db"
 DEFAULT_MODEL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"  # TODO move to config
 MODEL_DIMENSIONS = 768
+
+
+def create_results_schema():
+    """Create runs, cluster_assignments and cluster_profiles tables if they don't exist."""
+    con = get_connection(writeable=True)
+    con.execute("""
+        CREATE SEQUENCE IF NOT EXISTS run_id_sequence START 1;
+
+        CREATE TABLE IF NOT EXISTS runs (
+            run_id          INTEGER PRIMARY KEY DEFAULT nextval('run_id_sequence'),
+            dataset_name    VARCHAR NOT NULL,
+            city            VARCHAR,
+            region          VARCHAR,
+            population_range VARCHAR,
+            year_min        INTEGER NOT NULL,
+            year_max        INTEGER NOT NULL,
+            snf_k           INTEGER NOT NULL,
+            n_clusters      INTEGER NOT NULL,
+            indicative_enabled BOOLEAN NOT NULL DEFAULT false,
+            silhouette_score   FLOAT,
+            affinity_zscore    FLOAT,
+            notes           VARCHAR,
+            created_at      TIMESTAMP DEFAULT now(),
+            finished_at     TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS cluster_assignments (
+            run_id          INTEGER NOT NULL REFERENCES runs(run_id),
+            terminology_id  INTEGER NOT NULL REFERENCES medical_terminologies(id),
+            cluster_id      INTEGER NOT NULL,
+            PRIMARY KEY (run_id, terminology_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS cluster_profiles (
+            run_id                  INTEGER NOT NULL REFERENCES runs(run_id),
+            cluster_id              INTEGER NOT NULL,
+            n_codes                 INTEGER,
+            total_cases             INTEGER,
+            top_codes               JSON,
+            temporal_signature      JSON,
+            demographic_profile     JSON,
+            explanation             JSON,
+            umap_x                  FLOAT,
+            umap_y                  FLOAT,
+            llm_short_description   VARCHAR,
+            llm_description         VARCHAR,
+            llm_abbreviation        VARCHAR,
+            PRIMARY KEY (run_id, cluster_id)
+        );
+    """)
+
+
+def insert_run(
+    dataset_name: str,
+    city: str | None,
+    region: str | None,
+    population_range: str | None,
+    year_min: int,
+    year_max: int,
+    snf_k: int,
+    n_clusters: int,
+    indicative_enabled: bool = False,
+    silhouette_score: float | None = None,
+    affinity_zscore: float | None = None,
+    notes: str | None = None,
+    finished_at: str | None = None,
+) -> int:
+    """Insert a new run and return its run_id."""
+    create_results_schema()
+    con = get_connection(writeable=True)
+    result = con.execute(
+        """
+        INSERT INTO runs (
+            dataset_name, city, region, population_range,
+            year_min, year_max, snf_k, n_clusters,
+            indicative_enabled, silhouette_score, affinity_zscore, notes, finished_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        RETURNING run_id
+    """,
+        [
+            dataset_name,
+            city,
+            region,
+            population_range,
+            year_min,
+            year_max,
+            snf_k,
+            n_clusters,
+            indicative_enabled,
+            silhouette_score,
+            affinity_zscore,
+            notes,
+            finished_at,
+        ],
+    ).fetchone()
+    return result[0]
+
+
+def update_run_finished_at(run_id: int) -> None:
+    """Stamp finished_at on an existing run with the current timestamp."""
+    con = get_connection(writeable=True)
+    con.execute(
+        "UPDATE runs SET finished_at = now() WHERE run_id = ?",
+        [run_id],
+    )
+
+
+def insert_cluster_assignments(run_id: int, assignments: list[dict]):
+    """Bulk insert cluster assignments for a run.
+
+    Args:
+        run_id: The run identifier.
+        assignments: List of {terminology_id, cluster_id} dicts.
+    """
+
+    con = get_connection(writeable=True)
+    df = pl.DataFrame(assignments).with_columns(pl.lit(run_id).alias("run_id"))
+    con.register("assignments_view", df)
+    con.execute("""
+        INSERT INTO cluster_assignments (run_id, terminology_id, cluster_id)
+        SELECT run_id, terminology_id, cluster_id FROM assignments_view
+    """)
+
+
+def fetch_runs() -> "pl.DataFrame":
+    """Return all runs as a Polars DataFrame, including duration in minutes."""
+    con = get_connection()
+    return con.execute("""
+        SELECT run_id, dataset_name, city, region, population_range,
+               year_min, year_max, snf_k, n_clusters,
+               indicative_enabled, silhouette_score, affinity_zscore,
+               notes, created_at, finished_at,
+               CASE
+                   WHEN finished_at IS NOT NULL
+                   THEN ROUND(EXTRACT(EPOCH FROM (finished_at - created_at)) / 60.0, 1)
+               END AS duration_min
+        FROM runs ORDER BY created_at DESC
+    """).pl()
+
+
+def fetch_cluster_assignments(run_id: int) -> "pl.DataFrame":
+    """Return all assignments for a run joined with terminology metadata."""
+    con = get_connection()
+    return con.execute(
+        """
+        SELECT
+            ca.cluster_id,
+            ca.terminology_id,
+            mt.code,
+            mt.code_type,
+            mt.description
+        FROM cluster_assignments ca
+        JOIN medical_terminologies mt ON ca.terminology_id = mt.id
+        WHERE ca.run_id = ?
+        ORDER BY ca.cluster_id, mt.code
+    """,
+        [run_id],
+    ).pl()
+
+
+def upsert_cluster_profile(
+    run_id: int,
+    cluster_id: int,
+    *,
+    n_codes: int | None = None,
+    total_cases: int | None = None,
+    top_codes: str | None = None,
+    temporal_signature: str | None = None,
+    demographic_profile: str | None = None,
+    explanation: str | None = None,
+    umap_x: float | None = None,
+    umap_y: float | None = None,
+    llm_short_description: str | None = None,
+    llm_description: str | None = None,
+    llm_abbreviation: str | None = None,
+):
+    """Insert or update a cluster profile (subset of fields can be provided)."""
+    create_results_schema()
+    con = get_connection(writeable=True)
+    con.execute(
+        """
+        INSERT INTO cluster_profiles (
+            run_id, cluster_id, n_codes, total_cases,
+            top_codes, temporal_signature, demographic_profile, explanation,
+            umap_x, umap_y,
+            llm_short_description, llm_description, llm_abbreviation
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (run_id, cluster_id) DO UPDATE SET
+            n_codes                = COALESCE(EXCLUDED.n_codes, cluster_profiles.n_codes),
+            total_cases            = COALESCE(EXCLUDED.total_cases, cluster_profiles.total_cases),
+            top_codes              = COALESCE(EXCLUDED.top_codes, cluster_profiles.top_codes),
+            temporal_signature     = COALESCE(EXCLUDED.temporal_signature, cluster_profiles.temporal_signature),
+            demographic_profile    = COALESCE(EXCLUDED.demographic_profile, cluster_profiles.demographic_profile),
+            explanation            = COALESCE(EXCLUDED.explanation, cluster_profiles.explanation),
+            umap_x                 = COALESCE(EXCLUDED.umap_x, cluster_profiles.umap_x),
+            umap_y                 = COALESCE(EXCLUDED.umap_y, cluster_profiles.umap_y),
+            llm_short_description  = COALESCE(EXCLUDED.llm_short_description, cluster_profiles.llm_short_description),
+            llm_description        = COALESCE(EXCLUDED.llm_description, cluster_profiles.llm_description),
+            llm_abbreviation       = COALESCE(EXCLUDED.llm_abbreviation, cluster_profiles.llm_abbreviation)
+    """,
+        [
+            run_id,
+            cluster_id,
+            n_codes,
+            total_cases,
+            top_codes,
+            temporal_signature,
+            demographic_profile,
+            explanation,
+            umap_x,
+            umap_y,
+            llm_short_description,
+            llm_description,
+            llm_abbreviation,
+        ],
+    )
+
+
+def fetch_cluster_profiles(run_id: int) -> "pl.DataFrame":
+    """Return all profiles for a run."""
+    con = get_connection()
+    return con.execute(
+        """
+        SELECT * FROM cluster_profiles WHERE run_id = ? ORDER BY cluster_id
+    """,
+        [run_id],
+    ).pl()
 
 
 def get_connection(writeable=False):
