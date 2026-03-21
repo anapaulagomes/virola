@@ -135,9 +135,11 @@ def _(mo):
 
 
 @app.cell
-def _(load_indicative_codes):
-    include_codes, indicative_codes_enabled = load_indicative_codes()
-    return (include_codes,)
+def _(args, load_indicative_codes):
+    exclude_codes, indicative_codes_enabled = load_indicative_codes(
+        enabled=not args.get("no_indicative", False)
+    )
+    return exclude_codes, indicative_codes_enabled
 
 
 @app.cell
@@ -170,7 +172,7 @@ def _(files_dropdown):
 @app.cell
 def _(
     file_path,
-    include_codes,
+    exclude_codes,
     load_and_prepare_dataframe,
     mo,
     terminology_labels,
@@ -180,7 +182,7 @@ def _(
     df = load_and_prepare_dataframe(
         file_path=file_path,
         terminology_labels=terminology_labels,
-        include_codes=include_codes,
+        exclude_codes=exclude_codes,
         year_min=year_min,
         year_max=year_max,
     )
@@ -235,9 +237,13 @@ def _(TemporalView, df, extract_dataset_name, file_path, min_weeks, n_jobs):
     )
 
     # Get time series matrix and pivot table
+    # Columns are sequential ints (chronological year_week order)
+    # Use get_col_labels() for human-readable YYYY-WW labels
     X = temporal_view.get_time_series()
     temporal_pivot = temporal_view.get_temporal_pivot()
+    col_labels = temporal_view.get_col_labels()
 
+    print(f"Series length: {X.shape[1]} year_weeks ({col_labels[0]} → {col_labels[-1]})")
     temporal_pivot
     return (X,)
 

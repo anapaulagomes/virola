@@ -85,9 +85,11 @@ def _(load_terminology_labels):
 
 
 @app.cell
-def _(load_indicative_codes):
-    include_codes, indicative_codes_enabled = load_indicative_codes()
-    return (include_codes,)
+def _(args, load_indicative_codes):
+    exclude_codes, indicative_codes_enabled = load_indicative_codes(
+        enabled=not args.get("no_indicative", False)
+    )
+    return exclude_codes, indicative_codes_enabled
 
 
 @app.cell
@@ -115,7 +117,7 @@ def _(files_dropdown):
 def _(
     extract_dataset_name,
     file_path,
-    include_codes,
+    exclude_codes,
     load_and_prepare_dataframe,
     mo,
     terminology_descriptions,
@@ -125,7 +127,7 @@ def _(
     df = load_and_prepare_dataframe(
         file_path=file_path,
         terminology_labels=terminology_descriptions,
-        include_codes=include_codes,
+        exclude_codes=exclude_codes,
         year_min=year_min,
         year_max=year_max,
     )
