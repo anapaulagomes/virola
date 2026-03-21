@@ -190,7 +190,7 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-bra_medter_embeddings.db
+*/**.db
 
 package-lock.json
 package.json
