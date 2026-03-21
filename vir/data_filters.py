@@ -31,4 +31,6 @@ def filter_min_temporal_coverage(df):
         .agg(pl.col("week").count().alias("week_count"))
         .filter(pl.col("week_count").ge(MIN_WEEKS))
     )
-    return df.filter(pl.col("terminology_id").is_in(more_than_min_weeks["terminology_id"]))
+    return df.filter(
+        pl.col("terminology_id").is_in(more_than_min_weeks["terminology_id"].implode().first())
+    )
