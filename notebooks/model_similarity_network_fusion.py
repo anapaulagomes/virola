@@ -40,6 +40,7 @@ def _():
 @app.cell
 def _():
     from vir.config import CLUSTERING_DIR, get_indicative_label
+    from vir.db import update_run_finished_at
     from vir.notebook_widgets import (
         create_file_dropdown,
         extract_dataset_name,
@@ -60,6 +61,7 @@ def _():
         load_and_prepare_dataframe,
         load_indicative_codes,
         load_terminology_labels,
+        update_run_finished_at,
     )
 
 
@@ -82,7 +84,8 @@ def _(CLUSTERING_DIR, Path, args):
     snf_k = args.get("snf_k", 10)
     n_clusters = args.get("n_clusters", 200)
     output_dir = Path(args.get("output") or str(CLUSTERING_DIR))
-    return n_clusters, output_dir, snf_k, year_max, year_min
+    notes = args.get("notes") or None
+    return n_clusters, notes, output_dir, snf_k, year_max, year_min
 
 
 @app.cell
@@ -100,9 +103,11 @@ def _(load_terminology_labels):
 
 
 @app.cell
-def _(load_indicative_codes):
-    include_codes, indicative_codes_enabled = load_indicative_codes()
-    return (include_codes,)
+def _(args, load_indicative_codes):
+    exclude_codes, indicative_codes_enabled = load_indicative_codes(
+        enabled=not args.get("no_indicative", False)
+    )
+    return exclude_codes, indicative_codes_enabled
 
 
 @app.cell
@@ -121,7 +126,7 @@ def _(files_dropdown):
 @app.cell
 def _(
     file_path,
-    include_codes,
+    exclude_codes,
     load_and_prepare_dataframe,
     mo,
     terminology_labels,
@@ -131,7 +136,7 @@ def _(
     df = load_and_prepare_dataframe(
         file_path=file_path,
         terminology_labels=terminology_labels,
-        include_codes=include_codes,
+        exclude_codes=exclude_codes,
         year_min=year_min,
         year_max=year_max,
     )
@@ -232,6 +237,44 @@ def _(clinical_view, common_ids, demographic_view, temporal_view):
 @app.cell
 def _(mo):
     mo.md(r"""
+    ### Normalize distance matrices
+
+    Normalize each distance matrix to [0, 1] before computing affinities.
+    This ensures the adaptive Gaussian kernel in `affinity_matrix` operates on
+    comparable scales across all views, so no single view dominates the fusion.
+    """)
+    return
+
+
+@app.cell
+def _(clinical_distance_aligned, demographic_distance_aligned, np, temporal_distance_aligned):
+    def _normalize_distance(D: np.ndarray) -> np.ndarray:
+        D = D.copy()
+        np.fill_diagonal(D, 0.0)
+        max_val = D.max()
+        if max_val > 0:
+            D = D / max_val
+        return D
+
+    clinical_distance_norm = _normalize_distance(clinical_distance_aligned)
+    temporal_distance_norm = _normalize_distance(temporal_distance_aligned)
+    demographic_distance_norm = _normalize_distance(demographic_distance_aligned)
+
+    print(
+        f"Clinical distance range after norm:    [{clinical_distance_norm.min():.4f}, {clinical_distance_norm.max():.4f}]"
+    )
+    print(
+        f"Temporal distance range after norm:    [{temporal_distance_norm.min():.4f}, {temporal_distance_norm.max():.4f}]"
+    )
+    print(
+        f"Demographic distance range after norm: [{demographic_distance_norm.min():.4f}, {demographic_distance_norm.max():.4f}]"
+    )
+    return clinical_distance_norm, demographic_distance_norm, temporal_distance_norm
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
     ### Convert distances to affinities
 
     Using SNF library's affinity_matrix with adaptive Gaussian kernel.
@@ -241,31 +284,37 @@ def _(mo):
 
 @app.cell
 def _(
-    clinical_distance_aligned,
+    clinical_distance_norm,
     compute,
-    demographic_distance_aligned,
-    temporal_distance_aligned,
+    demographic_distance_norm,
+    np,
+    temporal_distance_norm,
 ):
     # Use SNF library's affinity_matrix with adaptive kernel
     # K is number of neighbors for local scaling (different from SNF's K parameter)
     affinity_k = 20  # default
     affinity_mu = 0.5  # default
 
-    clinical_affinity = compute.affinity_matrix(
-        clinical_distance_aligned, K=affinity_k, mu=affinity_mu
-    )
-    temporal_affinity = compute.affinity_matrix(
-        temporal_distance_aligned, K=affinity_k, mu=affinity_mu
-    )
-    demographic_affinity = compute.affinity_matrix(
-        demographic_distance_aligned, K=affinity_k, mu=affinity_mu
-    )
+    def _to_affinity(dist):
+        W = compute.affinity_matrix(dist, K=affinity_k, mu=affinity_mu)
+        # Normalize to [0, 1] so all views enter SNF on equal footing.
+        # SNF assumes views are comparable; without this the view with the
+        # largest raw affinity scale dominates the matrix product in fusion.
+        np.fill_diagonal(W, 0.0)
+        max_val = W.max()
+        if max_val > 0:
+            W = W / max_val
+        return W
+
+    clinical_affinity = _to_affinity(clinical_distance_norm)
+    temporal_affinity = _to_affinity(temporal_distance_norm)
+    demographic_affinity = _to_affinity(demographic_distance_norm)
 
     print(
-        f"Clinical affinity range: [{clinical_affinity.min():.4f}, {clinical_affinity.max():.4f}]"
+        f"Clinical affinity range:    [{clinical_affinity.min():.4f}, {clinical_affinity.max():.4f}]"
     )
     print(
-        f"Temporal affinity range: [{temporal_affinity.min():.4f}, {temporal_affinity.max():.4f}]"
+        f"Temporal affinity range:    [{temporal_affinity.min():.4f}, {temporal_affinity.max():.4f}]"
     )
     print(
         f"Demographic affinity range: [{demographic_affinity.min():.4f}, {demographic_affinity.max():.4f}]"
@@ -460,12 +509,40 @@ def _(embedding_spectral, fused_labels, go, np, pl):
 
 
 @app.cell
-def _(clinical_view, fused_labels, pl):
-    df_clusters = pl.DataFrame(
-        {"cluster": fused_labels, "terminology_id": clinical_view.get_terminology_ids()}
-    )
+def _(common_ids, fused_labels, pl):
+    df_clusters = pl.DataFrame({"cluster": fused_labels, "terminology_id": common_ids})
     df_clusters
     return (df_clusters,)
+
+
+@app.cell
+def _(df_clusters, mo, pl, terminology_labels):
+    # Identify largest cluster and inspect its contents
+    _sizes = df_clusters.group_by("cluster").agg(pl.len().alias("size"))
+    _giant_cluster_id = _sizes.sort("size", descending=True)["cluster"][0]
+
+    _giant_members = (
+        df_clusters.filter(pl.col("cluster") == _giant_cluster_id)
+        .join(terminology_labels, left_on="terminology_id", right_on="id")
+        .select(["code", "code_type", "description"])
+        .sort(["code_type", "code"])
+    )
+
+    _by_type = (
+        _giant_members.group_by("code_type")
+        .agg(pl.len().alias("count"))
+        .sort("count", descending=True)
+    )
+
+    print(f"Giant cluster: {_giant_cluster_id} ({_giant_members.height} codes)")
+    print("\nBreakdown by code_type:")
+    print(_by_type)
+    print("\nAll codes in the giant cluster:")
+    if mo.app_meta().mode != "script":
+        _giant_members
+    else:
+        print(_giant_members.to_pandas().to_string())
+    return
 
 
 @app.cell
@@ -522,37 +599,70 @@ def _(cluster_sizes, n_clusters, px):
 
 
 @app.cell
-def _(cluster, fused, metrics):
-    experiments_cluster_silhouette = {}
+def _(cluster, common_ids, fused, metrics, np, pl):
+    _results = []
 
-    for _nr_cluster in [20, 40, 60, 100, 150, 200, 250, 300]:
-        _fused_labels = cluster.spectral_clustering(fused, n_clusters=_nr_cluster)
-        _silhouette = metrics.silhouette_score(fused, _fused_labels)
-        experiments_cluster_silhouette[_nr_cluster] = _silhouette
+    for _nr_cluster in [50, 100, 150, 200, 250, 300]:
+        _labels = cluster.spectral_clustering(fused, n_clusters=_nr_cluster)
+        _silhouette = metrics.silhouette_score(fused, _labels)
 
-    experiments_cluster_silhouette
+        _sizes = (
+            pl.DataFrame({"cluster": _labels, "id": common_ids})
+            .group_by("cluster")
+            .agg(pl.len().alias("size"))
+        )
+
+        _unique, _counts = np.unique(_labels, return_counts=True)
+        _results.append(
+            {
+                "n_clusters": _nr_cluster,
+                "silhouette": round(_silhouette, 4),
+                "largest_cluster": int(_sizes["size"].max()),
+                "median_size": float(_sizes["size"].median()),
+            }
+        )
+
+    _df = pl.DataFrame(_results)
+    print(_df)
     return
 
 
 @app.cell
 def _(
-    df_clusters,
+    common_ids,
     extract_dataset_name,
     file_path,
-    get_indicative_label,
+    fused,
+    fused_labels,
+    indicative_codes_enabled,
+    metrics,
     n_clusters,
-    output_dir,
+    notes,
+    save_run,
     snf_k,
+    year_max,
+    year_min,
+    update_run_finished_at,
 ):
-    indic_label = get_indicative_label()
-    output_file = (
-        output_dir
-        / f"clusters_{extract_dataset_name(file_path)}_nclusters={n_clusters}_k={snf_k}_{indic_label}.json"
+    _silhouette = metrics.silhouette_score(fused, fused_labels)
+    _zaff = metrics.affinity_zscore(fused, fused_labels, n_perms=1000, seed=42)
+
+    run_id = save_run(
+        dataset_name=extract_dataset_name(file_path),
+        year_min=int(year_min),
+        year_max=int(year_max),
+        snf_k=int(snf_k),
+        n_clusters=int(n_clusters),
+        fused_labels=fused_labels,
+        common_ids=common_ids,
+        indicative_enabled=indicative_codes_enabled,
+        silhouette_score=float(_silhouette),
+        affinity_zscore=float(_zaff),
+        notes=notes,
     )
-    output_dir.mkdir(parents=True, exist_ok=True)
-    df_clusters.write_json(output_file)
-    print(f"💾 Results saved to: {output_file}")
-    return (output_file,)
+    update_run_finished_at(run_id)
+    print(f"💾 Run {run_id} saved to virola.db")
+    return (run_id,)
 
 
 @app.cell
