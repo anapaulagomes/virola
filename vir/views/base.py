@@ -56,7 +56,7 @@ class BaseView(ABC):
         """
         cache_key = self._get_cache_key()
 
-        if not force_recompute and self.cache.get(cache_key):
+        if not force_recompute and cache_key in self.cache:
             print(f"Loading {self.view_type} matrix from cache...")
             return self.cache[cache_key]
 
