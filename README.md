@@ -69,6 +69,9 @@ Use `vir COMMAND --help` for detailed options on any command.
 
 ### Development Mode
 
+You will need `uv` to run this project. Install the dependencies with `uv sync`. Then, run `plotly_get_chrome`.
+
+
 For interactive development and exploration, use marimo's edit mode:
 
 ```bash
