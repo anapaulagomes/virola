@@ -26,8 +26,18 @@ uv run vir view temporal --dataset data/interim/cleaned_*.parquet --year-min 202
 # Download `indicative_codes_yes_no` from labeled data folder and place to `data/indicative_codes_yes_no.csv`
 uv run vir model indicative-codes --input data/indicative_codes_yes_no.csv --output data/processed/indicative_probabilities_setfit.csv
 
-# Run SNF clustering
-uv run vir model snf --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024 --snf-k 10 --n-clusters 200 --output data/clustering/
+# Run SNF clustering (results saved automatically to virola.db)
+uv run vir model snf --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024 --snf-k 10 --n-clusters 200
+uv run vir model snf --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024 --snf-k 10 --n-clusters 200 --notes "run for paper"
+
+# Inspect saved runs
+uv run vir results list
+
+# Build cluster profiles for a run (aggregated stats, temporal + demographic signatures)
+uv run vir results build-profiles 1 --dataset data/interim/cleaned_*.parquet
+
+# Generate LLM descriptions for all clusters in a run (skips already-described)
+uv run vir results llm-descriptions 1
 ```
 
 ### CLI Reference
@@ -47,7 +57,13 @@ uv run vir model snf --dataset data/interim/cleaned_*.parquet --year-min 2022 --
 
 #### Modeling
 - `vir model indicative-codes --input FILE --output FILE` - Train indicative codes classifier
-- `vir model snf --dataset DATASET --output DIR [--year-min YEAR] [--year-max YEAR] [--snf-k INT] [--n-clusters INT]` - Similarity Network Fusion clustering
+- `vir model snf --dataset DATASET [--year-min YEAR] [--year-max YEAR] [--snf-k INT] [--n-clusters INT] [--notes TEXT]` - Run SNF clustering, saves run to virola.db
+
+#### Results
+- `vir results list` - List all saved runs with metadata (city, parameters, scores)
+- `vir results build-profiles RUN_ID --dataset DATASET [--year-min YEAR] [--year-max YEAR]` - Build aggregated cluster profiles (stats, temporal signature, demographic profile)
+- `vir results explain RUN_ID --dataset DATASET [--year-min YEAR] [--year-max YEAR]` - Compute per-cluster explanations: primary view driver and central code (requires build-profiles first)
+- `vir results llm-descriptions RUN_ID` - Generate LLM descriptions for all clusters in a run (skips already-described)
 
 Use `vir COMMAND --help` for detailed options on any command.
 
