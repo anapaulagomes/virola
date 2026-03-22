@@ -48,6 +48,7 @@ def _():
         load_indicative_codes,
         load_terminology_labels,
     )
+    from vir.results import save_run
     from vir.views import ClinicalView, DemographicView, TemporalView
 
     return (
@@ -62,6 +63,7 @@ def _():
         load_indicative_codes,
         load_terminology_labels,
         update_run_finished_at,
+        save_run,
     )
 
 
