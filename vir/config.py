@@ -21,6 +21,7 @@ PROCESSED_DATA_DIR = DATA_DIR / "processed"
 EXTERNAL_DATA_DIR = DATA_DIR / "external"
 CLUSTERING_DIR = DATA_DIR / "clustering"
 MODELS_DIR = PROJ_ROOT / "models"
+REFERENCES_DIR = PROJ_ROOT / "references"
 
 REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
