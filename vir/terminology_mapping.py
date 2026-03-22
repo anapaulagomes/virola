@@ -17,7 +17,7 @@ _CIAP2_CID10 = REFERENCES_DIR / "ciap2-cid10.csv"
 def load_mapping() -> pl.DataFrame:
     """Return a long-format DataFrame of all cross-terminology links.
 
-    Columns: ab_programme, ab_code, ciap2_code, cid10_code
+    Columns: ab_code, ab_programme_code, ciap2_code, cid10_code
     """
     abp = (
         pl.read_csv(_ABP_CIAP2)

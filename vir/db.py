@@ -412,6 +412,39 @@ def fetch_terminologies(model_name=None):
     return result
 
 
+def get_cross_terminology_pairs() -> list[tuple[str, str, str, str, str]]:
+    """Return CID10↔CIAP2 close pairs present in the DB.
+
+    Each tuple is ``(code_a, type_a, code_b, type_b, ab_code)``, matching
+    the format used in validation notebooks. All pairs are semantically
+    equivalent by definition (same AB programme, different coding system).
+    One CID10 is picked per (ab_code, ciap2_code) to avoid duplicates.
+    """
+    from vir.terminology_mapping import load_mapping
+
+    mapping = load_mapping()
+    con = get_connection()
+
+    in_db = set(
+        con.execute("SELECT code, code_type FROM medical_terminologies")
+        .pl()
+        .with_columns(pl.concat_str(["code", "code_type"], separator=":").alias("key"))["key"]
+        .to_list()
+    )
+
+    candidates = (
+        mapping.filter(pl.col("ciap2_code").is_not_null() & pl.col("cid10_code").is_not_null())
+        .group_by("ab_code", "ciap2_code")
+        .agg(pl.col("cid10_code").first())
+    )
+
+    return [
+        (row["cid10_code"], "cid10", row["ciap2_code"], "ciap2", row["ab_code"])
+        for row in candidates.iter_rows(named=True)
+        if f"{row['cid10_code']}:cid10" in in_db and f"{row['ciap2_code']}:ciap2" in in_db
+    ]
+
+
 def dimension_exists(dimension: str) -> bool:
     """Checks if a given dimension exists in the dimensions table."""
     con = get_connection()
