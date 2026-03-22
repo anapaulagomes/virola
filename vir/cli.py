@@ -118,24 +118,6 @@ def prepare_clean(
     sys.exit(exit_code)
 
 
-@prepare_app.command("features")
-def prepare_features(
-    dataset_filename: Path = typer.Argument(..., help="Path to cleaned dataset parquet file"),
-    level: str = typer.Option(
-        "records", "--level", help="Processing level: 'records' or 'diagnosis'"
-    ),
-):
-    """Extract features from cleaned data."""
-    cmd = ["python", "-m", "vir.modeling.feature_engineering", str(dataset_filename)]
-    if level != "records":
-        cmd.extend(["--level", level])
-
-    result = subprocess.run(cmd, capture_output=False)
-    if result.returncode == 0:
-        typer.secho("✓ Feature extraction completed successfully", fg=typer.colors.GREEN)
-    sys.exit(result.returncode)
-
-
 # ============================================================================
 # View Commands
 # ============================================================================
