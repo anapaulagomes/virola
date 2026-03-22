@@ -15,16 +15,11 @@ uv run vir setup embeddings     # Generate embeddings database
 
 # Data preparation pipeline
 uv run vir prepare clean --city "Carandaí"  # Optional: filter by city
-uv run vir prepare features data/interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet
 
 # Run analysis views
 uv run vir view clinical --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024
 uv run vir view demographic --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024
 uv run vir view temporal --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024 --min-weeks 12
-
-# Train indicative codes model
-# Download `indicative_codes_yes_no` from labeled data folder and place to `data/indicative_codes_yes_no.csv`
-uv run vir model indicative-codes --input data/indicative_codes_yes_no.csv --output data/processed/indicative_probabilities_setfit.csv
 
 # Run SNF clustering (results saved automatically to virola.db)
 uv run vir model snf --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024 --snf-k 10 --n-clusters 200
