@@ -47,7 +47,7 @@ def load_embeddings():
             pl.col("code").cast(pl.Categorical),
             pl.col("code_type").cast(pl.Categorical),
             # convert embeddings to float32 for memory efficiency
-            pl.col("embeddings").cast(pl.List(pl.Float32)),
+            pl.col("embedding").cast(pl.List(pl.Float32)),
         ]
     )
 
@@ -96,7 +96,7 @@ def process_chunks(lazy_processed, chunk_size=100_000):
 
         # load chunk using slice for pagination
         chunk = lazy_processed.slice(chunk_idx, chunk_size).collect()
-        chunk_with_embeddings = chunk.filter(pl.col("embeddings").is_not_null())
+        chunk_with_embeddings = chunk.filter(pl.col("embedding").is_not_null())
 
         if len(chunk_with_embeddings) == 0:
             logger.info(f"  No records with embeddings in chunk {chunk_idx // chunk_size + 1}")
@@ -104,7 +104,7 @@ def process_chunks(lazy_processed, chunk_size=100_000):
 
         logger.info(f"  Processing {len(chunk_with_embeddings):,} records with embeddings")
 
-        embeddings_list = chunk_with_embeddings["embeddings"].to_list()
+        embeddings_list = chunk_with_embeddings["embedding"].to_list()
         embeddings_array = np.array(
             [list(emb) for emb in embeddings_list], dtype=np.float32
         )  # TODO hmmm precisa disso?
@@ -214,7 +214,7 @@ def process_diagnosis_level(lazy_processed, chunk_size=100_000):
     logger.info(f"Total records to process: {total_count:,}")
 
     all_data = lazy_processed.collect()
-    data_with_embeddings = all_data.filter(pl.col("embeddings").is_not_null())
+    data_with_embeddings = all_data.filter(pl.col("embedding").is_not_null())
 
     if len(data_with_embeddings) == 0:
         raise ValueError("No records with embeddings found. Check the join conditions.")
@@ -400,7 +400,7 @@ def _extract_demographic_features(group_df):
 
 def _extract_semantic_features(group_df):
     """Extract semantic features: averaged embeddings."""
-    embeddings_list = group_df["embeddings"].to_list()
+    embeddings_list = group_df["embedding"].to_list()
 
     # Convert to numpy array and compute mean
     embeddings_array = np.array([list(emb) for emb in embeddings_list], dtype=np.float32)
