@@ -240,22 +240,22 @@ def _(get_desc, get_id):
     ]
 
     sanity_resolved = []
-    for ca, ta, cb, tb, expected, rationale in SANITY_PAIRS:
-        id_a, id_b = get_id(ca, ta), get_id(cb, tb)
-        if id_a and id_b:
+    for _code_a, _type_a, _code_b, _type_b, _expected, _rationale in SANITY_PAIRS:
+        _id_a, _id_b = get_id(_code_a, _type_a), get_id(_code_b, _type_b)
+        if _id_a and _id_b:
             sanity_resolved.append(
                 {
-                    "code_a": f"{ca} ({get_desc(ca, ta)[:40]})",
-                    "code_b": f"{cb} ({get_desc(cb, tb)[:40]})",
-                    "id_a": id_a,
-                    "id_b": id_b,
-                    "expected": expected,
-                    "rationale": rationale,
+                    "code_a": f"{_code_a} ({get_desc(_code_a, _type_a)[:40]})",
+                    "code_b": f"{_code_b} ({get_desc(_code_b, _type_b)[:40]})",
+                    "id_a": _id_a,
+                    "id_b": _id_b,
+                    "expected": _expected,
+                    "rationale": _rationale,
                 }
             )
         else:
-            print(f"Not found in dataset: {ca}/{ta} or {cb}/{tb}")
-    return SANITY_PAIRS, sanity_resolved
+            print(f"Not found in dataset: {_code_a}/{_type_a} or {_code_b}/{_type_b}")
+    return (sanity_resolved,)
 
 
 @app.cell
@@ -304,17 +304,32 @@ def _(px, sanity_df):
 
 @app.cell
 def _(mo, np, sanity_df):
+    _n_tested = len(sanity_df)
+    _n_total = 8  # total pairs defined in SANITY_PAIRS
     _close = sanity_df.filter(sanity_df["expected"] == "close")["distance"].to_numpy()
     _far = sanity_df.filter(sanity_df["expected"] == "far")["distance"].to_numpy()
+
+    _coverage_warning = (
+        mo.callout(
+            mo.md(
+                f"⚠️ **Low coverage**: only {_n_tested}/{_n_total} pairs found in this dataset. Result may not be representative."
+            ),
+            kind="warn",
+        )
+        if _n_tested < _n_total // 2
+        else None
+    )
+
     if len(_close) and len(_far):
         _pass = np.mean(_close) < np.mean(_far)
-        mo.callout(
+        _result = mo.callout(
             mo.md(f"""
-            **{"✅ PASS" if _pass else "❌ FAIL"}**
+            **{"✅ PASS" if _pass else "❌ FAIL"}** ({_n_tested}/{_n_total} pairs tested)
             Close pairs mean: `{np.mean(_close):.4f}` | Far pairs mean: `{np.mean(_far):.4f}`
             """),
             kind="success" if _pass else "danger",
         )
+        mo.vstack([x for x in [_coverage_warning, _result] if x is not None])
     return
 
 

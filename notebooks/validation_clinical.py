@@ -24,7 +24,7 @@ def _():
 
 @app.cell
 def _():
-    from vir.db import get_connection
+    from vir.db import get_connection, get_cross_terminology_pairs
     from vir.notebook_widgets import (
         create_file_dropdown,
         extract_dataset_name,
@@ -39,6 +39,7 @@ def _():
         create_file_dropdown,
         extract_dataset_name,
         get_connection,
+        get_cross_terminology_pairs,
         load_and_prepare_dataframe,
         load_indicative_codes,
         load_terminology_labels,
@@ -298,19 +299,34 @@ def _(px, sanity_df):
 
 @app.cell
 def _(mo, np, sanity_df):
+    _n_tested = len(sanity_df)
+    _n_total = 10  # total pairs defined in SANITY_PAIRS
     _close = sanity_df.filter(sanity_df["expected"] == "close")["distance"].to_numpy()
     _far = sanity_df.filter(sanity_df["expected"] == "far")["distance"].to_numpy()
+
+    _coverage_warning = (
+        mo.callout(
+            mo.md(
+                f"⚠️ **Low coverage**: only {_n_tested}/{_n_total} pairs found in this dataset. Result may not be representative."
+            ),
+            kind="warn",
+        )
+        if _n_tested < _n_total // 2
+        else None
+    )
+
     if len(_close) and len(_far):
         _pass = np.mean(_close) < np.mean(_far)
         _status = "✅ PASS" if _pass else "❌ FAIL"
-        mo.callout(
+        _result = mo.callout(
             mo.md(f"""
-            **Sanity check result: {_status}**
+            **Sanity check result: {_status}** ({_n_tested}/{_n_total} pairs tested)
 
             Mean distance — close pairs: `{np.mean(_close):.4f}` | far pairs: `{np.mean(_far):.4f}`
             """),
             kind="success" if _pass else "danger",
         )
+        mo.vstack([x for x in [_coverage_warning, _result] if x is not None])
     return
 
 
@@ -411,70 +427,76 @@ def _(mo):
 
 
 @app.cell
-def _(get_desc, get_id):
-    # (icd_code, ciap2_code, concept)
-    CROSS_PAIRS = [
-        ("J10", "cid10", "R80", "ciap2", "Influenza"),
-        ("A90", "cid10", "A77", "ciap2", "Dengue"),
-        ("E11", "cid10", "T90", "ciap2", "Diabetes type 2"),
-        ("I10", "cid10", "K86", "ciap2", "Hypertension"),
-        ("J45", "cid10", "R96", "ciap2", "Asthma"),
-    ]
-
+def _(get_cross_terminology_pairs, get_desc, get_id):
     cross_resolved = []
-    for _code_a, _type_a, _code_b, _type_b, _concept in CROSS_PAIRS:
+    for _code_a, _type_a, _code_b, _type_b, _ab_code in get_cross_terminology_pairs():
         _id_a = get_id(_code_a, _type_a)
         _id_b = get_id(_code_b, _type_b)
         if _id_a and _id_b:
             cross_resolved.append(
                 {
-                    "concept": _concept,
+                    "ab_code": _ab_code,
                     "code_a": f"{_code_a} [{_type_a}] {get_desc(_code_a, _type_a)[:35]}",
                     "code_b": f"{_code_b} [{_type_b}] {get_desc(_code_b, _type_b)[:35]}",
                     "id_a": _id_a,
                     "id_b": _id_b,
                 }
             )
-        else:
-            print(f"⚠️  Not in dataset: {_code_a}/{_type_a} or {_code_b}/{_type_b}")
+    print(f"{len(cross_resolved)} cross-terminology pairs resolved from reference mapping")
     return (cross_resolved,)
 
 
 @app.cell
 def _(cross_resolved, distance_matrix, id_to_idx, pl):
     cross_rows = []
-    for pair in cross_resolved:
-        idx_a = id_to_idx.get(pair["id_a"])
-        idx_b = id_to_idx.get(pair["id_b"])
-        if idx_a is None or idx_b is None:
+    for _pair in cross_resolved:
+        _idx_a = id_to_idx.get(_pair["id_a"])
+        _idx_b = id_to_idx.get(_pair["id_b"])
+        if _idx_a is None or _idx_b is None:
             continue
-        dist = float(distance_matrix[idx_a, idx_b])
+        _dist = float(distance_matrix[_idx_a, _idx_b])
         cross_rows.append(
             {
-                "concept": pair["concept"],
-                "ICD code": pair["code_a"],
-                "CIAP2 code": pair["code_b"],
-                "cross-terminology distance": round(dist, 4),
+                "ab_code": _pair["ab_code"],
+                "ICD code": _pair["code_a"],
+                "CIAP2 code": _pair["code_b"],
+                "cross-terminology distance": round(_dist, 4),
             }
         )
 
-    cross_df = pl.DataFrame(cross_rows).sort("cross-terminology distance")
+    cross_df = (
+        pl.DataFrame(cross_rows).sort("cross-terminology distance")
+        if cross_rows
+        else pl.DataFrame(
+            {"ab_code": [], "ICD code": [], "CIAP2 code": [], "cross-terminology distance": []}
+        )
+    )
     cross_df
     return (cross_df,)
 
 
 @app.cell
-def _(cross_df, mo, np):
-    _mean_cross = float(np.mean(cross_df["cross-terminology distance"].to_numpy()))
-    mo.callout(
-        mo.md(f"""
-        **Cross-terminology mean distance: `{_mean_cross:.4f}`**
+def _(cross_df, intra_arr, mo, np):
+    _n_pairs = len(cross_df)
+    if _n_pairs == 0:
+        mo.callout(mo.md("⚠️ No cross-terminology pairs found in this dataset."), kind="warn")
+    else:
+        _mean_cross = float(np.mean(cross_df["cross-terminology distance"].to_numpy()))
+        _mean_intra = float(np.mean(intra_arr))
+        _pass = _mean_cross < _mean_intra
+        _status = "✅ PASS" if _pass else "❌ FAIL"
+        mo.callout(
+            mo.md(f"""
+            **Cross-terminology check: {_status}** ({_n_pairs} pairs tested)
 
-        Lower is better — validates that early fusion of ICD/CIAP2/AB embeddings
-        maps equivalent concepts to nearby regions of the semantic space.
-        """),
-        kind="info",
-    )
+            Mean cross-terminology distance: `{_mean_cross:.4f}`
+            Mean intra-chapter distance (reference): `{_mean_intra:.4f}`
+
+            Same concept expressed in ICD-10 and CIAP2 should be closer than
+            randomly paired codes within the same ICD chapter.
+            """),
+            kind="success" if _pass else "danger",
+        )
     return
 
 
