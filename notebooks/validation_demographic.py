@@ -277,17 +277,32 @@ def _(px, sanity_df):
 
 @app.cell
 def _(mo, np, sanity_df):
+    _n_tested = len(sanity_df)
+    _n_total = 8  # total pairs defined in SANITY_PAIRS
     _close = sanity_df.filter(sanity_df["expected"] == "close")["distance"].to_numpy()
     _far = sanity_df.filter(sanity_df["expected"] == "far")["distance"].to_numpy()
+
+    _coverage_warning = (
+        mo.callout(
+            mo.md(
+                f"⚠️ **Low coverage**: only {_n_tested}/{_n_total} pairs found in this dataset. Result may not be representative."
+            ),
+            kind="warn",
+        )
+        if _n_tested < _n_total // 2
+        else None
+    )
+
     if len(_close) and len(_far):
         _pass = np.mean(_close) < np.mean(_far)
-        mo.callout(
+        _result = mo.callout(
             mo.md(f"""
-            **{"✅ PASS" if _pass else "❌ FAIL"}**
+            **{"✅ PASS" if _pass else "❌ FAIL"}** ({_n_tested}/{_n_total} pairs tested)
             Close pairs mean: `{np.mean(_close):.4f}` | Far pairs mean: `{np.mean(_far):.4f}`
             """),
             kind="success" if _pass else "danger",
         )
+        mo.vstack([x for x in [_coverage_warning, _result] if x is not None])
     return
 
 
