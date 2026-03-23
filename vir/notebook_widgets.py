@@ -127,14 +127,7 @@ def load_and_prepare_dataframe(
     # drop unnecessary columns
     df = df.drop(["unique_id", "state", "city", "region", "population_range"])
 
-    # guarantee that there are no orphans from dropped columns
-    df = df.group_by(["year", "week", "sex", "age_group", "code_type", "code"]).agg(
-        pl.col("quantity").sum()
-    )
-
-    df = df.join(terminology_labels, on=["code", "code_type"]).rename(
-        {"id": "terminology_id", "label": "terminology_label"}
-    )
+    print(f"Raw: {df.shape}")
 
     # filter by year range
     if year_min is not None and year_max is not None:
@@ -144,11 +137,28 @@ def load_and_prepare_dataframe(
     elif year_max is not None:
         df = df.filter(pl.col("year").le(year_max))
 
+    print(f"After temporal filter: {df.shape}")
+
+    # guarantee that there are no orphans from dropped columns
+    df = df.group_by(["year", "week", "sex", "age_group", "code_type", "code"]).agg(
+        pl.col("quantity").sum()
+    )
+    print(f"After quantity aggregation: {df.shape}")
+
+    df = df.with_columns(code_type=pl.col("code_type").str.to_lowercase())
+    df = df.join(terminology_labels, on=["code", "code_type"], how="left").rename(
+        {"id": "terminology_id", "label": "terminology_label"}
+    )
+    print(f"After joining terminologies: {df.shape}")
+
     # exclude non-indicative codes
     if exclude_codes:
         df = df.filter(~pl.col("terminology_label").is_in(exclude_codes))
 
+    print(f"After exclusion of non-indicative codes: {df.shape}")
+
     # ensure temporal representation
     df = filter_min_temporal_coverage(df)
+    print(f"After ensuring temporal representation: {df.shape}")
 
     return df
