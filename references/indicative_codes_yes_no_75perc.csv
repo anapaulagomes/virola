@@ -1,0 +1,112 @@
+code,code_type,quantity,cum_pct,indicative,description
+A98,ciap2,9802062,0.06162725247,no,medicina preventiva/manutenção da saúde
+ABP005,ab,6786623,0.1042959205,yes,hipertensão arterial
+Z760,cid10,6740359,0.1466737187,no,emissão de prescrição de repetição
+Z000,cid10,6587221,0.188088712,no,exame médico geral
+Z039,cid10,4976764,0.2193784846,no,observação por suspeita de doença ou afecção não especificada
+I10,cid10,4711742,0.2490020183,yes,hipertensão essencial (primária)
+ABP004,ab,4612774,0.2780033231,no,puericultura
+ABP003,ab,3951929,0.3028497815,no,saúde sexual e reprodutiva
+A29,ciap2,3858161,0.3271067044,no,outros sinais/sintomas gerais
+ABP006,ab,3180345,0.3471020813,yes,diabetes
+Z00,cid10,3033566,0.3661746334,no,exame geral e investigação de pessoas sem queixas ou diagnóstico relatado
+W78,ciap2,2930983,0.3846022285,no,gravidez
+ABP001,ab,2818420,0.4023221206,no,pré-natal
+ABP014,ab,2690239,0.4192361166,yes,saúde mental
+Z001,cid10,2408060,0.4343760047,no,exame de rotina de saúde da criança
+K86,ciap2,2148585,0.4478845287,yes,hipertensão sem complicações
+Z34,cid10,1883739,0.4597279204,no,supervisão de gravidez normal
+ABP009,ab,1741348,0.4706760752,yes,asma
+ABP022,ab,1661278,0.4811208162,no,rastreamento de câncer do colo do útero
+A97,ciap2,1473370,0.4903841472,no,sem doença
+ABP015,ab,1390995,0.4991295724,no,reabilitação
+E11,cid10,1365008,0.5077116129,yes,diabetes mellitus não-insulino-dependente
+J00,cid10,1250928,0.5155764127,yes,nasofaringite aguda [resfriado comum]
+Z01,ciap2,1246323,0.5234122601,no,pobreza/problemas econômicos
+R05,ciap2,1049906,0.5300132,yes,tosse
+T90,ciap2,1027481,0.5364731501,yes,diabetes não insulino-dependente
+ABP007,ab,998780,0.542752652,yes,obesidade
+R80,ciap2,963594,0.5488109335,yes,gripe
+J11,cid10,955543,0.554818597,yes,influenza (gripe) devida a vírus não identificado
+31,ciap2,922041,0.5606156276,no,exame médico/avaliação de saúde - parcial
+Z008,cid10,898754,0.5662662488,no,outros exames gerais
+Z014,cid10,822005,0.5714343359,no,exame ginecológico (geral) (de rotina)
+M545,cid10,787701,0.5763867478,yes,dor lombar baixa
+R05,cid10,770983,0.5812340507,yes,tosse
+J069,cid10,700440,0.5856378377,yes,infecção aguda das vias aéreas superiores não especificada
+B342,cid10,680105,0.589913775,yes,infecção por coronavírus de localização não especificada
+R74,ciap2,680088,0.5941896054,yes,infecção aguda do aparelho respiratório superior (ivas)
+A09,cid10,643033,0.5982324646,yes,diarréia e gastroenterite de origem infecciosa presumível
+ABP019,ab,636297,0.6022329735,yes,dengue
+N01,ciap2,634169,0.6062201032,yes,cefaléia
+F411,cid10,623323,0.6101390423,yes,ansiedade generalizada
+R51,cid10,608438,0.6139643968,yes,cefaléia
+46,ciap2,578035,0.6175986025,no,consulta com profissional de APS
+J03,cid10,568945,0.6211756577,yes,faringite aguda devida a outros microorganismos especificados
+E10,cid10,538435,0.6245608913,yes,diabetes mellitus insulino-dependente
+A03,ciap2,522302,0.627844694,yes,febre
+Z10,cid10,522276,0.6311283332,no,exame geral de rotina (check-up) de uma subpopulação definida
+R21,ciap2,522028,0.6344104131,yes,sinais/sintomas da garganta
+W14,ciap2,515915,0.6376540596,no,contracepção/outros
+A77,ciap2,506021,0.6408355008,yes,dengue e outras doenças virais ne
+T89,ciap2,494661,0.6439455197,yes,diabetes insulino-dependente
+A90,cid10,489077,0.6470204311,yes,dengue [dengue clássico]
+R10,cid10,475464,0.6500097552,yes,dor abdominal e pélvica
+N390,cid10,471901,0.6529766781,yes,infecção do trato urinário de localização não especificada
+A99,ciap2,468733,0.6559236832,no,outras doenças gerais ne
+J01,cid10,467662,0.6588639547,yes,sinusite aguda
+M255,cid10,438198,0.6616189811,yes,dor articular
+Z532,cid10,423700,0.664282856,no,procedimento não realizado devido à decisão do paciente por outras razões e as não especificadas
+Z017,cid10,413203,0.6668807344,no,exame de laboratório
+E66,cid10,398938,0.6693889263,yes,obesidade
+Z712,cid10,395544,0.6718757796,no,pessoa que consulta para explicação de achados de exame
+X14,ciap2,394944,0.6743588606,yes,secreção vaginal
+B349,cid10,378985,0.6767416046,yes,infecção viral não especificada
+ABP023,ab,371316,0.6790761322,no,rastreamento de câncer de mama
+Z76,cid10,369740,0.6814007513,no,outras circunstancias
+Z03,cid10,355784,0.6836376266,no,doenças e afecções suspeitas
+D11,ciap2,352655,0.6858548293,yes,diarreia
+E039,cid10,345606,0.6880277138,yes,hipotireoidismo não especificado
+Z02,cid10,343606,0.6901880239,no,exame medico e consulta com finalidades administrativas
+Z769,cid10,333770,0.6922864934,no,pessoa em contato com serviços de saúde em circunstâncias não especificadas
+X29,ciap2,311694,0.6942461673,no,"sinais/sintomas do aparelho genital feminino, outra"
+P01,ciap2,309126,0.6961896957,yes,sensação de ansiedade/nervosismo/tensão
+S21,ciap2,306436,0.6981163116,no,sinais/sintomas da textura da pele
+J45,cid10,297572,0.6999871981,yes,asma
+K85,ciap2,293531,0.701832678,yes,pressão arterial elevada
+M796,cid10,283153,0.7036129097,yes,dor em membro
+Z04,cid10,266878,0.7052908177,no,outras razoes
+E14,cid10,261610,0.7069356048,yes,diabetes mellitus não especificado
+W90,ciap2,254897,0.7085381862,no,parto sem complicações de nascido vivo
+L03,ciap2,251211,0.710117593,yes,sinais/sintomas da região lombar
+R68,cid10,246327,0.7116662933,no,outros sintomas e sinais gerais
+T82,ciap2,246250,0.7132145095,yes,obesidade
+E780,cid10,245550,0.7147583246,yes,hipercolesterolemia pura
+A05,ciap2,242875,0.7162853216,no,sentir-se doente
+ABP020,ab,237029,0.7177755637,yes,ist
+R11,cid10,232062,0.7192345775,yes,náusea e vômitos
+G40,cid10,228179,0.7206691782,yes,epilepsia
+D01,ciap2,227760,0.7221011446,yes,dor abdominal generalizada/cólicas
+M54,cid10,226537,0.7235254217,yes,dorsalgia
+N30,cid10,226356,0.7249485609,yes,cistite
+B86,cid10,222368,0.7263466268,yes,escabiose [sarna]
+Z027,cid10,219348,0.7277257055,no,obtenção de atestado médico
+A01,ciap2,218576,0.7290999304,yes,dor generalizada /múltipla
+Z10,ciap2,215848,0.730457004,no,problema relacionado com sistema de saúde
+T784,cid10,210610,0.7317811453,yes,alergia não especificada
+L18,ciap2,208325,0.7330909205,yes,dores musculares
+R07,ciap2,207287,0.7343941696,yes,espirro/congestão nasal
+K87,ciap2,203606,0.7356742756,yes,hipertensão com complicações
+Z30,cid10,203060,0.7369509488,no,anticoncepção
+U71,ciap2,200891,0.7382139851,yes,cistite/outra infecção urinária
+K30,cid10,200070,0.7394718597,yes,dispepsia
+X86,ciap2,198802,0.7407217621,yes,esfregaço de papanicolau/colpocitologia oncótica anormal
+ABP011,ab,192087,0.7419294462,no,tabagismo
+D10,ciap2,189633,0.7431217015,yes,vômito
+S97,ciap2,184137,0.7442794025,yes,úlcera crônica da pele
+Z01,cid10,180680,0.7454153688,no,outros exames e investigações especiais de pessoas sem queixa ou diagnóstico relatado
+P03,ciap2,179889,0.746546362,yes,tristeza/ sensação de depressão
+ABP002,ab,179625,0.7476756953,no,puerpério (até 42 dias)
+Z038,cid10,177601,0.7487923034,no,observação por suspeita de outras doenças e afecções
+F41,cid10,176723,0.7499033913,yes,transtornos ansiosos
+E119,cid10,176680,0.7510142089,yes,diabetes mellitus não-insulino-dependente - sem complicações
