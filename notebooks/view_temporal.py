@@ -497,14 +497,34 @@ def _(go):
 
 
 @app.cell
-def _(
-    MinMaxScaler,
-    TimeSeriesKMedoids,
-    best_c,
-    make_pipeline,
-    optimal_distance_matrix,
-    silhouette_score,
-):
+def _(np):
+    def kmedoids_precomputed(D, n_clusters, random_state=42, n_init=10, max_iter=100):
+        """K-medoids on a precomputed N×N distance matrix. O(N × k × n_init × max_iter)."""
+        rng = np.random.RandomState(random_state)
+        n = len(D)
+        best_labels, best_inertia = None, np.inf
+        for _ in range(n_init):
+            medoids = rng.choice(n, n_clusters, replace=False)
+            for _ in range(max_iter):
+                labels = D[:, medoids].argmin(axis=1)
+                new_medoids = medoids.copy()
+                for k in range(n_clusters):
+                    idx = np.where(labels == k)[0]
+                    if len(idx) > 0:
+                        new_medoids[k] = idx[D[np.ix_(idx, idx)].sum(0).argmin()]
+                if np.array_equal(new_medoids, medoids):
+                    break
+                medoids = new_medoids
+            inertia = D[:, medoids].min(axis=1).sum()
+            if inertia < best_inertia:
+                best_inertia, best_labels = inertia, labels
+        return best_labels, best_inertia
+
+    return (kmedoids_precomputed,)
+
+
+@app.cell
+def _(kmedoids_precomputed, optimal_distance_matrix, silhouette_score):
     silhouette_scores = []
     inertia_scores = []
     cluster_range = range(2, 5)
@@ -512,24 +532,10 @@ def _(
     print("Beginning clustering analysis with optimal distance matrix...")
 
     for _n_clusters in cluster_range:
-        _pipeline = make_pipeline(
-            MinMaxScaler(),
-            TimeSeriesKMedoids(
-                n_clusters=_n_clusters,
-                distance="msm",
-                random_state=42,
-                distance_params={"c": best_c},
-            ),
-        )
-
-        _pipeline.fit(optimal_distance_matrix)
-        _labels = _pipeline.named_steps["timeserieskmedoids"].labels_
-        _inertia = _pipeline.named_steps["timeserieskmedoids"].inertia_
-
+        _labels, _inertia = kmedoids_precomputed(optimal_distance_matrix, _n_clusters)
         score = silhouette_score(optimal_distance_matrix, _labels, metric="precomputed")
         silhouette_scores.append(score)
         inertia_scores.append(_inertia)
-
         print(f"k={_n_clusters} | Silhouette MSM: {score:.4f}")
     return cluster_range, inertia_scores, silhouette_scores
 
@@ -634,27 +640,14 @@ def _(mo):
 
 @app.cell
 def _(
-    MinMaxScaler,
-    TimeSeriesKMedoids,
-    best_c,
     k_for_silhouette_detail,
-    make_pipeline,
+    kmedoids_precomputed,
     optimal_distance_matrix,
     plot_silhouette_per_cluster,
 ):
-    _pipeline_detail = make_pipeline(
-        MinMaxScaler(),
-        TimeSeriesKMedoids(
-            n_clusters=k_for_silhouette_detail.value,
-            distance="msm",
-            random_state=42,
-            distance_params={"c": best_c},
-        ),
+    _labels_detail, _ = kmedoids_precomputed(
+        optimal_distance_matrix, k_for_silhouette_detail.value
     )
-
-    _pipeline_detail.fit(optimal_distance_matrix)
-    _labels_detail = _pipeline_detail.named_steps["timeserieskmedoids"].labels_
-
     _fig = plot_silhouette_per_cluster(
         optimal_distance_matrix, _labels_detail, k_for_silhouette_detail.value
     )
