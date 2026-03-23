@@ -31,8 +31,9 @@ def _():
 def _():
     from vir.config import INTERIM_DATA_DIR
     from vir.db import DEFAULT_MODEL, fetch_terminologies
+    from vir.helpers import get_n_jobs
 
-    return DEFAULT_MODEL, INTERIM_DATA_DIR, fetch_terminologies
+    return DEFAULT_MODEL, INTERIM_DATA_DIR, fetch_terminologies, get_n_jobs
 
 
 @app.cell
@@ -149,10 +150,10 @@ def _(df_year_week, ordered_year_week):
 
 
 @app.cell
-def _(dtw_pairwise_distance, ordered_year_week, os, temporal_pivot):
+def _(dtw_pairwise_distance, get_n_jobs, ordered_year_week, temporal_pivot):
     dtw_results = dtw_pairwise_distance(
         temporal_pivot.select(ordered_year_week).to_numpy(),
-        n_jobs=int(os.getenv("NUMBER_OF_THREADS", -1)),
+        n_jobs=get_n_jobs(),
     )
     dtw_results
     return (dtw_results,)

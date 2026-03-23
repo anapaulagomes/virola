@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import numba
 from huggingface_hub import snapshot_download
 
 from vir.config import logger
@@ -48,4 +49,4 @@ def suffix_from(filename: Path, break_on="20municipios", remove_extension=False)
 
 
 def get_n_jobs():
-    return int(os.getenv("NUMBER_OF_THREADS", -1))
+    return numba.get_num_threads()

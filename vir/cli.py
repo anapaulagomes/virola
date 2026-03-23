@@ -11,6 +11,7 @@ from vir.config import CLUSTERING_DIR, PROJ_ROOT
 from vir.dataset import app as helper_app
 from vir.db import DEFAULT_MODEL
 from vir.features import CITY_NAMES
+from vir.helpers import get_n_jobs
 
 app = typer.Typer(
     name="vir",
@@ -492,7 +493,6 @@ def results_explain(
 
     Requires build-profiles to have been run first.
     """
-    import os
 
     from vir.db import fetch_cluster_assignments
     from vir.notebook_widgets import (
@@ -524,7 +524,7 @@ def results_explain(
 
     typer.secho("Computing view distance matrices (using cache)...", fg=typer.colors.BLUE)
 
-    n_jobs = int(os.getenv("NUMBER_OF_THREADS", -1))
+    n_jobs = get_n_jobs()
 
     clinical_view = ClinicalView(df=df, dataset_name=dataset_name)
     demographic_view = DemographicView(df=df, dataset_name=dataset_name)
