@@ -29,7 +29,7 @@ run_city() {
     echo "============================================================"
     echo "Running pipeline for: $city"
     echo "============================================================"
-    uv run vir pipeline run "$city" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+    uv run --active vir pipeline run "$city" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 }
 
 if [[ "$TARGET" == "all" ]]; then

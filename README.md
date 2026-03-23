@@ -65,7 +65,7 @@ Use `vir COMMAND --help` for detailed options on any command.
 ### Development Mode
 
 You will need `uv` to run this project. Install the dependencies with `uv sync`. Then, run `plotly_get_chrome`.
-
+Use `UV_PROJECT_ENVIRONMENT=/home/<your-user>/virola/.venv uv sync` to create the virtual env dir in an specific location.
 
 For interactive development and exploration, use marimo's edit mode:
 
