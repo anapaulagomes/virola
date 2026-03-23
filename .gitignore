@@ -194,3 +194,7 @@ cython_debug/
 
 package-lock.json
 package.json
+
+# local files
+archive/
+local_references/
