@@ -7,6 +7,7 @@ import polars as pl
 from aeon.distances import pairwise_distance
 
 from vir.config import MIN_WEEKS
+from vir.helpers import get_n_jobs
 from vir.views.base import BaseView
 
 
@@ -117,7 +118,7 @@ class TemporalView(BaseView):
         temporal_matrix_normalized = self.normalize_zscore(temporal_matrix)
 
         c = self.params.get("c", 1.0)
-        n_jobs = self.params.get("n_jobs", -1)
+        n_jobs = self.params.get("n_jobs", get_n_jobs())
 
         distance_matrix = pairwise_distance(
             temporal_matrix_normalized, method="msm", n_jobs=n_jobs, c=c

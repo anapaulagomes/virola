@@ -49,6 +49,7 @@ def _():
 def _():
     from vir.config import VALIDATION_DIR
     from vir.data_filters import filter_most_representative_rows
+    from vir.helpers import get_n_jobs
     from vir.notebook_widgets import (
         create_file_dropdown,
         extract_dataset_name,
@@ -66,6 +67,7 @@ def _():
         create_file_dropdown,
         extract_dataset_name,
         filter_most_representative_rows,
+        get_n_jobs,
         load_and_prepare_dataframe,
         load_indicative_codes,
         load_terminology_labels,
@@ -93,8 +95,8 @@ def _(args):
 
 
 @app.cell
-def _(os):
-    n_jobs = int(os.getenv("NUMBER_OF_THREADS", -1))
+def _(get_n_jobs):
+    n_jobs = get_n_jobs()
     return (n_jobs,)
 
 

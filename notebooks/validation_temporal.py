@@ -136,15 +136,12 @@ def _(
 
 @app.cell
 def _(TemporalView, dataset_name, df, min_weeks):
-    import os as _os
-
     temporal_view = TemporalView(
         df=df,
         dataset_name=dataset_name,
         params={
             "min_weeks": min_weeks,
             "c": 1.0,
-            "n_jobs": int(_os.getenv("NUMBER_OF_THREADS", -1)),
         },
     )
     distance_matrix = temporal_view.get_matrix()
