@@ -180,16 +180,15 @@ def _(
 
 
 @app.cell
-def _(df):
-    df.shape
+def _(year_max, year_min):
+    year_min, year_max
     return
 
 
 @app.cell
-def _(mo):
-    validation_mode_toggle = mo.ui.checkbox(label="Enable validation mode", value=False)
-    validation_mode_toggle
-    return (validation_mode_toggle,)
+def _(df):
+    df.shape
+    return
 
 
 @app.cell
@@ -203,11 +202,7 @@ def _(mo):
 
 
 @app.cell
-def _(ClinicalView, dataset_name, df, validation_mode_toggle):
-    if validation_mode_toggle.value:
-        # Future: Could implement model comparison here
-        print("ℹ️ Validation mode enabled (no grid search implemented yet)")
-
+def _(ClinicalView, dataset_name, df):
     clinical_view = ClinicalView(df=df, dataset_name=dataset_name)
     return (clinical_view,)
 
@@ -465,7 +460,7 @@ def _(AgglomerativeClustering, clinical_distance_matrix):
 def _(clinical_distance_matrix, cluster_labels, silhouette_score):
     sil_score = silhouette_score(clinical_distance_matrix, cluster_labels, metric="precomputed")
     sil_score
-    return
+    return (sil_score,)
 
 
 @app.cell
