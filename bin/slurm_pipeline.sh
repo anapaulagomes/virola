@@ -44,7 +44,7 @@ while IFS= read -r city || [[ -n "$city" ]]; do
     echo "Running: $city  ($(date))"
     echo "------------------------------------------------------------"
 
-    if uv run vir pipeline run "$city" ${EXTRA_ARGS:-}; then
+    if uv run --active vir pipeline run "$city" ${EXTRA_ARGS:-}; then
         echo "✓ $city done"
     else
         echo "✗ $city failed" >&2
