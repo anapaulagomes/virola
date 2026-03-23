@@ -55,6 +55,13 @@ class ClinicalView(BaseView):
         terminology_ids = sorted(self.df["terminology_id"].unique().to_list())
         n_diagnoses = len(terminology_ids)
 
+        if n_diagnoses == 0:
+            raise ValueError(
+                "No terminology IDs found in the dataset. "
+                "Make sure the database has embeddings loaded (run: vir setup embeddings) "
+                "and that the data file contains codes matching the medical_terminologies table."
+            )
+
         # create mapping from terminology_id to matrix index
         id_to_idx = {tid: idx for idx, tid in enumerate(terminology_ids)}
 
