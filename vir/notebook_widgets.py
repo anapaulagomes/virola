@@ -3,7 +3,9 @@
 from typing import List, Optional, Tuple
 
 import marimo as mo
+import numpy as np
 import polars as pl
+from snf import compute as snf_compute
 
 from vir.config import (
     INDICATIVE_CODES_FILE,
@@ -164,3 +166,36 @@ def load_and_prepare_dataframe(
     print(f"After ensuring temporal representation: {df.shape}")
 
     return df
+
+
+def normalize_distance(D: np.ndarray) -> np.ndarray:
+    """Normalise a distance matrix to [0, 1] with zero diagonal.
+
+    Used before computing affinity matrices so that all views enter SNF
+    on comparable scales regardless of their natural distance range.
+    """
+    D = D.copy()
+    np.fill_diagonal(D, 0.0)
+    max_val = D.max()
+    return D / max_val if max_val > 0 else D
+
+
+def distance_to_affinity(dist: np.ndarray, K: int = 20, mu: float = 0.5) -> np.ndarray:
+    """Convert a distance matrix to a normalised affinity matrix.
+
+    Applies SNF's adaptive Gaussian kernel (local scaling based on K-NN
+    neighbourhood) then normalises the result to [0, 1] so all views
+    contribute equally to fusion.
+
+    Args:
+        dist: Square distance matrix.
+        K: Number of nearest neighbours for local scale estimation.
+        mu: Scaling factor for the adaptive bandwidth.
+
+    Returns:
+        Square affinity matrix with zero diagonal, values in [0, 1].
+    """
+    W = snf_compute.affinity_matrix(normalize_distance(dist), K=K, mu=mu)
+    np.fill_diagonal(W, 0.0)
+    max_val = W.max()
+    return W / max_val if max_val > 0 else W

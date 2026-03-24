@@ -1,7 +1,7 @@
 import duckdb
 import polars as pl
 
-from vir.config import DATA_DIR
+from vir.config import DATA_DIR, logger
 
 PROJECT_DB = DATA_DIR / "virola.db"
 DEFAULT_MODEL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"  # TODO move to config
@@ -81,8 +81,8 @@ def create_results_schema():
     ]:
         try:
             con.execute(f"ALTER TABLE runs ADD COLUMN IF NOT EXISTS {col_def[0]} {col_def[1]}")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Migration skipped for column {col_def[0]}: {e}")
 
 
 def insert_run(
@@ -206,7 +206,6 @@ def insert_run_multi_k(run_id: int, results: list[dict]) -> None:
         run_id: The run identifier.
         results: List of {n_clusters, silhouette, largest_cluster, median_size} dicts.
     """
-    create_results_schema()
     con = get_connection(writeable=True)
     rows = [
         (run_id, r["n_clusters"], r["silhouette"], r["largest_cluster"], r["median_size"])

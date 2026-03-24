@@ -47,6 +47,7 @@ def _():
         load_and_prepare_dataframe,
         load_indicative_codes,
         load_terminology_labels,
+        normalize_distance,
     )
     from vir.results import save_run
     from vir.views import ClinicalView, DemographicView, TemporalView
@@ -63,6 +64,7 @@ def _():
         load_and_prepare_dataframe,
         load_indicative_codes,
         load_terminology_labels,
+        normalize_distance,
         update_run_finished_at,
         save_run,
     )
@@ -263,18 +265,15 @@ def _(mo):
 
 
 @app.cell
-def _(clinical_distance_aligned, demographic_distance_aligned, np, temporal_distance_aligned):
-    def _normalize_distance(D: np.ndarray) -> np.ndarray:
-        D = D.copy()
-        np.fill_diagonal(D, 0.0)
-        max_val = D.max()
-        if max_val > 0:
-            D = D / max_val
-        return D
-
-    clinical_distance_norm = _normalize_distance(clinical_distance_aligned)
-    temporal_distance_norm = _normalize_distance(temporal_distance_aligned)
-    demographic_distance_norm = _normalize_distance(demographic_distance_aligned)
+def _(
+    clinical_distance_aligned,
+    demographic_distance_aligned,
+    normalize_distance,
+    temporal_distance_aligned,
+):
+    clinical_distance_norm = normalize_distance(clinical_distance_aligned)
+    temporal_distance_norm = normalize_distance(temporal_distance_aligned)
+    demographic_distance_norm = normalize_distance(demographic_distance_aligned)
 
     print(
         f"Clinical distance range after norm:    [{clinical_distance_norm.min():.4f}, {clinical_distance_norm.max():.4f}]"
