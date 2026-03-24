@@ -556,7 +556,7 @@ def _(df_clusters, mo, pl, terminology_labels):
     if mo.app_meta().mode != "script":
         _giant_members
     else:
-        print(_giant_members.to_pandas().to_string())
+        print(_giant_members)
     return
 
 

@@ -422,7 +422,7 @@ def results_list():
     if runs.is_empty():
         typer.secho("No runs found.", fg=typer.colors.YELLOW)
         return
-    typer.echo(runs.to_pandas().to_string(index=False))
+    typer.echo(runs)
 
 
 @results_app.command("build-profiles")

@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.15.0"
+__generated_with = "0.19.0"
 app = marimo.App(width="medium")
 
 
@@ -15,10 +15,9 @@ def _():
     from vir.config import RAW_DATA_DIR
     from vir.features import IBGE_CITY_MAP, ORIGINAL_AGE_GROUP, POPULATION_RANGE
     from vir.viz import plot_categories, scatter_plot_year_per_week
-
     return (
-        ORIGINAL_AGE_GROUP,
         IBGE_CITY_MAP,
+        ORIGINAL_AGE_GROUP,
         POPULATION_RANGE,
         RAW_DATA_DIR,
         chi2_contingency,
@@ -33,8 +32,7 @@ def _():
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
+    mo.md(r"""
     # Exploratory data analysis - Primary care - Fiocruz/Brazil
 
     The data includes 20 municipalities sampled from different regions and population ranges in Brazil.
@@ -61,8 +59,7 @@ def _(mo):
     | 120035    | Marechal Thaumaturgo    | AC    | Norte          | < 100 mil         |
     | 311320    | Carandaí                | MG    | Sudeste        | < 100 mil         |
     | 510622    | Nova Mutum              | MT    | Centro-Oeste   | < 100 mil         |
-    """
-    )
+    """)
     return
 
 
@@ -74,7 +71,9 @@ def _(IBGE_CITY_MAP, pl):
 
 @app.cell
 def _(mo):
-    mo.md(r"""## 📊 Raw data""")
+    mo.md(r"""
+    ## 📊 Raw data
+    """)
     return
 
 
@@ -109,7 +108,9 @@ def _(raw_df):
 
 @app.cell
 def _(mo):
-    mo.md(r"""## 🔍 Data overview""")
+    mo.md(r"""
+    ## 🔍 Data overview
+    """)
     return
 
 
@@ -127,7 +128,9 @@ def _(raw_df):
 
 @app.cell
 def _(mo):
-    mo.md(r"""### Missing values""")
+    mo.md(r"""
+    ### Missing values
+    """)
     return
 
 
@@ -218,7 +221,9 @@ def _(df, scatter_plot_year_per_week):
 
 @app.cell
 def _(mo):
-    mo.md(r"""### 🏥 Medical terminologies""")
+    mo.md(r"""
+    ### 🏥 Medical terminologies
+    """)
     return
 
 
@@ -281,7 +286,9 @@ def _(df, px):
 
 @app.cell
 def _(mo):
-    mo.md(r"""### 🌍 Geographic distribution""")
+    mo.md(r"""
+    ### 🌍 Geographic distribution
+    """)
     return
 
 
@@ -311,7 +318,9 @@ def _(df, pl, px):
 
 @app.cell
 def _(mo):
-    mo.md(r"""## 🔗 Correlation analysis""")
+    mo.md(r"""
+    ## 🔗 Correlation analysis
+    """)
     return
 
 
@@ -319,21 +328,19 @@ def _(mo):
 def _(chi2_contingency, np, pl):
     def cramers_v(df, col1, col2) -> float:
         try:
-            table = (
+            _pivot = (
                 df.group_by([col1, col2])
                 .agg(pl.len().alias("count"))
                 .pivot(values="count", index=col1, on=col2)
                 .fill_null(0)
-                .to_pandas()
-                .set_index(col1)
             )
+            table = _pivot.select(pl.all().exclude(col1)).to_numpy()
             chi2, _, _, _ = chi2_contingency(table)
-            n = table.values.sum()
+            n = table.sum()
             r, k = table.shape
             return np.sqrt(chi2 / (n * (min(k, r) - 1)))
         except:  # noqa E722
             return 0.0
-
     return (cramers_v,)
 
 
@@ -367,7 +374,6 @@ def _(np):
                 matrix[_var1_index][_var2_index] = _row["cramers_v"]
                 matrix[_var2_index][_var1_index] = _row["cramers_v"]
         return matrix, index_variables
-
     return (df_to_heatmap_matrix,)
 
 

@@ -381,7 +381,7 @@ def _(mo, px):
         if sex_dist_df.is_empty():
             return mo.md("### Sex Distribution\n*No data to plot.*")
         fig = px.bar(
-            sex_dist_df.to_pandas(),
+            sex_dist_df,
             x="cluster",
             y="percentage",
             color="sex",
@@ -401,7 +401,7 @@ def _(mo, px):
         if age_dist_df.is_empty():
             return mo.md("### Age Distribution\n*No data to plot.*")
         fig = px.bar(
-            age_dist_df.to_pandas(),
+            age_dist_df,
             x="cluster",
             y="percentage",
             color="age_group",
@@ -446,11 +446,8 @@ def _(mo, pl, px):
             .alias("feature")
         )
 
-        plot_df_pd = plot_df.to_pandas()
-
-        # Create scatter plot with better sizing
         fig = px.scatter(
-            plot_df_pd,
+            plot_df,
             x="average_value",
             y="feature",  # Changed to show features on y-axis
             color="cluster",  # Changed to color by cluster
@@ -732,10 +729,8 @@ def _(chi_demographic_summary, mo, pl, px):
             .str.to_titlecase()
             .alias("feature")
         )
-        _plot_df_pd = _plot_df.to_pandas()
-
         chi_demo_plot = px.scatter(
-            _plot_df_pd,
+            _plot_df,
             x="average_value",
             y="feature",
             color="cluster",
