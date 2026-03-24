@@ -118,6 +118,39 @@ class TestLoadIndicativeCodes:
 
 
 class TestLoadAndPrepareDataframe:
+    def test_legacy_code_types_are_normalized(self, tmp_path, terminology_labels):
+        """Parquets cleaned with old code (cid/ciap) must join correctly after normalization."""
+        rows = []
+        for row in terminology_labels.iter_rows(named=True):
+            legacy_type = {"cid10": "cid", "ciap2": "ciap"}.get(row["code_type"], row["code_type"])
+            for year in [2022, 2023]:
+                for week in range(1, 14):
+                    rows.append(
+                        {
+                            "unique_id": "uid",
+                            "state": "SP",
+                            "city": "Salvador",
+                            "region": "NE",
+                            "population_range": "large",
+                            "year": year,
+                            "week": week,
+                            "sex": "M",
+                            "age_group": "adult",
+                            "code_type": legacy_type,
+                            "code": row["code"],
+                            "quantity": 10,
+                        }
+                    )
+        path = tmp_path / "cleaned_20municipios_legacy.parquet"
+        pl.DataFrame(rows).write_parquet(path)
+
+        df = load_and_prepare_dataframe(
+            file_path=str(path),
+            terminology_labels=terminology_labels,
+        )
+        assert df["terminology_id"].null_count() == 0
+        assert df["terminology_label"].n_unique() == len(terminology_labels)
+
     def test_year_min_max_filter(self, raw_parquet, terminology_labels):
         df = load_and_prepare_dataframe(
             file_path=str(raw_parquet),

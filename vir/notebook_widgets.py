@@ -145,7 +145,9 @@ def load_and_prepare_dataframe(
     )
     print(f"After quantity aggregation: {df.shape}")
 
-    df = df.with_columns(code_type=pl.col("code_type").str.to_lowercase())
+    df = df.with_columns(
+        code_type=pl.col("code_type").str.to_lowercase().replace({"cid": "cid10", "ciap": "ciap2"})
+    )
     df = df.join(terminology_labels, on=["code", "code_type"], how="left").rename(
         {"id": "terminology_id", "label": "terminology_label"}
     )
