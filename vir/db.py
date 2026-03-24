@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import duckdb
 import polars as pl
 
@@ -98,6 +100,7 @@ def insert_run(
     silhouette_score: float | None = None,
     affinity_zscore: float | None = None,
     notes: str | None = None,
+    created_at: str | None = None,
     finished_at: str | None = None,
     n_codes_clinical: int | None = None,
     n_codes_temporal: int | None = None,
@@ -113,16 +116,17 @@ def insert_run(
     """Insert a new run and return its run_id."""
     create_results_schema()
     con = get_connection(writeable=True)
+    _created_at = created_at if created_at is not None else datetime.now().isoformat()
     result = con.execute(
         """
         INSERT INTO runs (
             dataset_name, city, region, population_range,
             year_min, year_max, snf_k, n_clusters,
-            indicative_enabled, silhouette_score, affinity_zscore, notes, finished_at,
+            indicative_enabled, silhouette_score, affinity_zscore, notes, created_at, finished_at,
             n_codes_clinical, n_codes_temporal, n_codes_demographic, n_codes_common,
             n_missing_temporal, n_missing_demographic,
             cluster_largest, cluster_median, n_singletons, pct_singletons
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING run_id
     """,
         [
@@ -138,6 +142,7 @@ def insert_run(
             silhouette_score,
             affinity_zscore,
             notes,
+            _created_at,
             finished_at,
             n_codes_clinical,
             n_codes_temporal,
