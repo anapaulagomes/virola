@@ -7,9 +7,8 @@ from typing import Optional
 
 import typer
 
-from vir.config import CLUSTERING_DIR, PROJ_ROOT
+from vir.config import CLUSTERING_DIR, DEFAULT_MODEL, PROJ_ROOT
 from vir.dataset import app as helper_app
-from vir.db import DEFAULT_MODEL
 from vir.features import CITY_NAMES
 from vir.helpers import get_n_jobs
 

@@ -29,8 +29,8 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import INTERIM_DATA_DIR
-    from vir.db import DEFAULT_MODEL, fetch_terminologies
+    from vir.config import DEFAULT_MODEL, INTERIM_DATA_DIR
+    from vir.db import fetch_terminologies
     from vir.helpers import get_n_jobs
 
     return DEFAULT_MODEL, INTERIM_DATA_DIR, fetch_terminologies, get_n_jobs
