@@ -239,25 +239,49 @@ def _(json, mo, np, pl, profiles, px, selected_run_id, upsert_cluster_profile):
                 _umap_df = pl.DataFrame()
 
         if not _umap_df.is_empty():
+
+            def _top_codes_text(tc_json, n=5):
+                if not tc_json:
+                    return ""
+                codes = json.loads(tc_json)
+                return "<br>".join(
+                    f"{c['code']} ({c['code_type']}): {c.get('description', '')}"
+                    for c in codes[:n]
+                )
+
+            _desc_df = profiles.with_columns(
+                pl.col("top_codes")
+                .map_elements(_top_codes_text, return_dtype=pl.Utf8)
+                .alias("top_codes_text"),
+                pl.col("total_cases").fill_null(0),
+            ).select(["cluster_id", "top_codes_text", "total_cases"])
+
+            _umap_df = _umap_df.join(_desc_df, on="cluster_id", how="left").with_columns(
+                pl.col("top_codes_text").fill_null("")
+            )
+
             _umap_fig = px.scatter(
                 _umap_df,
                 x="umap_x",
                 y="umap_y",
-                color="cluster_id",
+                # color="cluster_id",
                 size="n_codes",
                 hover_name="label",
-                hover_data={
-                    "cluster_id": True,
-                    "n_codes": True,
-                    "total_cases": True,
-                    "umap_x": False,
-                    "umap_y": False,
-                },
+                custom_data=["cluster_id", "n_codes", "total_cases", "top_codes_text"],
                 title="UMAP — cluster map (temporal + demographic features)",
                 labels={"cluster_id": "Cluster", "n_codes": "Codes", "total_cases": "Cases"},
                 color_continuous_scale="Turbo",
             )
-            _umap_fig.update_traces(marker=dict(opacity=0.8, line=dict(width=0)))
+            _umap_fig.update_traces(
+                hovertemplate=(
+                    "<b>%{hovertext}</b><br>"
+                    "Cluster %{customdata[0]} · %{customdata[1]} codes · %{customdata[2]:,} cases<br>"
+                    "<br>"
+                    "<b>Top codes:</b><br>%{customdata[3]}"
+                    "<extra></extra>"
+                ),
+                marker=dict(opacity=0.8, line=dict(width=0)),
+            )
             _umap_fig.update_layout(coloraxis_showscale=False)
 
     mo.vstack(
@@ -483,11 +507,16 @@ def _(assignments, cluster_dropdown, mo, pl, profile_top_codes, px):
 
     # Treemap from top_codes (DB)
     if profile_top_codes:
-        _top_df = pl.DataFrame(profile_top_codes)
+        _top_df = pl.DataFrame(profile_top_codes).join(
+            _cluster_assignments.select(["code", "code_type", "description"]),
+            on=["code", "code_type"],
+            how="left",
+        )
         _treemap = px.treemap(
             _top_df,
             path=["code_type", "code"],
             values="total",
+            hover_data=["description"],
             title="Code composition (top codes)",
         )
     else:
