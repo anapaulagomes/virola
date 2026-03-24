@@ -51,7 +51,6 @@ uv run vir results llm-descriptions 1
 - `vir view temporal --dataset DATASET [--year-min YEAR] [--year-max YEAR] [--min-weeks INT]` - Time-series pattern analysis
 
 #### Modeling
-- `vir model indicative-codes --input FILE --output FILE` - Train indicative codes classifier
 - `vir model snf --dataset DATASET [--year-min YEAR] [--year-max YEAR] [--snf-k INT] [--n-clusters INT] [--notes TEXT]` - Run SNF clustering, saves run to virola.db
 
 #### Results
@@ -108,3 +107,12 @@ Visual inspection: [Embedding Atlas](https://github.com/apple/embedding-atlas)
 
 ABP008 is duplicated and it was renamed to ABP008-1 and ABP008-2 for distinction
 in `cid10_ciap2_ab.csv`.
+
+### Validation files
+
+The anchor validation used AESOP syndrome indicators, downloaded from the project's [repo](https://github.com/cidacslab/AESOP-Data-Documentation/).
+
+Source:
+
+* [code_list_arbovirus_apr2024.csv](https://raw.githubusercontent.com/cidacslab/AESOP-Data-Documentation/refs/heads/main/DataPipeline/documentation/code_list_arbovirus_apr2024.csv)
+* [code_list_uri_apr2024.csv](https://raw.githubusercontent.com/cidacslab/AESOP-Data-Documentation/refs/heads/main/DataPipeline/documentation/code_list_uri_apr2024.csv)
