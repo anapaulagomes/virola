@@ -22,6 +22,7 @@ def _(mo):
 
 @app.cell
 def _():
+    from datetime import datetime
     from pathlib import Path
 
     import marimo as mo
@@ -34,7 +35,7 @@ def _():
     from sklearn import cluster
     from snf import compute, metrics
 
-    return Path, cluster, compute, go, load_dotenv, metrics, mo, np, pl, px, umap
+    return Path, cluster, compute, datetime, go, load_dotenv, metrics, mo, np, pl, px, umap
 
 
 @app.cell
@@ -83,14 +84,15 @@ def _(mo):
 
 
 @app.cell
-def _(CLUSTERING_DIR, Path, args):
+def _(CLUSTERING_DIR, Path, args, datetime):
     year_min = args.get("year_min", 2022)
     year_max = args.get("year_max", 2024)
     snf_k = args.get("snf_k", 10)
     n_clusters = args.get("n_clusters", 200)
     output_dir = Path(args.get("output") or str(CLUSTERING_DIR))
     notes = args.get("notes") or None
-    return n_clusters, notes, output_dir, snf_k, year_max, year_min
+    run_start = datetime.now().isoformat()
+    return n_clusters, notes, output_dir, run_start, snf_k, year_max, year_min
 
 
 @app.cell
@@ -646,6 +648,7 @@ def _(
     cluster_largest,
     cluster_median,
     common_ids,
+    df,
     extract_dataset_name,
     file_path,
     fused_labels,
@@ -660,6 +663,7 @@ def _(
     n_singletons,
     notes,
     pct_singletons,
+    run_start,
     save_run,
     silhouette,
     snf_k,
@@ -680,6 +684,8 @@ def _(
         silhouette_score=float(silhouette),
         affinity_zscore=float(zaff),
         notes=notes,
+        created_at=run_start,
+        df=df,
         n_codes_clinical=n_codes_clinical,
         n_codes_temporal=n_codes_temporal,
         n_codes_demographic=n_codes_demographic,

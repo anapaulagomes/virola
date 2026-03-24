@@ -11,7 +11,7 @@ import json
 import numpy as np
 import polars as pl
 
-from vir.config import logger
+from vir.config import DATA_DIR, logger
 from vir.db import (
     insert_cluster_assignments,
     insert_run,
@@ -62,6 +62,8 @@ def save_run(
     silhouette_score: float | None = None,
     affinity_zscore: float | None = None,
     notes: str | None = None,
+    created_at: str | None = None,
+    df: pl.DataFrame | None = None,
     n_codes_clinical: int | None = None,
     n_codes_temporal: int | None = None,
     n_codes_demographic: int | None = None,
@@ -98,6 +100,7 @@ def save_run(
         silhouette_score=silhouette_score,
         affinity_zscore=affinity_zscore,
         notes=notes,
+        created_at=created_at,
         n_codes_clinical=n_codes_clinical,
         n_codes_temporal=n_codes_temporal,
         n_codes_demographic=n_codes_demographic,
@@ -118,6 +121,13 @@ def save_run(
 
     if multi_k_results:
         insert_run_multi_k(run_id, multi_k_results)
+
+    if df is not None:
+        runs_dir = DATA_DIR / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        dataset_path = runs_dir / f"{run_id}.parquet"
+        df.write_parquet(dataset_path)
+        logger.info(f"Dataset saved to {dataset_path}")
 
     logger.info(f"Run {run_id} saved — {len(assignments)} codes across {n_clusters} clusters.")
     return run_id
