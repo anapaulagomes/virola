@@ -4,6 +4,7 @@ import duckdb
 import polars as pl
 
 from vir.config import DATA_DIR, logger
+from vir.helpers import get_n_jobs
 
 PROJECT_DB = DATA_DIR / "virola.db"
 DEFAULT_MODEL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"  # TODO move to config
@@ -328,7 +329,8 @@ def fetch_cluster_profiles(run_id: int) -> "pl.DataFrame":
 
 
 def get_connection(writeable=False):
-    return duckdb.connect(PROJECT_DB, read_only=not writeable)
+    config = {"threads": get_n_jobs()}
+    return duckdb.connect(PROJECT_DB, read_only=not writeable, config=config)
 
 
 def create_embeddings_table_if_not_exists():
