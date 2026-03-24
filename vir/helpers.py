@@ -49,4 +49,6 @@ def suffix_from(filename: Path, break_on="20municipios", remove_extension=False)
 
 
 def get_n_jobs():
+    if slurm_cpus := os.getenv("SLURM_CPUS_PER_TASK"):
+        return int(slurm_cpus)
     return numba.get_num_threads()
