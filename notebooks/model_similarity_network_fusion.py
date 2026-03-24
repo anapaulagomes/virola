@@ -574,7 +574,7 @@ def _(fused, fused_labels, metrics):
     print("\nInterpretation:")
     print("  - Silhouette > 0.5: Good clustering")
     print("  - Affinity Z-Score > 2: Significantly better than random")
-    return
+    return silhouette, zaff
 
 
 @app.cell
@@ -648,10 +648,8 @@ def _(
     common_ids,
     extract_dataset_name,
     file_path,
-    fused,
     fused_labels,
     indicative_codes_enabled,
-    metrics,
     multi_k_results,
     n_clusters,
     n_codes_clinical,
@@ -663,14 +661,13 @@ def _(
     notes,
     pct_singletons,
     save_run,
+    silhouette,
     snf_k,
     update_run_finished_at,
     year_max,
     year_min,
+    zaff,
 ):
-    _silhouette = metrics.silhouette_score(fused, fused_labels)
-    _zaff = metrics.affinity_zscore(fused, fused_labels, n_perms=1000, seed=42)
-
     run_id = save_run(
         dataset_name=extract_dataset_name(file_path),
         year_min=int(year_min),
@@ -680,8 +677,8 @@ def _(
         fused_labels=fused_labels,
         common_ids=common_ids,
         indicative_enabled=indicative_codes_enabled,
-        silhouette_score=float(_silhouette),
-        affinity_zscore=float(_zaff),
+        silhouette_score=float(silhouette),
+        affinity_zscore=float(zaff),
         notes=notes,
         n_codes_clinical=n_codes_clinical,
         n_codes_temporal=n_codes_temporal,
