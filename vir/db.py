@@ -55,7 +55,34 @@ def create_results_schema():
             llm_abbreviation        VARCHAR,
             PRIMARY KEY (run_id, cluster_id)
         );
+
+        CREATE TABLE IF NOT EXISTS run_multi_k (
+            run_id          INTEGER NOT NULL REFERENCES runs(run_id),
+            k               INTEGER NOT NULL,
+            silhouette      FLOAT,
+            largest_cluster INTEGER,
+            median_size     FLOAT,
+            PRIMARY KEY (run_id, k)
+        );
     """)
+
+    # Migrate existing runs table — add new columns if they don't exist yet
+    for col_def in [
+        ("n_codes_clinical", "INTEGER"),
+        ("n_codes_temporal", "INTEGER"),
+        ("n_codes_demographic", "INTEGER"),
+        ("n_codes_common", "INTEGER"),
+        ("n_missing_temporal", "INTEGER"),
+        ("n_missing_demographic", "INTEGER"),
+        ("cluster_largest", "INTEGER"),
+        ("cluster_median", "FLOAT"),
+        ("n_singletons", "INTEGER"),
+        ("pct_singletons", "FLOAT"),
+    ]:
+        try:
+            con.execute(f"ALTER TABLE runs ADD COLUMN IF NOT EXISTS {col_def[0]} {col_def[1]}")
+        except Exception:
+            pass
 
 
 def insert_run(
@@ -72,6 +99,16 @@ def insert_run(
     affinity_zscore: float | None = None,
     notes: str | None = None,
     finished_at: str | None = None,
+    n_codes_clinical: int | None = None,
+    n_codes_temporal: int | None = None,
+    n_codes_demographic: int | None = None,
+    n_codes_common: int | None = None,
+    n_missing_temporal: int | None = None,
+    n_missing_demographic: int | None = None,
+    cluster_largest: int | None = None,
+    cluster_median: float | None = None,
+    n_singletons: int | None = None,
+    pct_singletons: float | None = None,
 ) -> int:
     """Insert a new run and return its run_id."""
     create_results_schema()
@@ -81,8 +118,11 @@ def insert_run(
         INSERT INTO runs (
             dataset_name, city, region, population_range,
             year_min, year_max, snf_k, n_clusters,
-            indicative_enabled, silhouette_score, affinity_zscore, notes, finished_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            indicative_enabled, silhouette_score, affinity_zscore, notes, finished_at,
+            n_codes_clinical, n_codes_temporal, n_codes_demographic, n_codes_common,
+            n_missing_temporal, n_missing_demographic,
+            cluster_largest, cluster_median, n_singletons, pct_singletons
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING run_id
     """,
         [
@@ -99,6 +139,16 @@ def insert_run(
             affinity_zscore,
             notes,
             finished_at,
+            n_codes_clinical,
+            n_codes_temporal,
+            n_codes_demographic,
+            n_codes_common,
+            n_missing_temporal,
+            n_missing_demographic,
+            cluster_largest,
+            cluster_median,
+            n_singletons,
+            pct_singletons,
         ],
     ).fetchone()
     return result[0]
@@ -137,6 +187,9 @@ def fetch_runs() -> "pl.DataFrame":
         SELECT run_id, dataset_name, city, region, population_range,
                year_min, year_max, snf_k, n_clusters,
                indicative_enabled, silhouette_score, affinity_zscore,
+               n_codes_clinical, n_codes_temporal, n_codes_demographic, n_codes_common,
+               n_missing_temporal, n_missing_demographic,
+               cluster_largest, cluster_median, n_singletons, pct_singletons,
                notes, created_at, finished_at,
                CASE
                    WHEN finished_at IS NOT NULL
@@ -144,6 +197,41 @@ def fetch_runs() -> "pl.DataFrame":
                END AS duration_min
         FROM runs ORDER BY created_at DESC
     """).pl()
+
+
+def insert_run_multi_k(run_id: int, results: list[dict]) -> None:
+    """Bulk insert multi-K comparison results for a run.
+
+    Args:
+        run_id: The run identifier.
+        results: List of {n_clusters, silhouette, largest_cluster, median_size} dicts.
+    """
+    create_results_schema()
+    con = get_connection(writeable=True)
+    rows = [
+        (run_id, r["n_clusters"], r["silhouette"], r["largest_cluster"], r["median_size"])
+        for r in results
+    ]
+    con.executemany(
+        """
+        INSERT INTO run_multi_k (run_id, k, silhouette, largest_cluster, median_size)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (run_id, k) DO UPDATE SET
+            silhouette = EXCLUDED.silhouette,
+            largest_cluster = EXCLUDED.largest_cluster,
+            median_size = EXCLUDED.median_size
+        """,
+        rows,
+    )
+
+
+def fetch_run_multi_k(run_id: int) -> "pl.DataFrame":
+    """Return multi-K comparison results for a run as a Polars DataFrame."""
+    con = get_connection()
+    return con.execute(
+        "SELECT k, silhouette, largest_cluster, median_size FROM run_multi_k WHERE run_id = ? ORDER BY k",
+        [run_id],
+    ).pl()
 
 
 def fetch_cluster_assignments(run_id: int) -> "pl.DataFrame":

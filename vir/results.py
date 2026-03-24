@@ -12,7 +12,12 @@ import numpy as np
 import polars as pl
 
 from vir.config import logger
-from vir.db import insert_cluster_assignments, insert_run, upsert_cluster_profile
+from vir.db import (
+    insert_cluster_assignments,
+    insert_run,
+    insert_run_multi_k,
+    upsert_cluster_profile,
+)
 from vir.features import IBGE_CITY_MAP
 
 # ---------------------------------------------------------------------------
@@ -57,15 +62,28 @@ def save_run(
     silhouette_score: float | None = None,
     affinity_zscore: float | None = None,
     notes: str | None = None,
+    n_codes_clinical: int | None = None,
+    n_codes_temporal: int | None = None,
+    n_codes_demographic: int | None = None,
+    n_missing_temporal: int | None = None,
+    n_missing_demographic: int | None = None,
+    cluster_largest: int | None = None,
+    cluster_median: float | None = None,
+    n_singletons: int | None = None,
+    pct_singletons: float | None = None,
+    multi_k_results: list[dict] | None = None,
 ) -> int:
     """Persist a complete SNF run to the database.
 
     Inserts one row in `runs` and one row per code in `cluster_assignments`.
+    Optionally persists view coverage stats, cluster distribution stats, and
+    multi-K comparison results.
 
     Returns:
         The run_id of the inserted run.
     """
     meta = _city_metadata(dataset_name)
+    n_codes_common = len(common_ids)
 
     run_id = insert_run(
         dataset_name=dataset_name,
@@ -80,6 +98,16 @@ def save_run(
         silhouette_score=silhouette_score,
         affinity_zscore=affinity_zscore,
         notes=notes,
+        n_codes_clinical=n_codes_clinical,
+        n_codes_temporal=n_codes_temporal,
+        n_codes_demographic=n_codes_demographic,
+        n_codes_common=n_codes_common,
+        n_missing_temporal=n_missing_temporal,
+        n_missing_demographic=n_missing_demographic,
+        cluster_largest=cluster_largest,
+        cluster_median=cluster_median,
+        n_singletons=n_singletons,
+        pct_singletons=pct_singletons,
     )
 
     assignments = [
@@ -87,6 +115,9 @@ def save_run(
         for tid, label in zip(common_ids, fused_labels)
     ]
     insert_cluster_assignments(run_id, assignments)
+
+    if multi_k_results:
+        insert_run_multi_k(run_id, multi_k_results)
 
     logger.info(f"Run {run_id} saved — {len(assignments)} codes across {n_clusters} clusters.")
     return run_id
