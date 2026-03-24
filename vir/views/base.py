@@ -105,18 +105,13 @@ class BaseView(ABC):
         """
         Create hash of dataframe content.
 
-        Uses terminology_id and quantity columns to detect data changes.
+        Hashes all columns so that changes in temporal (year/week),
+        demographic (sex/age_group), or clinical data all invalidate the cache.
 
         Returns:
             Hash string
         """
-        # Use relevant columns for hashing
-        cols_to_hash = ["terminology_id"]
-        if "quantity" in self.df.columns:
-            cols_to_hash.append("quantity")
-
-        # Create deterministic hash
-        df_bytes = self.df.select(cols_to_hash).write_csv().encode()
+        df_bytes = self.df.sort(self.df.columns).write_csv().encode()
         return hashlib.sha256(df_bytes).hexdigest()
 
     def clear_cache(self):
