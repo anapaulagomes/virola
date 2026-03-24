@@ -8,12 +8,13 @@ import polars as pl
 from snf import compute as snf_compute
 
 from vir.config import (
+    DEFAULT_MODEL,
     INDICATIVE_CODES_FILE,
     INDICATIVE_ENABLED,
     INTERIM_DATA_DIR,
 )
 from vir.data_filters import filter_min_temporal_coverage
-from vir.db import DEFAULT_MODEL, fetch_terminologies
+from vir.db import fetch_terminologies
 
 
 def load_terminology_labels(model: str = DEFAULT_MODEL) -> pl.DataFrame:

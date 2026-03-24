@@ -14,8 +14,8 @@ def _():
     import torch
     from transformers import AutoModel, AutoTokenizer
 
-    from vir.config import PROCESSED_DATA_DIR
-    from vir.db import DEFAULT_MODEL, create_embeddings_table_if_not_exists, insert
+    from vir.config import DEFAULT_MODEL, PROCESSED_DATA_DIR
+    from vir.db import create_embeddings_table_if_not_exists, insert
     from vir.helpers import get_or_download_model
 
     return (

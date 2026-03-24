@@ -5,9 +5,8 @@ from typing import Any, Dict
 import numpy as np
 import polars as pl
 
-from vir.config import logger
+from vir.config import DEFAULT_MODEL, logger
 from vir.db import (
-    DEFAULT_MODEL,
     create_dimensions_table_if_not_exists,
     dimension_exists,
     get_connection,
