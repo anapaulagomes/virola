@@ -15,6 +15,7 @@ def _():
     from vir.config import RAW_DATA_DIR
     from vir.features import IBGE_CITY_MAP, ORIGINAL_AGE_GROUP, POPULATION_RANGE
     from vir.viz import plot_categories, scatter_plot_year_per_week
+
     return (
         IBGE_CITY_MAP,
         ORIGINAL_AGE_GROUP,
@@ -341,6 +342,7 @@ def _(chi2_contingency, np, pl):
             return np.sqrt(chi2 / (n * (min(k, r) - 1)))
         except:  # noqa E722
             return 0.0
+
     return (cramers_v,)
 
 
@@ -374,6 +376,7 @@ def _(np):
                 matrix[_var1_index][_var2_index] = _row["cramers_v"]
                 matrix[_var2_index][_var1_index] = _row["cramers_v"]
         return matrix, index_variables
+
     return (df_to_heatmap_matrix,)
 
 

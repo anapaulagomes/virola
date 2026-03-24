@@ -459,7 +459,7 @@ def _(mo, pl, px):
                 "cluster": "Cluster",
             },
             height=400,
-            category_orders={"feature": sorted(plot_df_pd["feature"].unique())},
+            category_orders={"feature": sorted(plot_df["feature"].unique().to_list())},
         )
 
         # Update layout for better readability
@@ -471,7 +471,7 @@ def _(mo, pl, px):
         )
 
         # Better marker sizing
-        if not plot_df_pd.empty and plot_df_pd["average_value"].max() > 0:
+        if not plot_df.is_empty() and plot_df["average_value"].max() > 0:
             fig.update_traces(marker=dict(sizemin=8, sizemode="diameter", sizeref=0.1))
 
         return fig
@@ -742,7 +742,7 @@ def _(chi_demographic_summary, mo, pl, px):
                 "cluster": "Cluster",
             },
             height=300,
-            category_orders={"feature": sorted(_plot_df_pd["feature"].unique())},
+            category_orders={"feature": sorted(_plot_df["feature"].unique().to_list())},
         )
         chi_demo_plot.update_layout(
             xaxis_title="Average Ratio",
