@@ -23,10 +23,10 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import VALIDATION_DIR
+    from vir.config import REFERENCES_DIR
     from vir.db import fetch_cluster_assignments, fetch_runs
 
-    return VALIDATION_DIR, fetch_cluster_assignments, fetch_runs
+    return REFERENCES_DIR, fetch_cluster_assignments, fetch_runs
 
 
 @app.cell
@@ -60,8 +60,8 @@ def _(mo):
 
 
 @app.cell
-def _(VALIDATION_DIR, pl):
-    _AESOP_DIR = VALIDATION_DIR / "aesop"
+def _(REFERENCES_DIR, pl):
+    _AESOP_DIR = REFERENCES_DIR / "aesop"
     _TYPE_MAP = {"CID 10": "cid10", "CID": "cid10", "CIAP": "ciap2", "ABP": "ab"}
 
     def _load_anchor(filename: str) -> pl.DataFrame:
