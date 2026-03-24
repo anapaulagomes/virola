@@ -40,7 +40,7 @@ def _():
 @app.cell
 def _():
     from vir.config import CLUSTERING_DIR, get_indicative_label
-    from vir.db import update_run_finished_at
+    from vir.db import insert_run_multi_k, update_run_finished_at
     from vir.notebook_widgets import (
         create_file_dropdown,
         extract_dataset_name,
@@ -59,6 +59,7 @@ def _():
         create_file_dropdown,
         extract_dataset_name,
         get_indicative_label,
+        insert_run_multi_k,
         load_and_prepare_dataframe,
         load_indicative_codes,
         load_terminology_labels,
@@ -197,20 +198,33 @@ def _(clinical_view, demographic_view, temporal_view):
     temporal_ids = set(temporal_view.get_terminology_ids())
     demographic_ids = set(demographic_view.get_terminology_ids())
 
-    print(f"Clinical: {len(clinical_ids)} diagnoses")
-    print(f"Temporal: {len(temporal_ids)} diagnoses")
-    print(f"Demographic: {len(demographic_ids)} diagnoses")
+    n_codes_clinical = len(clinical_ids)
+    n_codes_temporal = len(temporal_ids)
+    n_codes_demographic = len(demographic_ids)
+
+    print(f"Clinical: {n_codes_clinical} diagnoses")
+    print(f"Temporal: {n_codes_temporal} diagnoses")
+    print(f"Demographic: {n_codes_demographic} diagnoses")
 
     common_ids = sorted(clinical_ids & temporal_ids & demographic_ids)
     print(f"\nCommon diagnoses: {len(common_ids)}")
 
     missing_in_temporal = clinical_ids - temporal_ids
     missing_in_demographic = clinical_ids - demographic_ids
+    n_missing_temporal = len(missing_in_temporal)
+    n_missing_demographic = len(missing_in_demographic)
     if missing_in_temporal:
-        print(f"Missing in temporal: {len(missing_in_temporal)} diagnoses (filtered by min_weeks)")
+        print(f"Missing in temporal: {n_missing_temporal} diagnoses (filtered by min_weeks)")
     if missing_in_demographic:
-        print(f"Missing in demographic: {len(missing_in_demographic)} diagnoses")
-    return (common_ids,)
+        print(f"Missing in demographic: {n_missing_demographic} diagnoses")
+    return (
+        common_ids,
+        n_codes_clinical,
+        n_codes_demographic,
+        n_codes_temporal,
+        n_missing_demographic,
+        n_missing_temporal,
+    )
 
 
 @app.cell
@@ -571,17 +585,17 @@ def _(df_clusters, n_clusters, pl):
     )
 
     total_clusters = cluster_sizes.height
-    max_size = cluster_sizes["size"].max()
-    median_size = cluster_sizes["size"].median()
-    singletons = cluster_sizes.filter(pl.col("size") == 1).height
-    dust_percent = (singletons / total_clusters) * 100
+    cluster_largest = int(cluster_sizes["size"].max())
+    cluster_median = float(cluster_sizes["size"].median())
+    n_singletons = cluster_sizes.filter(pl.col("size") == 1).height
+    pct_singletons = (n_singletons / total_clusters) * 100
 
     print(f"--- Cluster Stats (K={n_clusters}) ---")
     print(f"Total Clusters:   {total_clusters}")
-    print(f"Largest Cluster:  {max_size} diagnoses")
-    print(f"Median Size:      {median_size} diagnoses")
-    print(f"Singletons:       {singletons} ({dust_percent:.1f}%)")
-    return (cluster_sizes,)
+    print(f"Largest Cluster:  {cluster_largest} diagnoses")
+    print(f"Median Size:      {cluster_median} diagnoses")
+    print(f"Singletons:       {n_singletons} ({pct_singletons:.1f}%)")
+    return cluster_largest, cluster_median, cluster_sizes, n_singletons, pct_singletons
 
 
 @app.cell
@@ -602,7 +616,7 @@ def _(cluster_sizes, n_clusters, px):
 
 @app.cell
 def _(cluster, common_ids, fused, metrics, np, pl):
-    _results = []
+    multi_k_results = []
 
     for _nr_cluster in [50, 100, 150, 200, 250, 300]:
         _labels = cluster.spectral_clustering(fused, n_clusters=_nr_cluster)
@@ -615,7 +629,7 @@ def _(cluster, common_ids, fused, metrics, np, pl):
         )
 
         _unique, _counts = np.unique(_labels, return_counts=True)
-        _results.append(
+        multi_k_results.append(
             {
                 "n_clusters": _nr_cluster,
                 "silhouette": round(_silhouette, 4),
@@ -624,13 +638,14 @@ def _(cluster, common_ids, fused, metrics, np, pl):
             }
         )
 
-    _df = pl.DataFrame(_results)
-    print(_df)
-    return
+    pl.DataFrame(multi_k_results)
+    return (multi_k_results,)
 
 
 @app.cell
 def _(
+    cluster_largest,
+    cluster_median,
     common_ids,
     extract_dataset_name,
     file_path,
@@ -638,13 +653,21 @@ def _(
     fused_labels,
     indicative_codes_enabled,
     metrics,
+    multi_k_results,
     n_clusters,
+    n_codes_clinical,
+    n_codes_demographic,
+    n_codes_temporal,
+    n_missing_demographic,
+    n_missing_temporal,
+    n_singletons,
     notes,
+    pct_singletons,
     save_run,
     snf_k,
+    update_run_finished_at,
     year_max,
     year_min,
-    update_run_finished_at,
 ):
     _silhouette = metrics.silhouette_score(fused, fused_labels)
     _zaff = metrics.affinity_zscore(fused, fused_labels, n_perms=1000, seed=42)
@@ -661,6 +684,16 @@ def _(
         silhouette_score=float(_silhouette),
         affinity_zscore=float(_zaff),
         notes=notes,
+        n_codes_clinical=n_codes_clinical,
+        n_codes_temporal=n_codes_temporal,
+        n_codes_demographic=n_codes_demographic,
+        n_missing_temporal=n_missing_temporal,
+        n_missing_demographic=n_missing_demographic,
+        cluster_largest=cluster_largest,
+        cluster_median=cluster_median,
+        n_singletons=n_singletons,
+        pct_singletons=pct_singletons,
+        multi_k_results=multi_k_results,
     )
     update_run_finished_at(run_id)
     print(f"💾 Run {run_id} saved to virola.db")
