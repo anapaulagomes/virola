@@ -41,6 +41,9 @@ CHUNK_SIZE = 100_000  # Records per chunk - adjust based on available RAM
 INDICATIVE_CODES_FILE = REFERENCES_DIR / "indicative_codes_yes_no_75perc.csv"
 INDICATIVE_ENABLED = True
 MIN_WEEKS = 12
+TEMPORAL_MODE = (
+    "annual"  # "annual" (52-point week_of_year profile) | "chronological" (full year_week series)
+)
 
 
 def get_indicative_label(enabled: bool = INDICATIVE_ENABLED) -> str:
