@@ -329,6 +329,18 @@ def explain_clusters(
         central_tid = int(member_ids[central_local_idx])
         central_meta = id_to_meta.get(central_tid, {})
 
+        # Per-member centrality list (descending), capped at 10 for LLM use
+        sorted_member_indices = np.argsort(mean_sim_per_member)[::-1]
+        member_centralities = [
+            {
+                "terminology_id": int(member_ids[local_idx]),
+                "description": id_to_meta.get(int(member_ids[local_idx]), {}).get("description")
+                or "",
+                "centrality": round(float(mean_sim_per_member[local_idx]), 4),
+            }
+            for local_idx in sorted_member_indices
+        ]
+
         explanation = {
             "view_similarity": {
                 "clinical": round(clin_mean, 4),
@@ -342,6 +354,7 @@ def explain_clusters(
                 "code_type": central_meta.get("code_type"),
                 "description": central_meta.get("description"),
             },
+            "member_centralities": member_centralities,
         }
 
         upsert_cluster_profile(
@@ -378,8 +391,19 @@ def populate_llm_descriptions(run_id: int) -> None:
         if not row["top_codes"]:
             continue
 
-        top_codes = json.loads(row["top_codes"])
-        labels_count = {f"{c['code']} ({c['code_type']})": c["total"] for c in top_codes}
+        explanation = json.loads(row["explanation"]) if row.get("explanation") else {}
+        member_centralities = explanation.get("member_centralities") if explanation else None
+
+        if member_centralities:
+            labels_count = {
+                m["description"]: m["centrality"]
+                for m in member_centralities[:10]
+                if m.get("description")
+            }
+        else:
+            top_codes = json.loads(row["top_codes"])
+            labels_count = {f"{c['code']} ({c['code_type']})": c["total"] for c in top_codes[:10]}
+
         desc = describe_cluster(labels_count)
 
         upsert_cluster_profile(

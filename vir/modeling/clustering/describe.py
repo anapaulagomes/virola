@@ -9,9 +9,9 @@ from vir.config import logger
 LLM_MODEL = "llama3.2:latest"
 PROMPT = """
 Give me a short descriptive name for a potential syndrome for a syndromic surveillance system
-composed by the following codes:
+composed by the following diagnoses:
 
-TERMINOLOGY LABELS (COUNT)
+DIAGNOSIS (CENTRALITY SCORE — higher means more representative of the cluster)
 
 {labels_in_human_format}
 """
@@ -28,7 +28,7 @@ def _cache_description_key(labels: list[str]):
     return "-".join([label.replace(" ", "_") for label in labels])
 
 
-def describe_cluster(terminology_labels_count: dict[str, int]):
+def describe_cluster(terminology_labels_count: dict[str, float | int]):
     if not terminology_labels_count:
         return {"short_description": "", "description": "", "abbreviation": ""}
     sorted_dict = dict(
