@@ -288,6 +288,93 @@ def _(df, px):
 @app.cell
 def _(mo):
     mo.md(r"""
+    ### 🩺 Diagnosis distribution (ICD-10)
+    """)
+    return
+
+
+@app.cell
+def _(df, pl, px):
+    _icd_df = df.filter(pl.col("code_type") == "CID")
+    _top_diagnoses = (
+        _icd_df.group_by("code")
+        .agg(pl.len().alias("count"))
+        .sort("count", descending=True)
+        .limit(40)
+    )
+    _fig = px.bar(
+        _top_diagnoses,
+        x="code",
+        y="count",
+        title="Top 40 most frequent ICD-10 diagnoses",
+        labels={"code": "ICD-10 Code", "count": "Number of records"},
+    )
+    _fig.update_layout(xaxis={"categoryorder": "total descending"})
+    _fig.update_xaxes(tickangle=45)
+    _fig
+
+
+@app.cell
+def _(df, pl, px):
+    ICD10_CHAPTERS = {
+        "A": "I – Infectious & parasitic diseases",
+        "B": "I – Infectious & parasitic diseases",
+        "C": "II – Neoplasms",
+        "D": "II/III – Neoplasms / Blood diseases",
+        "E": "IV – Endocrine & metabolic diseases",
+        "F": "V – Mental disorders",
+        "G": "VI – Nervous system",
+        "H": "VII/VIII – Eye & Ear disorders",
+        "I": "IX – Circulatory system",
+        "J": "X – Respiratory system",
+        "K": "XI – Digestive system",
+        "L": "XII – Skin diseases",
+        "M": "XIII – Musculoskeletal system",
+        "N": "XIV – Genitourinary system",
+        "O": "XV – Pregnancy & childbirth",
+        "P": "XVI – Perinatal conditions",
+        "Q": "XVII – Congenital malformations",
+        "R": "XVIII – Symptoms & signs",
+        "S": "XIX – Injury & poisoning",
+        "T": "XIX – Injury & poisoning",
+        "V": "XX – External causes",
+        "W": "XX – External causes",
+        "X": "XX – External causes",
+        "Y": "XX – External causes",
+        "Z": "XXI – Health status factors",
+        "U": "XXII – Special purposes",
+    }
+
+    _chapter_map = pl.DataFrame(
+        [{"first_char": k, "chapter": v} for k, v in ICD10_CHAPTERS.items()]
+    )
+
+    _icd_df = (
+        df.filter(pl.col("code_type") == "CID")
+        .with_columns(pl.col("code").str.slice(0, 1).alias("first_char"))
+        .join(_chapter_map, on="first_char", how="left")
+        .with_columns(pl.col("chapter").fill_null("Unknown"))
+    )
+
+    _chapter_counts = (
+        _icd_df.group_by("chapter").agg(pl.len().alias("count")).sort("count", descending=True)
+    )
+
+    _fig = px.bar(
+        _chapter_counts,
+        x="chapter",
+        y="count",
+        title="ICD-10 records per chapter",
+        labels={"chapter": "ICD-10 Chapter", "count": "Number of records"},
+    )
+    _fig.update_layout(xaxis={"categoryorder": "total descending"})
+    _fig.update_xaxes(tickangle=30)
+    _fig
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
     ### 🌍 Geographic distribution
     """)
     return
