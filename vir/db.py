@@ -15,48 +15,38 @@ PROJECT_DB = DATA_DIR / "virola.db"
 # ---------------------------------------------------------------------------
 # Connection
 #
-# Within a single process (e.g. one marimo notebook or the SNF runner),
-# a single READ_WRITE connection serves all reads and writes.
+# One connection per process — the DuckDB-recommended pattern for in-process
+# use. The same connection serves both reads and writes; opening two
+# connections with different modes on the same file raises an error.
 #
-# Across processes (e.g. SNF runner + viewer notebook), DuckDB allows only
-# one writer at a time. get_connection() retries with backoff so a viewer
-# can connect once the writer releases between operations.
-#
-# _write_con() wraps the shared connection in a context manager for
-# semantic clarity; it does not open a separate connection.
+# Cross-process locking: DuckDB allows only one writer at a time on a local
+# file.  get_connection() retries with backoff so a viewer notebook can
+# connect once the writer (e.g. the SNF runner) releases the lock.
 # ---------------------------------------------------------------------------
 
 _connection: duckdb.DuckDBPyConnection | None = None
-_ro_connection: duckdb.DuckDBPyConnection | None = None
-_DB_CONFIG = {"threads": get_n_jobs()}
+DB_CONFIG = {"threads": get_n_jobs()}
 
 
-def get_connection(
-    *, read_only: bool = False, retries: int = 20, delay: float = 0.5
-) -> duckdb.DuckDBPyConnection:
-    """Persistent connection. Use read_only=True for concurrent read access across processes."""
-    global _connection, _ro_connection
-    if read_only:
-        if _ro_connection is None:
-            last_exc: Exception | None = None
-            for _ in range(retries):
-                try:
-                    _ro_connection = duckdb.connect(
-                        str(PROJECT_DB), read_only=True, config=_DB_CONFIG
-                    )
-                    atexit.register(_close_ro_connection)
-                    break
-                except duckdb.ConnectionException as e:
-                    last_exc = e
-                    time.sleep(delay)
-            else:
-                raise last_exc  # type: ignore[misc]
-        return _ro_connection
+def get_connection(*, retries: int = 20, delay: float = 0.5) -> duckdb.DuckDBPyConnection:
+    """Return the single shared connection for this process.
+
+    DuckDB is designed for in-process use — one connection per process is
+    the recommended pattern. A writable
+    connection satisfies all reads, and DuckDB raises if both modes are
+    opened on the same file in the same process.
+
+    The retry loop handles the cross-process write-lock: if another process
+    (e.g. the SNF runner) holds the file, callers wait up to
+    ``retries * delay`` seconds before raising.
+    """
+    global _connection
+
     if _connection is None:
-        last_exc = None
+        last_exc: Exception | None = None
         for _ in range(retries):
             try:
-                _connection = duckdb.connect(str(PROJECT_DB), config=_DB_CONFIG)
+                _connection = duckdb.connect(PROJECT_DB, config=DB_CONFIG)
                 atexit.register(_close_connection)
                 break
             except duckdb.ConnectionException as e:
@@ -74,22 +64,10 @@ def _close_connection() -> None:
         _connection = None
 
 
-def _close_ro_connection() -> None:
-    global _ro_connection
-    if _ro_connection is not None:
-        _ro_connection.close()
-        _ro_connection = None
-
-
 @contextmanager
 def _write_con() -> Iterator[duckdb.DuckDBPyConnection]:
     """Yields the shared connection for a write block (semantic sugar only)."""
     yield get_connection()
-
-
-# ---------------------------------------------------------------------------
-# Schema creation & migrations
-# ---------------------------------------------------------------------------
 
 
 def create_results_schema():
@@ -196,11 +174,6 @@ def create_dimensions_table_if_not_exists():
         """)
 
 
-# ---------------------------------------------------------------------------
-# Runs
-# ---------------------------------------------------------------------------
-
-
 def insert_run(
     dataset_name: str,
     city: str | None,
@@ -279,10 +252,45 @@ def update_run_finished_at(run_id: int) -> None:
         con.execute("UPDATE runs SET finished_at = now() WHERE run_id = ?", [run_id])
 
 
+def find_run(
+    run_id: int | None = None,
+    dataset_path: str | None = None,
+) -> dict:
+    """Return a single run as a dict.
+
+    Selection priority:
+    1. ``run_id`` — return that specific run.
+    2. ``dataset_path`` — infer dataset_name from the path and return the latest run for it.
+    3. Neither — return the latest run overall.
+
+    Raises ``ValueError`` if no matching run is found.
+    """
+    runs = fetch_runs()
+    if runs.is_empty():
+        raise ValueError("No runs found in the database.")
+
+    if run_id is not None:
+        subset = runs.filter(pl.col("run_id") == run_id)
+        if subset.is_empty():
+            raise ValueError(f"Run {run_id} not found.")
+        return subset.row(0, named=True)
+
+    if dataset_path is not None:
+        from vir.notebook_widgets import extract_dataset_name
+
+        name = extract_dataset_name(dataset_path)
+        subset = runs.filter(pl.col("dataset_name") == name)
+        if subset.is_empty():
+            raise ValueError(f"No runs found for dataset '{name}'.")
+        return subset.row(0, named=True)
+
+    return runs.row(0, named=True)
+
+
 def fetch_runs() -> pl.DataFrame:
     """Return all runs as a Polars DataFrame, including duration in minutes."""
     return (
-        get_connection(read_only=True)
+        get_connection()
         .execute("""
         SELECT run_id, dataset_name, city, region, population_range,
                year_min, year_max, snf_k, n_clusters,
@@ -299,11 +307,6 @@ def fetch_runs() -> pl.DataFrame:
     """)
         .pl()
     )
-
-
-# ---------------------------------------------------------------------------
-# Cluster assignments
-# ---------------------------------------------------------------------------
 
 
 def insert_cluster_assignments(run_id: int, assignments: list[dict]) -> None:
@@ -325,7 +328,7 @@ def insert_cluster_assignments(run_id: int, assignments: list[dict]) -> None:
 def fetch_cluster_assignments(run_id: int) -> pl.DataFrame:
     """Return all assignments for a run joined with terminology metadata."""
     return (
-        get_connection(read_only=True)
+        get_connection()
         .execute(
             """
         SELECT ca.cluster_id, ca.terminology_id, mt.code, mt.code_type, mt.description
@@ -338,11 +341,6 @@ def fetch_cluster_assignments(run_id: int) -> pl.DataFrame:
         )
         .pl()
     )
-
-
-# ---------------------------------------------------------------------------
-# Cluster profiles
-# ---------------------------------------------------------------------------
 
 
 def upsert_cluster_profile(
@@ -406,18 +404,13 @@ def upsert_cluster_profile(
 def fetch_cluster_profiles(run_id: int) -> pl.DataFrame:
     """Return all profiles for a run."""
     return (
-        get_connection(read_only=True)
+        get_connection()
         .execute(
             "SELECT * FROM cluster_profiles WHERE run_id = ? ORDER BY cluster_id",
             [run_id],
         )
         .pl()
     )
-
-
-# ---------------------------------------------------------------------------
-# Multi-K results
-# ---------------------------------------------------------------------------
 
 
 def insert_run_multi_k(run_id: int, results: list[dict]) -> None:
@@ -448,7 +441,7 @@ def insert_run_multi_k(run_id: int, results: list[dict]) -> None:
 def fetch_run_multi_k(run_id: int) -> pl.DataFrame:
     """Return multi-K comparison results for a run as a Polars DataFrame."""
     return (
-        get_connection(read_only=True)
+        get_connection()
         .execute(
             "SELECT k, silhouette, largest_cluster, median_size FROM run_multi_k WHERE run_id = ? ORDER BY k",
             [run_id],
@@ -457,27 +450,10 @@ def fetch_run_multi_k(run_id: int) -> pl.DataFrame:
     )
 
 
-# ---------------------------------------------------------------------------
-# Medical terminologies & embeddings
-# ---------------------------------------------------------------------------
-
-
-def get_embedding(code: str, code_type: str, model: str | None = None) -> list | None:
-    result = (
-        get_connection(read_only=True)
-        .execute(
-            "SELECT embedding FROM medical_terminologies WHERE model = $model AND code = $code AND code_type = $code_type",
-            {"model": model or DEFAULT_MODEL, "code": code, "code_type": code_type},
-        )
-        .fetchone()
-    )
-    return result[0] if result else None
-
-
 def get_all_embeddings(model: str | None = None) -> list[dict]:
     """Get all embeddings with their metadata."""
     rows = (
-        get_connection(read_only=True)
+        get_connection()
         .execute(
             "SELECT id, code, code_type, description, embedding FROM medical_terminologies WHERE model = $model ORDER BY id",
             {"model": model or DEFAULT_MODEL},
@@ -502,47 +478,28 @@ def insert(df, model: str | None = None) -> None:
 def count_terminologies(model_name: str | None = None) -> int:
     if model_name:
         return (
-            get_connection(read_only=True)
+            get_connection()
             .execute(
                 "SELECT COUNT(*) FROM medical_terminologies WHERE model = $model",
                 {"model": model_name},
             )
             .fetchone()[0]
         )
-    return (
-        get_connection(read_only=True)
-        .execute("SELECT COUNT(*) FROM medical_terminologies")
-        .fetchone()[0]
-    )
+    return get_connection().execute("SELECT COUNT(*) FROM medical_terminologies").fetchone()[0]
 
 
 def fetch_terminologies(model_name: str | None = None) -> pl.DataFrame:
     query = "SELECT id, code, description, code_type, code || ':' || code_type AS label FROM medical_terminologies"
     if model_name:
         return (
-            get_connection(read_only=True)
+            get_connection()
             .execute(
                 query + " WHERE model = $model ORDER BY id",
                 {"model": model_name},
             )
             .pl()
         )
-    return get_connection(read_only=True).execute(query + " ORDER BY id").pl()
-
-
-# ---------------------------------------------------------------------------
-# Dimensions
-# ---------------------------------------------------------------------------
-
-
-def insert_or_update_dimension(df) -> None:
-    """Insert dimension data from a Polars DataFrame into the dimensions table."""
-    with _write_con() as con:
-        con.register("df_view", df)
-        con.execute("""
-            INSERT INTO dimensions (terminology_id_1, terminology_id_2, value, dimension)
-            SELECT terminology_id_1, terminology_id_2, value, dimension FROM df_view
-        """)
+    return get_connection().execute(query + " ORDER BY id").pl()
 
 
 def insert_clinical_dimensions(model_name: str | None = None) -> None:
@@ -566,7 +523,7 @@ def insert_clinical_dimensions(model_name: str | None = None) -> None:
 
 def read_dimension(dimension: str) -> pl.DataFrame:
     return (
-        get_connection(read_only=True)
+        get_connection()
         .execute(
             "SELECT terminology_id_1, terminology_id_2, value FROM dimensions WHERE dimension = $dimension ORDER BY terminology_id_1",
             {"dimension": dimension},
@@ -577,7 +534,7 @@ def read_dimension(dimension: str) -> pl.DataFrame:
 
 def dimension_exists(dimension: str) -> bool:
     """Check if a given dimension has any rows in the dimensions table."""
-    con = get_connection(read_only=True)
+    con = get_connection()
     table_exists = con.execute(
         "SELECT 1 FROM information_schema.tables WHERE table_name = 'dimensions'"
     ).fetchone()
@@ -592,13 +549,8 @@ def dimension_exists(dimension: str) -> bool:
     )
 
 
-# ---------------------------------------------------------------------------
-# Cross-terminology pairs
-# ---------------------------------------------------------------------------
-
-
 def get_cross_terminology_pairs() -> list[tuple[str, str, str, str, str]]:
-    """Return CID10↔CIAP2 close pairs present in the DB.
+    """Return CID10-CIAP2 close pairs present in the DB.
 
     Each tuple is ``(code_a, type_a, code_b, type_b, ab_code)``, matching
     the format used in validation notebooks. All pairs are semantically
@@ -610,7 +562,7 @@ def get_cross_terminology_pairs() -> list[tuple[str, str, str, str, str]]:
     mapping = load_mapping()
 
     in_db = set(
-        get_connection(read_only=True)
+        get_connection()
         .execute("SELECT code, code_type FROM medical_terminologies")
         .pl()
         .with_columns(pl.concat_str(["code", "code_type"], separator=":").alias("key"))["key"]
