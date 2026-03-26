@@ -12,8 +12,9 @@ from vir.config import (
     INDICATIVE_CODES_FILE,
     INDICATIVE_ENABLED,
     INTERIM_DATA_DIR,
+    SKIP_PATTERNS,
 )
-from vir.data_filters import filter_min_temporal_coverage
+from vir.data_filters import filter_min_temporal_coverage, filter_skip_patterns
 from vir.db import fetch_terminologies
 
 
@@ -102,6 +103,7 @@ def load_and_prepare_dataframe(
     exclude_codes: Optional[List[str]] = None,
     year_min: Optional[int] = 2022,
     year_max: Optional[int] = 2024,
+    skip_patterns: Optional[List[Tuple]] = None,
 ) -> pl.DataFrame:
     """
     Load and prepare dataframe for view analysis.
@@ -161,6 +163,12 @@ def load_and_prepare_dataframe(
         df = df.filter(~pl.col("terminology_label").is_in(exclude_codes))
 
     print(f"After exclusion of non-indicative codes: {df.shape}")
+
+    # skip codes matching configured patterns (e.g. ICD-10 Z-chapter)
+    resolved_patterns = SKIP_PATTERNS if skip_patterns is None else skip_patterns
+    if resolved_patterns:
+        df = filter_skip_patterns(df, resolved_patterns)
+    print(f"After skip-pattern filter: {df.shape}")
 
     # ensure temporal representation
     df = filter_min_temporal_coverage(df)

@@ -41,6 +41,31 @@ CHUNK_SIZE = 100_000  # Records per chunk - adjust based on available RAM
 INDICATIVE_CODES_FILE = REFERENCES_DIR / "indicative_codes_yes_no_75perc.csv"
 INDICATIVE_ENABLED = True
 MIN_WEEKS = 12
+DEFAULT_SKIP_PATTERNS = [("cid10", r"^Z")]
+
+
+def _parse_skip_patterns(raw: str) -> list[tuple]:
+    """Parse VIROLA_SKIP_PATTERNS env var.
+
+    Format: semicolon-separated entries, each as ``code_type|regex``.
+    Use ``*`` as code_type to match all types (maps to None).
+
+    Example: ``cid10|^Z;*|^ABP``
+    """
+    result = []
+    for entry in raw.split(";"):
+        entry = entry.strip()
+        if not entry:
+            continue
+        code_type, _, regex = entry.partition("|")
+        result.append((None if code_type.strip() == "*" else code_type.strip(), regex))
+    return result
+
+
+_raw_skip = os.getenv("VIROLA_SKIP_PATTERNS")
+SKIP_PATTERNS: list[tuple] = (
+    _parse_skip_patterns(_raw_skip) if _raw_skip else DEFAULT_SKIP_PATTERNS
+)
 TEMPORAL_MODE = (
     "annual"  # "annual" (52-point week_of_year profile) | "chronological" (full year_week series)
 )

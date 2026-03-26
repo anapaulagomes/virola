@@ -1,5 +1,3 @@
-"""Tests for vir.notebook_widgets."""
-
 from pathlib import Path
 
 import polars as pl
@@ -10,10 +8,6 @@ from vir.notebook_widgets import (
     load_and_prepare_dataframe,
     load_indicative_codes,
 )
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture
@@ -78,11 +72,6 @@ def raw_parquet(tmp_path, terminology_labels) -> Path:
     return path
 
 
-# ---------------------------------------------------------------------------
-# load_indicative_codes
-# ---------------------------------------------------------------------------
-
-
 class TestLoadIndicativeCodes:
     def test_disabled_returns_empty_list_and_false(self):
         codes, enabled = load_indicative_codes(enabled=False)
@@ -110,11 +99,6 @@ class TestLoadIndicativeCodes:
         codes, _ = load_indicative_codes(enabled=True)
 
         assert len(codes) == 2  # Z760 and Z000
-
-
-# ---------------------------------------------------------------------------
-# load_and_prepare_dataframe
-# ---------------------------------------------------------------------------
 
 
 class TestLoadAndPrepareDataframe:
@@ -147,6 +131,7 @@ class TestLoadAndPrepareDataframe:
         df = load_and_prepare_dataframe(
             file_path=str(path),
             terminology_labels=terminology_labels,
+            skip_patterns=[],
         )
         assert df["terminology_id"].null_count() == 0
         assert df["terminology_label"].n_unique() == len(terminology_labels)
@@ -207,6 +192,7 @@ class TestLoadAndPrepareDataframe:
             file_path=str(raw_parquet),
             terminology_labels=terminology_labels,
             exclude_codes=None,
+            skip_patterns=[],
         )
         labels = set(df["terminology_label"].unique().to_list())
         expected = {"I10:cid10", "Z760:cid10", "ABP005:ab", "Z000:cid10", "K86:ciap2"}
@@ -259,10 +245,73 @@ class TestLoadAndPrepareDataframe:
         labels = df["terminology_label"].unique().to_list()
         assert "EXTRA:ab" in labels
 
+    def test_skip_patterns_removes_z_chapter_cid10(self, raw_parquet, terminology_labels):
+        df = load_and_prepare_dataframe(
+            file_path=str(raw_parquet),
+            terminology_labels=terminology_labels,
+            skip_patterns=[("cid10", r"^Z")],
+        )
+        labels = df["terminology_label"].unique().to_list()
+        assert "Z760:cid10" not in labels
+        assert "Z000:cid10" not in labels
+        assert "I10:cid10" in labels
+        assert "ABP005:ab" in labels
+        assert "K86:ciap2" in labels
 
-# ---------------------------------------------------------------------------
-# extract_dataset_name
-# ---------------------------------------------------------------------------
+    def test_skip_patterns_respects_code_type_scope(self, tmp_path, terminology_labels):
+        """A cid10 Z-pattern must not remove a ciap2 code that starts with Z."""
+        extra_labels = terminology_labels.vstack(
+            pl.DataFrame(
+                {
+                    "id": [99],
+                    "code": ["Z96"],
+                    "code_type": ["ciap2"],
+                    "description": ["some ciap2 Z code"],
+                    "label": ["Z96:ciap2"],
+                }
+            )
+        )
+        rows = []
+        for row in extra_labels.iter_rows(named=True):
+            for year in [2022, 2023]:
+                for week in range(1, 14):
+                    rows.append(
+                        {
+                            "unique_id": "uid",
+                            "state": "SP",
+                            "city": "Salvador",
+                            "region": "NE",
+                            "population_range": "large",
+                            "year": year,
+                            "week": week,
+                            "sex": "M",
+                            "age_group": "adult",
+                            "code_type": row["code_type"],
+                            "code": row["code"],
+                            "quantity": 10,
+                        }
+                    )
+        path = tmp_path / "cleaned_20municipios_z96.parquet"
+        pl.DataFrame(rows).write_parquet(path)
+
+        df = load_and_prepare_dataframe(
+            file_path=str(path),
+            terminology_labels=extra_labels,
+            skip_patterns=[("cid10", r"^Z")],
+        )
+        labels = df["terminology_label"].unique().to_list()
+        assert "Z96:ciap2" in labels
+        assert "Z760:cid10" not in labels
+
+    def test_no_skip_patterns_keeps_all_codes(self, raw_parquet, terminology_labels):
+        df = load_and_prepare_dataframe(
+            file_path=str(raw_parquet),
+            terminology_labels=terminology_labels,
+            skip_patterns=[],
+        )
+        labels = set(df["terminology_label"].unique().to_list())
+        expected = {"I10:cid10", "Z760:cid10", "ABP005:ab", "Z000:cid10", "K86:ciap2"}
+        assert expected == labels
 
 
 class TestExtractDatasetName:
