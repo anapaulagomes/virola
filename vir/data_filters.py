@@ -34,3 +34,16 @@ def filter_min_temporal_coverage(df):
     return df.filter(
         pl.col("terminology_id").is_in(more_than_min_weeks["terminology_id"].implode().first())
     )
+
+
+def filter_skip_patterns(df: pl.DataFrame, patterns: list[tuple]) -> pl.DataFrame:
+    if not patterns:
+        return df
+    mask = pl.lit(False)
+    for code_type, regex in patterns:
+        code_matches = pl.col("code").str.contains(regex)
+        if code_type is None:
+            mask = mask | code_matches
+        else:
+            mask = mask | ((pl.col("code_type") == code_type) & code_matches)
+    return df.filter(~mask)
