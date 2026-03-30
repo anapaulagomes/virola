@@ -1,5 +1,3 @@
-import numpy as np
-
 POPULATION_RANGE = [
     "< 100 mil",
     "100 - 250 mil",
@@ -67,10 +65,3 @@ IBGE_CITY_MAP = {
 }
 
 CITY_NAMES = [city["city"] for city in IBGE_CITY_MAP.values()]
-
-
-def create_weeks_cyclical_features():
-    _period = 53  # weeks in year
-    week_cos = {_week: np.cos(_week / _period * 2 * np.pi) for _week in range(_period + 1)}
-    week_sin = {_week: np.sin(_week / _period * 2 * np.pi) for _week in range(_period + 1)}
-    return week_cos, week_sin
