@@ -18,15 +18,9 @@ def _():
 def _():
     from umap import UMAP
 
-    return (UMAP,)
-
-
-@app.cell
-def _():
     from vir.db import get_all_embeddings
-    from vir.terminologies.encode import encode_text
 
-    return encode_text, get_all_embeddings
+    return UMAP, get_all_embeddings
 
 
 @app.cell
