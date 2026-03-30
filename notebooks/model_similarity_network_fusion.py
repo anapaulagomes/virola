@@ -85,10 +85,10 @@ def _(mo):
 
 @app.cell
 def _(CLUSTERING_DIR, Path, args, datetime):
-    year_min = args.get("year_min", 2022)
-    year_max = args.get("year_max", 2024)
-    snf_k = args.get("snf_k", 10)
-    n_clusters = args.get("n_clusters", 200)
+    year_min = args.get("year-min", 2022)
+    year_max = args.get("year-max", 2024)
+    snf_k = args.get("snf-k", 10)
+    n_clusters = args.get("n-clusters", 200)
     output_dir = Path(args.get("output") or str(CLUSTERING_DIR))
     notes = args.get("notes") or None
     run_start = datetime.now().isoformat()
@@ -112,7 +112,7 @@ def _(load_terminology_labels):
 @app.cell
 def _(args, load_indicative_codes):
     exclude_codes, indicative_codes_enabled = load_indicative_codes(
-        enabled=not args.get("no_indicative", False)
+        enabled="no-indicative" not in args
     )
     return exclude_codes, indicative_codes_enabled
 

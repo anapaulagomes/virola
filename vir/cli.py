@@ -289,6 +289,9 @@ def pipeline_run(
     no_indicative: bool = typer.Option(
         False, "--no-indicative", help="Include all codes (skip indicative filtering)"
     ),
+    notes: Optional[str] = typer.Option(
+        None, "--notes", help="Free-text note attached to the SNF run (e.g. 'run for paper')"
+    ),
 ):
     """Run complete pipeline for a city: clean -> views -> model snf."""
 
@@ -395,6 +398,8 @@ def pipeline_run(
         str(CLUSTERING_DIR),
         *indicative_args,
     ]
+    if notes:
+        args.extend(["--notes", notes])
     exit_code = run_marimo_notebook(notebook, args)
     if exit_code != 0:
         typer.secho("✗ SNF clustering failed", fg=typer.colors.RED)

@@ -71,8 +71,8 @@ def _(mo):
 
 @app.cell
 def _(args):
-    year_min = args.get("year_min", 2022)
-    year_max = args.get("year_max", 2024)
+    year_min = args.get("year-min", 2022)
+    year_max = args.get("year-max", 2024)
     return year_max, year_min
 
 
@@ -124,7 +124,7 @@ def _(mo):
 @app.cell
 def _(args, load_indicative_codes):
     exclude_codes, indicative_codes_enabled = load_indicative_codes(
-        enabled=not args.get("no_indicative", False)
+        enabled="no-indicative" not in args
     )
     return exclude_codes, indicative_codes_enabled
 
