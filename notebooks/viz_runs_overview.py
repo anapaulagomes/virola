@@ -169,8 +169,8 @@ def _(mo):
 
 
 @app.cell
-def _(mo, runs_df):
-    city_options = runs_df.sort("city")["city"].drop_nulls().unique(maintain_order=True).to_list()
+def _(all_runs, mo):
+    city_options = all_runs.sort("city")["city"].drop_nulls().unique(maintain_order=True).to_list()
     multi_k_city = mo.ui.dropdown(
         options=city_options, label="City", value=city_options[0] if city_options else None
     )
@@ -179,27 +179,50 @@ def _(mo, runs_df):
 
 
 @app.cell
-def _(fetch_run_multi_k, mo, multi_k_city, pl, px, runs_df):
+def _(all_runs, fetch_run_multi_k, mo, multi_k_city, pl, px):
     mo.stop(not multi_k_city.value)
 
-    _run_id = runs_df.filter(pl.col("city") == multi_k_city.value)["run_id"][0]
-    _multi_k = fetch_run_multi_k(_run_id)
+    _city_runs = (
+        all_runs.filter(pl.col("city") == multi_k_city.value)
+        .sort("created_at", descending=True)
+        .select(["run_id", "created_at", "notes", "n_clusters"])
+    )
 
     mo.stop(
-        _multi_k.is_empty(),
+        _city_runs.is_empty(),
+        mo.callout(mo.md(f"No runs found for {multi_k_city.value}."), kind="warn"),
+    )
+
+    _frames = []
+    for _row in _city_runs.iter_rows(named=True):
+        _mk = fetch_run_multi_k(_row["run_id"])
+        if _mk.is_empty():
+            continue
+        _label = f"#{_row['run_id']}"
+        if _row["notes"]:
+            _label += f" – {_row['notes']}"
+        _frames.append(_mk.with_columns(pl.lit(_label).alias("run")))
+
+    mo.stop(
+        not _frames,
         mo.callout(
-            mo.md(f"No multi-K data for run #{_run_id}. Re-run the pipeline to populate."),
+            mo.md(
+                f"No multi-K data for any {multi_k_city.value} run. Re-run the pipeline to populate."
+            ),
             kind="warn",
         ),
     )
 
+    _combined = pl.concat(_frames)
+
     _fig = px.line(
-        _multi_k,
+        _combined,
         x="k",
         y="silhouette",
+        color="run",
         markers=True,
-        title=f"Silhouette vs K — {multi_k_city.value} (run #{_run_id})",
-        labels={"k": "Number of clusters (K)", "silhouette": "Silhouette Score"},
+        title=f"Silhouette vs K — {multi_k_city.value}",
+        labels={"k": "Number of clusters (K)", "silhouette": "Silhouette Score", "run": "Run"},
     )
     _fig
     return
