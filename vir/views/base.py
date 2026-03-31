@@ -56,9 +56,17 @@ class BaseView(ABC):
         """
         cache_key = self._get_cache_key()
 
+        n_expected = len(self.get_terminology_ids())
         if not force_recompute and cache_key in self.cache:
-            print(f"Loading {self.view_type} matrix from cache...")
-            return self.cache[cache_key]
+            cached_matrix = self.cache[cache_key]
+            if cached_matrix.shape == (n_expected, n_expected):
+                print(f"Loading {self.view_type} matrix from cache...")
+                return cached_matrix
+            print(
+                f"Cache size mismatch for {self.view_type} "
+                f"(cached {cached_matrix.shape[0]} × {cached_matrix.shape[0]}, "
+                f"expected {n_expected} × {n_expected}) — recomputing."
+            )
 
         print(f"Computing {self.view_type} matrix...")
         matrix = self.compute()

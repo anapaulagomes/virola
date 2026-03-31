@@ -7,18 +7,22 @@ Responsible for:
 """
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 import polars as pl
 
 from vir.config import DATA_DIR, logger
 from vir.db import (
+    fetch_cluster_profiles,
+    get_connection,
     insert_cluster_assignments,
     insert_run,
     insert_run_multi_k,
     upsert_cluster_profile,
 )
 from vir.features import IBGE_CITY_MAP
+from vir.modeling.clustering.describe import describe_cluster, get_llm_model
 
 # ---------------------------------------------------------------------------
 # City metadata resolution
@@ -246,8 +250,6 @@ def explain_clusters(
         demographic_distance: Aligned demographic distance matrix (N x N, float32).
         temporal_distance:    Aligned temporal distance matrix (N x N, float32).
     """
-    from vir.db import fetch_cluster_profiles, get_connection
-
     profiles = fetch_cluster_profiles(run_id)
     if profiles.is_empty():
         logger.warning(f"No profiles found for run {run_id}. Run build_cluster_profiles first.")
@@ -373,47 +375,70 @@ def explain_clusters(
 # ---------------------------------------------------------------------------
 
 
-def populate_llm_descriptions(run_id: int) -> None:
+def _build_labels_count(row: dict) -> dict[str, float | int]:
+    explanation = json.loads(row["explanation"]) if row.get("explanation") else {}
+    member_centralities = explanation.get("member_centralities") if explanation else None
+    if member_centralities:
+        return {
+            m["description"]: m["centrality"]
+            for m in member_centralities[:10]
+            if m.get("description")
+        }
+    top_codes = json.loads(row["top_codes"])
+    return {f"{c['code']} ({c['code_type']})": c["total"] for c in top_codes[:10]}
+
+
+def populate_llm_descriptions(run_id: int, max_workers: int = 4) -> None:
     """Generate and store LLM descriptions for all clusters in a run.
 
-    Reads top_codes from cluster_profiles and calls describe_cluster.
+    LLM calls are dispatched in parallel (up to max_workers at a time) to
+    overlap HTTP latency to the Ollama server. Writes to the database are
+    done serially after all results are collected.
+
     Safe to re-run — already-described clusters are skipped.
     """
-    from vir.db import fetch_cluster_profiles
-    from vir.modeling.clustering.describe import describe_cluster
-
     profiles = fetch_cluster_profiles(run_id)
     if profiles.is_empty():
         logger.warning(f"No profiles for run {run_id}. Run build_cluster_profiles first.")
         return
 
-    for row in profiles.iter_rows(named=True):
-        if row["llm_short_description"]:
-            continue
-        if not row["top_codes"]:
-            continue
+    work_items = [
+        (row["cluster_id"], _build_labels_count(row))
+        for row in profiles.iter_rows(named=True)
+        if not row["llm_short_description"] and row["top_codes"]
+    ]
 
-        explanation = json.loads(row["explanation"]) if row.get("explanation") else {}
-        member_centralities = explanation.get("member_centralities") if explanation else None
+    if not work_items:
+        logger.info(f"All clusters in run {run_id} already have LLM descriptions.")
+        return
 
-        if member_centralities:
-            labels_count = {
-                m["description"]: m["centrality"]
-                for m in member_centralities[:10]
-                if m.get("description")
-            }
-        else:
-            top_codes = json.loads(row["top_codes"])
-            labels_count = {f"{c['code']} ({c['code_type']})": c["total"] for c in top_codes[:10]}
+    try:
+        model = get_llm_model()
+    except KeyError:
+        return
 
-        desc = describe_cluster(labels_count)
+    results: dict[int, dict] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(describe_cluster, labels_count, model): cluster_id
+            for cluster_id, labels_count in work_items
+        }
+        for future in as_completed(futures):
+            cluster_id = futures[future]
+            try:
+                results[cluster_id] = future.result()
+            except Exception as error:
+                logger.warning(f"LLM description failed for cluster {cluster_id}: {error}")
 
+    for cluster_id, desc in results.items():
         upsert_cluster_profile(
             run_id=run_id,
-            cluster_id=row["cluster_id"],
+            cluster_id=cluster_id,
             llm_short_description=desc.get("short_description"),
             llm_description=desc.get("description"),
             llm_abbreviation=desc.get("abbreviation"),
         )
 
-    logger.info(f"LLM descriptions populated for run {run_id}.")
+    logger.info(
+        f"LLM descriptions populated for run {run_id}: {len(results)}/{len(work_items)} clusters."
+    )
