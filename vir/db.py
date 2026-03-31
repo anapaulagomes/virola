@@ -1,4 +1,7 @@
 import atexit
+import os
+import re
+import signal
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -15,64 +18,131 @@ PROJECT_DB = DATA_DIR / "virola.db"
 # ---------------------------------------------------------------------------
 # Connection
 #
-# One connection per process — the DuckDB-recommended pattern for in-process
-# use. The same connection serves both reads and writes; opening two
-# connections with different modes on the same file raises an error.
+# Two singletons: one read-only (default), one read-write.
 #
-# Cross-process locking: DuckDB allows only one writer at a time on a local
-# file.  get_connection() retries with backoff so a viewer notebook can
-# connect once the writer (e.g. the SNF runner) releases the lock.
+# DuckDB local-file locking rules:
+#   - At most ONE writer at a time. While a writer holds the lock, no other
+#     process can open the file (not even read-only).
+#   - Multiple read-only connections are allowed simultaneously when there is
+#     no writer.
+#
+# Strategy:
+#   - All reads use get_connection() — read-only by default. Multiple
+#     notebooks can coexist freely, and will retry while a writer holds the lock.
+#   - Write operations use get_connection(write=True). Only one write
+#     connection exists per process; the atexit handler closes it on clean exit.
 # ---------------------------------------------------------------------------
 
-_connection: duckdb.DuckDBPyConnection | None = None
+_write_connection: duckdb.DuckDBPyConnection | None = None
+_read_only_connection: duckdb.DuckDBPyConnection | None = None
 DB_CONFIG = {"threads": get_n_jobs()}
 
 
-def get_connection(*, retries: int = 20, delay: float = 0.5) -> duckdb.DuckDBPyConnection:
-    """Return the single shared connection for this process.
+def _parse_lock_pid(error_message: str) -> int | None:
+    """Extract the PID from a DuckDB lock error message.
 
-    DuckDB is designed for in-process use — one connection per process is
-    the recommended pattern. A writable
-    connection satisfies all reads, and DuckDB raises if both modes are
-    opened on the same file in the same process.
+    DuckDB reports: ``Conflicting lock is held in ... (PID 12345) by user ...``
+    """
+    match = re.search(r"\(PID\s+(\d+)\)", error_message)
+    return int(match.group(1)) if match else None
 
-    The retry loop handles the cross-process write-lock: if another process
-    (e.g. the SNF runner) holds the file, callers wait up to
+
+def _release_orphaned_lock(pid: int) -> bool:
+    """Send SIGTERM to a process if it belongs to the current user.
+
+    Returns True if the signal was sent, False if the process doesn't exist
+    or belongs to a different user.
+    """
+    try:
+        os.kill(pid, signal.SIGTERM)
+        from vir.config import logger
+
+        logger.warning(f"Released orphaned DuckDB lock held by PID {pid}.")
+        time.sleep(0.5)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return False
+
+
+def _open_connection(*, write: bool, retries: int, delay: float) -> duckdb.DuckDBPyConnection:
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            return duckdb.connect(PROJECT_DB, read_only=not write, config=DB_CONFIG)
+        except duckdb.IOException as error:
+            last_exc = error
+            if attempt == 0:
+                pid = _parse_lock_pid(str(error))
+                if pid and _release_orphaned_lock(pid):
+                    continue
+            time.sleep(delay)
+    raise last_exc  # type: ignore[misc]
+
+
+def get_connection(
+    *, write: bool = False, retries: int = 20, delay: float = 0.5
+) -> duckdb.DuckDBPyConnection:
+    """Return the shared connection for this process.
+
+    Read-only by default — safe to call from notebooks and all read paths.
+    Multiple read-only connections can coexist across processes.
+
+    Pass ``write=True`` only from code that inserts or updates data.
+    A write connection requires exclusive file access and blocks all other
+    processes until it is closed.
+
+    DuckDB forbids opening the same file with different configurations in the
+    same process. To avoid this, read requests are served by the write
+    connection when one is already open (a write connection can read too).
+    Conversely, if a write connection is requested after a read-only one was
+    already opened, the read-only connection is closed first.
+
+    The retry loop handles cross-process contention: callers wait up to
     ``retries * delay`` seconds before raising.
     """
-    global _connection
+    global _write_connection, _read_only_connection
 
-    if _connection is None:
-        last_exc: Exception | None = None
-        for _ in range(retries):
-            try:
-                _connection = duckdb.connect(PROJECT_DB, config=DB_CONFIG)
-                atexit.register(_close_connection)
-                break
-            except duckdb.ConnectionException as e:
-                last_exc = e
-                time.sleep(delay)
-        else:
-            raise last_exc  # type: ignore[misc]
-    return _connection
+    if write:
+        if _write_connection is None:
+            if _read_only_connection is not None:
+                _close_read_only_connection()
+            _write_connection = _open_connection(write=True, retries=retries, delay=delay)
+            atexit.register(_close_write_connection)
+        return _write_connection
+    else:
+        if _write_connection is not None:
+            return _write_connection
+        if _read_only_connection is None:
+            _read_only_connection = _open_connection(write=False, retries=retries, delay=delay)
+            atexit.register(_close_read_only_connection)
+        return _read_only_connection
 
 
-def _close_connection() -> None:
-    global _connection
-    if _connection is not None:
-        _connection.close()
-        _connection = None
+def _close_write_connection() -> None:
+    global _write_connection
+    if _write_connection is not None:
+        _write_connection.close()
+        _write_connection = None
+
+
+def _close_read_only_connection() -> None:
+    global _read_only_connection
+    if _read_only_connection is not None:
+        _read_only_connection.close()
+        _read_only_connection = None
 
 
 @contextmanager
-def _write_con() -> Iterator[duckdb.DuckDBPyConnection]:
-    """Yields the shared connection for a write block (semantic sugar only)."""
-    yield get_connection()
+def _write_context() -> Iterator[duckdb.DuckDBPyConnection]:
+    """Yields the shared write connection for a write block (semantic sugar only)."""
+    yield get_connection(write=True)
 
 
 def create_results_schema():
     """Create runs, cluster_assignments and cluster_profiles tables if they don't exist."""
-    with _write_con() as con:
+    with _write_context() as con:
         con.execute("""
             CREATE SEQUENCE IF NOT EXISTS run_id_sequence START 1;
 
@@ -161,7 +231,7 @@ def create_embeddings_table_if_not_exists():
 
 
 def create_dimensions_table_if_not_exists():
-    with _write_con() as con:
+    with _write_context() as con:
         con.execute("""
             CREATE SEQUENCE IF NOT EXISTS id_sequence START 1;
             CREATE TABLE IF NOT EXISTS dimensions (
@@ -252,7 +322,7 @@ def insert_run(
 
 def update_run_finished_at(run_id: int) -> None:
     """Stamp finished_at on an existing run with the current timestamp."""
-    with _write_con() as con:
+    with _write_context() as con:
         con.execute("UPDATE runs SET finished_at = now() WHERE run_id = ?", [run_id])
 
 
@@ -322,7 +392,7 @@ def insert_cluster_assignments(run_id: int, assignments: list[dict]) -> None:
         assignments: List of {terminology_id, cluster_id} dicts.
     """
     df = pl.DataFrame(assignments).with_columns(pl.lit(run_id).alias("run_id"))
-    with _write_con() as con:
+    with _write_context() as con:
         con.register("assignments_view", df)
         con.execute("""
             INSERT INTO cluster_assignments (run_id, terminology_id, cluster_id)
@@ -366,7 +436,7 @@ def upsert_cluster_profile(
 ) -> None:
     """Insert or update a cluster profile (subset of fields can be provided)."""
     create_results_schema()
-    with _write_con() as con:
+    with _write_context() as con:
         con.execute(
             """
             INSERT INTO cluster_profiles (
@@ -429,7 +499,7 @@ def insert_run_multi_k(run_id: int, results: list[dict]) -> None:
         (run_id, r["n_clusters"], r["silhouette"], r["largest_cluster"], r["median_size"])
         for r in results
     ]
-    with _write_con() as con:
+    with _write_context() as con:
         con.executemany(
             """
             INSERT INTO run_multi_k (run_id, k, silhouette, largest_cluster, median_size)
@@ -472,7 +542,7 @@ def get_all_embeddings(model: str | None = None) -> list[dict]:
 
 
 def insert(df, model: str | None = None) -> None:
-    with _write_con() as con:
+    with _write_context() as con:
         con.register("df_view", df)
         con.execute(
             "INSERT INTO medical_terminologies (code, code_type, description, model, embedding) SELECT code, code_type, description, $model AS model, embedding FROM df_view",
@@ -509,7 +579,7 @@ def fetch_terminologies(model_name: str | None = None) -> pl.DataFrame:
 
 def insert_clinical_dimensions(model_name: str | None = None) -> None:
     """Compute and insert pairwise cosine similarities for all terminologies."""
-    with _write_con() as con:
+    with _write_context() as con:
         con.execute(
             f"""
             INSERT INTO dimensions
