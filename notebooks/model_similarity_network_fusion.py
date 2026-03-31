@@ -30,12 +30,13 @@ def _():
     import plotly.express as px
     import plotly.graph_objects as go
     import polars as pl
+    import snf
     import umap
     from dotenv import load_dotenv
     from sklearn import cluster
     from snf import compute, metrics
 
-    return Path, cluster, compute, datetime, go, load_dotenv, metrics, mo, np, pl, px, umap
+    return Path, cluster, compute, datetime, go, load_dotenv, metrics, mo, np, pl, px, snf, umap
 
 
 @app.cell
@@ -616,7 +617,7 @@ def _(cluster_sizes, n_clusters, px):
 
 
 @app.cell
-def _(cluster, common_ids, fused, metrics, np, pl):
+def _(cluster, common_ids, fused, metrics, np, pl, snf):
     multi_k_results = []
 
     for _nr_cluster in [50, 100, 150, 200, 250, 300]:
@@ -639,8 +640,10 @@ def _(cluster, common_ids, fused, metrics, np, pl):
             }
         )
 
+    suggested_k = int(snf.get_n_clusters(fused)[0])
+
     pl.DataFrame(multi_k_results)
-    return (multi_k_results,)
+    return multi_k_results, suggested_k
 
 
 @app.cell
@@ -667,6 +670,7 @@ def _(
     save_run,
     silhouette,
     snf_k,
+    suggested_k,
     update_run_finished_at,
     year_max,
     year_min,
@@ -696,6 +700,7 @@ def _(
         n_singletons=n_singletons,
         pct_singletons=pct_singletons,
         multi_k_results=multi_k_results,
+        suggested_k=suggested_k,
     )
     update_run_finished_at(run_id)
     print(f"💾 Run {run_id} saved to virola.db")

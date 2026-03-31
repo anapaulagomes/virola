@@ -140,11 +140,12 @@ def create_results_schema():
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS cluster_median      FLOAT;
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS n_singletons        INTEGER;
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS pct_singletons      FLOAT;
+            ALTER TABLE runs ADD COLUMN IF NOT EXISTS suggested_k         INTEGER;
         """)
 
 
 def create_embeddings_table_if_not_exists():
-    with _write_con() as con:
+    with _write_context() as con:
         con.execute("""
             CREATE SEQUENCE IF NOT EXISTS id_sequence START 1;
             CREATE TABLE IF NOT EXISTS medical_terminologies(
@@ -199,11 +200,12 @@ def insert_run(
     cluster_median: float | None = None,
     n_singletons: int | None = None,
     pct_singletons: float | None = None,
+    suggested_k: int | None = None,
 ) -> int:
     """Insert a new run and return its run_id."""
     create_results_schema()
     _created_at = created_at if created_at is not None else datetime.now().isoformat()
-    with _write_con() as con:
+    with _write_context() as con:
         result = con.execute(
             """
             INSERT INTO runs (
@@ -212,8 +214,9 @@ def insert_run(
                 indicative_enabled, silhouette_score, affinity_zscore, notes, created_at, finished_at,
                 n_codes_clinical, n_codes_temporal, n_codes_demographic, n_codes_common,
                 n_missing_temporal, n_missing_demographic,
-                cluster_largest, cluster_median, n_singletons, pct_singletons
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                cluster_largest, cluster_median, n_singletons, pct_singletons,
+                suggested_k
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING run_id
             """,
             [
@@ -241,6 +244,7 @@ def insert_run(
                 cluster_median,
                 n_singletons,
                 pct_singletons,
+                suggested_k,
             ],
         ).fetchone()
     return result[0]
@@ -298,6 +302,7 @@ def fetch_runs() -> pl.DataFrame:
                n_codes_clinical, n_codes_temporal, n_codes_demographic, n_codes_common,
                n_missing_temporal, n_missing_demographic,
                cluster_largest, cluster_median, n_singletons, pct_singletons,
+               suggested_k,
                notes, created_at, finished_at,
                CASE
                    WHEN finished_at IS NOT NULL
