@@ -66,9 +66,8 @@ _raw_skip = os.getenv("VIROLA_SKIP_PATTERNS")
 SKIP_PATTERNS: list[tuple] = (
     _parse_skip_patterns(_raw_skip) if _raw_skip else DEFAULT_SKIP_PATTERNS
 )
-TEMPORAL_MODE = (
-    "annual"  # "annual" (52-point week_of_year profile) | "chronological" (full year_week series)
-)
+TEMPORAL_MODE = "chronological"  # "chronological" (full year_week series) | "annual" (52-point week_of_year profile)
+TEMPORAL_NORMALIZATION = "minmax"  # "minmax" (row min→0, max→1) | "zscore" (mean=0, std=1)
 
 
 def get_indicative_label(enabled: bool = INDICATIVE_ENABLED) -> str:

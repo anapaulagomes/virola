@@ -6,7 +6,7 @@ import numpy as np
 import polars as pl
 from aeon.distances import pairwise_distance
 
-from vir.config import MIN_WEEKS, TEMPORAL_MODE
+from vir.config import MIN_WEEKS, TEMPORAL_MODE, TEMPORAL_NORMALIZATION
 from vir.helpers import get_n_jobs
 from vir.views.base import BaseView
 
@@ -15,7 +15,7 @@ class TemporalView(BaseView):
     """
     Temporal view: captures the annual seasonal pattern of each diagnosis.
 
-    Two modes are supported (controlled by the ``mode`` param, default ``"annual"``):
+    Two modes are supported (controlled by the ``mode`` param, default ``"chronological"``):
 
     ``"annual"``
         Each diagnosis is represented as a 52-point week-of-year profile — the
@@ -29,11 +29,18 @@ class TemporalView(BaseView):
         multi-year trends and outbreak timing but is noisy for short datasets
         (< 5 years) and produces flat MSM distances for sparse codes.
 
-    Normalization: minmax per row (row min → 0, row max → 1).  Preserves the
-    sparsity structure — zero weeks stay zero — while removing magnitude
-    differences between high- and low-frequency diagnoses.  This prevents
-    two sparse-but-unrelated diseases from appearing identical after normalization
-    (the failure mode of z-score on near-zero series).
+    Normalization (controlled by the ``normalization`` param, default ``"minmax"``):
+
+    ``"minmax"``
+        Row min → 0, row max → 1.  Preserves the sparsity structure —
+        zero weeks stay zero — while removing magnitude differences.
+        Recommended: prevents two sparse, unrelated codes from getting
+        artificially low MSM distances due to a shared uniform negative
+        baseline (the failure mode of z-score on near-zero series).
+
+    ``"zscore"``
+        Mean=0, std=1 per row.  Constant rows (std=0) are zeroed out.
+        Available for ablation comparison.
 
     Distance: MSM (Move-Split-Merge).
     """
@@ -43,6 +50,10 @@ class TemporalView(BaseView):
     @cached_property
     def _mode(self) -> str:
         return self.params.get("mode", TEMPORAL_MODE)
+
+    @cached_property
+    def _normalization(self) -> str:
+        return self.params.get("normalization", TEMPORAL_NORMALIZATION)
 
     @cached_property
     def _pivot_df(self) -> pl.DataFrame:
@@ -134,6 +145,23 @@ class TemporalView(BaseView):
             .sort("terminology_id")
         )
 
+    def _get_cache_key(self) -> str:
+        """Extend the base cache key with the effective temporal config values.
+
+        ``mode``, ``normalization`` and ``min_weeks`` can be supplied via
+        ``params`` or fall back to the module-level config defaults.  Either
+        way they affect the shape of ``_pivot_df`` and therefore the matrix
+        size, so they must be part of the cache key even when not passed
+        explicitly.
+        """
+        effective_mode = self.params.get("mode", TEMPORAL_MODE)
+        effective_normalization = self.params.get("normalization", TEMPORAL_NORMALIZATION)
+        effective_min_weeks = self.params.get("min_weeks", MIN_WEEKS)
+        suffix = (
+            f"mode={effective_mode}_norm={effective_normalization}_min_weeks={effective_min_weeks}"
+        )
+        return f"{super()._get_cache_key()}_{suffix}"
+
     def get_terminology_ids(self) -> list:
         """Ordered list of terminology_ids in the temporal matrix."""
         return self._pivot_df["terminology_id"].to_list()
@@ -153,19 +181,30 @@ class TemporalView(BaseView):
 
     def compute(self) -> np.ndarray:
         """
-        Compute pairwise MSM distance on minmax-normalised series.
+        Compute pairwise MSM distance on normalised series.
 
-        Minmax normalization scales each row to [0, 1], preserving the
-        sparsity structure (zero weeks stay zero) while removing magnitude
-        differences.  This prevents sparse, unrelated diagnoses from
-        appearing identical after normalization — the failure mode of
-        z-score on near-zero series.
+        Normalization is controlled by the ``normalization`` param (default ``"minmax"``):
+
+        ``"minmax"``
+            Scales each row to [0, 1].  Zero weeks stay zero, preserving the
+            sparsity structure and the semantics of "no cases this week".
+            Recommended for chronological mode — prevents the Z-score failure
+            where two sparse, unrelated codes get artificially similar distances
+            due to a shared uniform negative baseline.
+
+        ``"zscore"``
+            Standardises each row to mean=0, std=1.  Constant rows (std=0)
+            are zeroed out.  Use for comparison / ablation only.
 
         Returns:
             float32 distance matrix (N × N).
         """
         temporal_matrix = self._create_temporal_matrix()
-        temporal_matrix_normalized = self.normalize_minmax(temporal_matrix)
+
+        if self._normalization == "zscore":
+            temporal_matrix_normalized = self.normalize_zscore(temporal_matrix)
+        else:
+            temporal_matrix_normalized = self.normalize_minmax(temporal_matrix)
 
         c = self.params.get("c", 1.0)
         n_jobs = self.params.get("n_jobs", get_n_jobs())
