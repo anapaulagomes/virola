@@ -65,6 +65,7 @@ def _(mo, runs_df):
         "year_max",
         "snf_k",
         "n_clusters",
+        "suggested_k",
         "silhouette_score",
         "affinity_zscore",
         "n_codes_common",
@@ -105,6 +106,46 @@ def _(px, runs_df):
         labels={"silhouette_score": "Silhouette", "city": "City"},
     )
     _fig.update_layout(xaxis_tickangle=-30)
+    _fig
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md("""
+    ## n_clusters vs suggested_k by city
+    """)
+    return
+
+
+@app.cell
+def _(mo, px, runs_df):
+    mo.stop(
+        "suggested_k" not in runs_df.columns or runs_df["suggested_k"].is_null().all(),
+        mo.callout(
+            mo.md("No `suggested_k` data yet. Re-run the pipeline to populate."), kind="warn"
+        ),
+    )
+
+    _fig = px.scatter(
+        runs_df,
+        x="suggested_k",
+        y="n_clusters",
+        color="city",
+        hover_data=["run_id", "silhouette_score", "affinity_zscore"],
+        title="Chosen K vs Eigengap-Suggested K per City",
+        labels={"suggested_k": "Suggested K (eigengap)", "n_clusters": "Chosen K"},
+    )
+    _fig.add_shape(
+        type="line",
+        x0=0,
+        y0=0,
+        x1=1,
+        y1=1,
+        xref="paper",
+        yref="paper",
+        line=dict(dash="dash", color="grey"),
+    )
     _fig
     return
 
