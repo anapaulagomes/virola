@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from vir.config import logger
 
-LLM_MODEL = "llama3.2:latest"
+LLM_MODEL = "llama3.2:1b"
 PROMPT = """
 Give me a short descriptive name for a potential syndrome for a syndromic surveillance system
 composed by the following diagnoses:
@@ -28,7 +28,16 @@ def _cache_description_key(labels: list[str]):
     return "-".join([label.replace(" ", "_") for label in labels])
 
 
-def describe_cluster(terminology_labels_count: dict[str, float | int]):
+def get_llm_model():
+    """Resolve and return the LLM model. Raises KeyError if not available."""
+    try:
+        return llm.get_model(LLM_MODEL)
+    except KeyError:
+        logger.error(f"Model '{LLM_MODEL}' not available. Check Ollama installation.")
+        raise
+
+
+def describe_cluster(terminology_labels_count: dict[str, float | int], model=None):
     if not terminology_labels_count:
         return {"short_description": "", "description": "", "abbreviation": ""}
     sorted_dict = dict(
@@ -42,11 +51,8 @@ def describe_cluster(terminology_labels_count: dict[str, float | int]):
     labels_in_human_format = "\n".join(
         [f"{label} ({count})" for label, count in sorted_dict.items()]
     )
-    try:
-        model = llm.get_model(LLM_MODEL)
-    except KeyError:
-        logger.error("Model not available. Check Ollama installation.")
-        return {field: "" for field in ClusterDescription.model_fields}
+    if model is None:
+        model = get_llm_model()
 
     response = model.prompt(
         PROMPT.format(labels_in_human_format=labels_in_human_format), schema=ClusterDescription
