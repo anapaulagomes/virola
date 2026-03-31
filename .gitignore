@@ -198,3 +198,4 @@ package.json
 # local files
 archive/
 local_references/
+*.pdf
