@@ -502,7 +502,7 @@ def _(mo, pl, profile_demographic, px):
 
 
 @app.cell
-def _(assignments, cluster_dropdown, mo, pl, profile_top_codes, px):
+def _(assignments, cluster_dropdown, mo, pl, profile_explanation, profile_top_codes, px):
     _cluster_assignments = assignments.filter(pl.col("cluster_id") == cluster_dropdown.value)
 
     # Treemap from top_codes (DB)
@@ -526,7 +526,7 @@ def _(assignments, cluster_dropdown, mo, pl, profile_top_codes, px):
             title="Code composition (all codes, no case counts)",
         )
 
-    # Member table: all codes from assignments, annotated with case counts from top_codes
+    # Member table: all codes from assignments, annotated with case counts and centrality
     if profile_top_codes:
         _top_lookup = {(r["code"], r["code_type"]): r["total"] for r in profile_top_codes}
         _member_table = _cluster_assignments.with_columns(
@@ -536,11 +536,22 @@ def _(assignments, cluster_dropdown, mo, pl, profile_top_codes, px):
                 return_dtype=pl.Int64,
             )
             .alias("total_cases")
-        ).sort("total_cases", descending=True, nulls_last=True)
+        )
     else:
         _member_table = _cluster_assignments.with_columns(
             pl.lit(None).cast(pl.Int64).alias("total_cases")
         )
+
+    _centrality_lookup = {}
+    if profile_explanation:
+        for _m in profile_explanation.get("member_centralities", []):
+            _centrality_lookup[_m["terminology_id"]] = _m["centrality"]
+
+    _member_table = _member_table.with_columns(
+        pl.col("terminology_id")
+        .map_elements(lambda x: _centrality_lookup.get(x), return_dtype=pl.Float64)
+        .alias("centrality")
+    ).sort("centrality", descending=True, nulls_last=True)
 
     mo.vstack(
         [
@@ -549,7 +560,7 @@ def _(assignments, cluster_dropdown, mo, pl, profile_top_codes, px):
             mo.md("### Member Codes"),
             mo.ui.table(
                 _member_table.select(
-                    ["cluster_id", "code", "code_type", "description", "total_cases"]
+                    ["code", "code_type", "description", "total_cases", "centrality"]
                 ),
                 selection=None,
             ),
