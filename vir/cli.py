@@ -9,8 +9,19 @@ import typer
 
 from vir.config import CLUSTERING_DIR, DEFAULT_MODEL, PROJ_ROOT
 from vir.dataset import app as helper_app
+from vir.db import (
+    fetch_cluster_assignments,
+    fetch_runs,
+)
 from vir.features import CITY_NAMES
 from vir.helpers import get_n_jobs
+from vir.notebook_widgets import (
+    extract_dataset_name,
+    load_and_prepare_dataframe,
+    load_indicative_codes,
+    load_terminology_labels,
+)
+from vir.views import ClinicalView, DemographicView, TemporalView
 
 app = typer.Typer(
     name="vir",
@@ -420,7 +431,6 @@ def pipeline_run(
 @results_app.command("list")
 def results_list():
     """List all saved runs."""
-    from vir.db import fetch_runs
 
     runs = fetch_runs()
     if runs.is_empty():
@@ -440,12 +450,6 @@ def results_build_profiles(
     ),
 ):
     """Build cluster profiles (stats + temporal + demographic) for a run."""
-    from vir.db import fetch_cluster_assignments
-    from vir.notebook_widgets import (
-        load_and_prepare_dataframe,
-        load_indicative_codes,
-        load_terminology_labels,
-    )
     from vir.results import build_cluster_profiles
 
     terminology_labels = load_terminology_labels()
@@ -498,15 +502,7 @@ def results_explain(
     Requires build-profiles to have been run first.
     """
 
-    from vir.db import fetch_cluster_assignments
-    from vir.notebook_widgets import (
-        extract_dataset_name,
-        load_and_prepare_dataframe,
-        load_indicative_codes,
-        load_terminology_labels,
-    )
     from vir.results import explain_clusters
-    from vir.views import ClinicalView, DemographicView, TemporalView
 
     typer.secho(f"Loading data for run {run_id}...", fg=typer.colors.BLUE)
 

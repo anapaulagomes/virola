@@ -210,7 +210,6 @@ def create_results_schema():
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS cluster_median      FLOAT;
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS n_singletons        INTEGER;
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS pct_singletons      FLOAT;
-            ALTER TABLE runs ADD COLUMN IF NOT EXISTS suggested_k         INTEGER;
         """)
 
 
@@ -270,7 +269,6 @@ def insert_run(
     cluster_median: float | None = None,
     n_singletons: int | None = None,
     pct_singletons: float | None = None,
-    suggested_k: int | None = None,
 ) -> int:
     """Insert a new run and return its run_id."""
     create_results_schema()
@@ -284,9 +282,8 @@ def insert_run(
                 indicative_enabled, silhouette_score, affinity_zscore, notes, created_at, finished_at,
                 n_codes_clinical, n_codes_temporal, n_codes_demographic, n_codes_common,
                 n_missing_temporal, n_missing_demographic,
-                cluster_largest, cluster_median, n_singletons, pct_singletons,
-                suggested_k
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                cluster_largest, cluster_median, n_singletons, pct_singletons
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING run_id
             """,
             [
@@ -314,7 +311,6 @@ def insert_run(
                 cluster_median,
                 n_singletons,
                 pct_singletons,
-                suggested_k,
             ],
         ).fetchone()
     return result[0]
@@ -372,7 +368,6 @@ def fetch_runs() -> pl.DataFrame:
                n_codes_clinical, n_codes_temporal, n_codes_demographic, n_codes_common,
                n_missing_temporal, n_missing_demographic,
                cluster_largest, cluster_median, n_singletons, pct_singletons,
-               suggested_k,
                notes, created_at, finished_at,
                CASE
                    WHEN finished_at IS NOT NULL

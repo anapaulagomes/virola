@@ -78,7 +78,6 @@ def save_run(
     n_singletons: int | None = None,
     pct_singletons: float | None = None,
     multi_k_results: list[dict] | None = None,
-    suggested_k: int | None = None,
 ) -> int:
     """Persist a complete SNF run to the database.
 
@@ -116,7 +115,6 @@ def save_run(
         cluster_median=cluster_median,
         n_singletons=n_singletons,
         pct_singletons=pct_singletons,
-        suggested_k=suggested_k,
     )
 
     assignments = [

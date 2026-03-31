@@ -129,8 +129,11 @@ def load_and_prepare_dataframe(
     """
     df = pl.read_parquet(file_path)
 
-    # drop unnecessary columns
-    df = df.drop(["unique_id", "state", "city", "region", "population_range"])
+    # drop unnecessary columns if present (raw files have them, pre-processed ones may not)
+    columns_to_drop = [
+        c for c in ["unique_id", "state", "city", "region", "population_range"] if c in df.columns
+    ]
+    df = df.drop(columns_to_drop)
 
     print(f"Raw: {df.shape}")
 

@@ -6,18 +6,28 @@ import vir.db as db_module
 
 @pytest.fixture(autouse=True)
 def reset_connection():
-    """Ensure the module-level connection singleton is clean before and after each test."""
-    db_module._connection = None
+    """Ensure module-level connection singletons are clean before and after each test."""
+    db_module._read_only_connection = None
+    db_module._write_connection = None
     yield
-    if db_module._connection is not None:
-        db_module._connection.close()
-        db_module._connection = None
+    if db_module._read_only_connection is not None:
+        db_module._read_only_connection.close()
+        db_module._read_only_connection = None
+    if db_module._write_connection is not None:
+        db_module._write_connection.close()
+        db_module._write_connection = None
 
 
 @pytest.fixture
 def tmp_db(tmp_path):
-    """A temporary DuckDB path, patched into the module."""
+    """A temporary DuckDB path, patched into the module.
+
+    Creates the database file upfront with a write connection so that
+    subsequent read-only connections (the default) find an existing file.
+    """
     path = str(tmp_path / "test.db")
+    bootstrap = duckdb.connect(path)
+    bootstrap.close()
     original = db_module.PROJECT_DB
     db_module.PROJECT_DB = path
     yield path
@@ -53,13 +63,13 @@ class TestGetConnection:
 
     def test_close_connection_resets_singleton(self, tmp_db):
         con = db_module.get_connection()
-        assert db_module._connection is con
-        db_module._close_connection()
-        assert db_module._connection is None
+        assert db_module._read_only_connection is con
+        db_module._close_read_only_connection()
+        assert db_module._read_only_connection is None
 
     def test_get_connection_after_close_opens_new(self, tmp_db):
         con1 = db_module.get_connection()
-        db_module._close_connection()
+        db_module._close_read_only_connection()
         con2 = db_module.get_connection()
         assert con2 is not con1
         assert isinstance(con2, duckdb.DuckDBPyConnection)
