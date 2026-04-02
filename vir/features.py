@@ -1,3 +1,5 @@
+# TODO extract to config later
+
 POPULATION_RANGE = [
     "< 100 mil",
     "100 - 250 mil",
@@ -62,7 +64,7 @@ IBGE_CITY_MAP = {
         "lat": -29.934722,
         "lon": -50.993889,
     },
-    354980: {
+    350600: {
         "city": "Bauru",
         "state": "SP",
         "region": "Sudeste",
