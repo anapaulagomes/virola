@@ -113,3 +113,30 @@ IBGE_CITY_MAP = {
 }
 
 CITY_NAMES = [city["city"] for city in IBGE_CITY_MAP.values()]
+
+ORIGINAL_TO_REDUCED_AGE_GROUP = {
+    "< 1 ano": "< 1 ano",
+    "1 a 4 anos": "1 a 15 anos",
+    "5 a 11 anos": "1 a 15 anos",
+    "12 a 15 anos": "1 a 15 anos",
+    "16 a 18 anos": "16 a 59 anos",
+    "19 a 24 anos": "16 a 59 anos",
+    "25 a 29 anos": "16 a 59 anos",
+    "30 a 39 anos": "16 a 59 anos",
+    "40 a 49 anos": "16 a 59 anos",
+    "50 a 59 anos": "16 a 59 anos",
+    "60 a 65 anos": "Maior que 60 anos",
+    "66 a 85 anos": "Maior que 60 anos",
+    "Maior que 85 anos": "Maior que 60 anos",
+}
+
+
+CODE_TYPES_MAPPING = {
+    "CID": "cid10",
+    "cid": "cid10",
+    "CID 10": "cid10",
+    "CIAP": "ciap2",
+    "ciap": "ciap2",
+    "AB": "ab",
+    "ABP": "ab",
+}
