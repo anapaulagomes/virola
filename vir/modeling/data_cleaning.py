@@ -1,28 +1,37 @@
 import marimo
 
-from vir.features import IBGE_CITY_MAP
-
-__generated_with = "0.15.2"
+__generated_with = "0.19.0"
 app = marimo.App(width="medium")
 
 
 @app.cell
 def _():
+    from pathlib import Path
+
     import marimo as mo
     import polars as pl
 
     from vir.config import (
         INTERIM_DATA_DIR,
-        PROCESSED_DATA_DIR,
+        RAW_DATA_DIR,
         RAW_DATA_FILE,
     )
-    from vir.features import IBGE_CITY_MAP
+    from vir.features import (
+        CITY_NAMES,
+        CODE_TYPES_MAPPING,
+        IBGE_CITY_MAP,
+        ORIGINAL_TO_REDUCED_AGE_GROUP,
+    )
     from vir.helpers import suffix_from
 
     return (
+        CITY_NAMES,
+        CODE_TYPES_MAPPING,
         IBGE_CITY_MAP,
         INTERIM_DATA_DIR,
-        PROCESSED_DATA_DIR,
+        ORIGINAL_TO_REDUCED_AGE_GROUP,
+        Path,
+        RAW_DATA_DIR,
         RAW_DATA_FILE,
         mo,
         pl,
@@ -32,128 +41,189 @@ def _():
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
+    mo.md(r"""
     # Data cleaning pipeline
 
     This notebook handles systematic data cleaning with unique ID preservation.
-    """
-    )
+    """)
     return
+
+
+@app.cell
+def _(CITY_NAMES, RAW_DATA_DIR, RAW_DATA_FILE, mo):
+    if RAW_DATA_DIR.exists():
+        available_parquet_folders = sorted(
+            [
+                path
+                for path in RAW_DATA_DIR.iterdir()
+                if path.is_dir() and path.suffix == ".parquet"
+            ],
+            key=lambda path: path.name,
+        )
+    else:
+        available_parquet_folders = []
+
+    if not available_parquet_folders:
+        available_parquet_folders = [RAW_DATA_FILE.parent]
+
+    parquet_folder_dropdown = mo.ui.dropdown(
+        options={path.name: path for path in available_parquet_folders},
+        value=RAW_DATA_FILE.parent.name,
+        label="Raw data folder",
+    )
+    city_dropdown = mo.ui.dropdown(
+        options=["All cities"] + sorted(CITY_NAMES),
+        value="All cities",
+        label="City",
+    )
+    force_reprocess_checkbox = mo.ui.checkbox(label="Force reprocess", value=False)
+    run_button = mo.ui.run_button(label="Run cleaning pipeline")
+
+    mo.vstack(
+        [
+            mo.hstack([parquet_folder_dropdown, city_dropdown, force_reprocess_checkbox]),
+            run_button,
+        ]
+    )
+    return (
+        city_dropdown,
+        force_reprocess_checkbox,
+        parquet_folder_dropdown,
+        run_button,
+    )
 
 
 @app.cell
 def _(IBGE_CITY_MAP, pl):
-    ibge_df = pl.DataFrame([{"CO_MUNICIPIO_IBGE": str(k), **v} for k, v in IBGE_CITY_MAP.items()])
+    ibge_df = pl.DataFrame(
+        [
+            {"CO_MUNICIPIO_IBGE": str(ibge_code), **city_data}
+            for ibge_code, city_data in IBGE_CITY_MAP.items()
+        ]
+    )
+    ibge_df = ibge_df.drop(["state"])
+    ibge_df
     return (ibge_df,)
 
 
 @app.cell
-def _(mo):
-    mo.md(r"""## 📊 Raw data""")
-    return
+def _(
+    Path,
+    RAW_DATA_FILE,
+    city_dropdown,
+    force_reprocess_checkbox,
+    mo,
+    parquet_folder_dropdown,
+    run_button,
+):
+    mo.stop(
+        mo.app_meta().mode != "script" and not run_button.value,
+        mo.md("Configure settings above and click **Run cleaning pipeline**"),
+    )
+
+    if mo.app_meta().mode == "script":
+        cli_args = mo.cli_args()
+        selected_city = cli_args.get("city", "")
+        selected_raw_folder = (
+            Path(cli_args["input"]) if cli_args.get("input") else RAW_DATA_FILE.parent
+        )
+        output_dir_override = Path(cli_args["output"]) if cli_args.get("output") else None
+        force_reprocess = "force" in cli_args
+        raw_output_label = f"_{cli_args['label']}" if cli_args.get("label") else ""
+    else:
+        selected_city = "" if city_dropdown.value == "All cities" else city_dropdown.value
+        selected_raw_folder = parquet_folder_dropdown.value
+        output_dir_override = None
+        force_reprocess = force_reprocess_checkbox.value
+        raw_output_label = ""
+
+    return (
+        force_reprocess,
+        output_dir_override,
+        raw_output_label,
+        selected_city,
+        selected_raw_folder,
+    )
 
 
 @app.cell
-def _(RAW_DATA_FILE, mo, pl):
-    raw_df = pl.read_parquet(RAW_DATA_FILE)
-    raw_df = raw_df.with_row_index("unique_id", offset=0)
+def _(
+    CODE_TYPES_MAPPING,
+    INTERIM_DATA_DIR,
+    ORIGINAL_TO_REDUCED_AGE_GROUP,
+    force_reprocess,
+    ibge_df,
+    mo,
+    pl,
+    selected_city,
+    selected_raw_folder,
+    suffix_from,
+):
+    folder_suffix = suffix_from(selected_raw_folder, break_on="", remove_extension=True)
+    cleaned_all_cities_path = INTERIM_DATA_DIR / f"cleaned_{folder_suffix}_all_cities.parquet"
+
+    if selected_city and cleaned_all_cities_path.exists() and not force_reprocess:
+        df = pl.read_parquet(cleaned_all_cities_path)
+        df = df.filter(pl.col("city").eq(selected_city))
+        data_source_label = f"loaded from cache: `{cleaned_all_cities_path.name}`"
+    else:
+        raw_df = pl.read_parquet(selected_raw_folder / "*.parquet")
+        raw_df = raw_df.with_row_index("unique_id", offset=0)
+
+        df = (
+            raw_df.with_columns(
+                pl.col("CIDCIAP").str.extract(r"^([A-Z]+)\(", 1).alias("code_type"),
+                pl.col("CIDCIAP").str.extract(r"\(([^)]+)\)", 1).alias("code"),
+            )
+            .drop(["CIDCIAP", "Data_folder"])
+            .drop_nulls(subset=["ANO", "SEMANA", "FX_ETARIA"])
+        )
+        df = df.with_columns(
+            pl.when(pl.col("code_type").eq("AB"))
+            .then(pl.col("code").str.replace(r"-\d+", ""))
+            .otherwise(pl.col("code"))
+        )
+        df = df.with_columns(
+            pl.col("code_type").map_elements(
+                lambda code_type: CODE_TYPES_MAPPING.get(code_type), return_dtype=pl.String
+            )
+        )
+        df = df.with_columns(
+            pl.col("FX_ETARIA").map_elements(
+                lambda age_group: ORIGINAL_TO_REDUCED_AGE_GROUP.get(age_group),
+                return_dtype=pl.String,
+            )
+        )
+        df = df.join(ibge_df, on="CO_MUNICIPIO_IBGE", how="left")
+        df = df.drop(["CO_CNES", "CO_MUNICIPIO_IBGE"])
+        df = df.rename(
+            {
+                "ANO": "year",
+                "SEMANA": "week",
+                "SG_UF": "state",
+                "SEXO": "sex",
+                "FX_ETARIA": "age_group",
+                "QT": "quantity",
+            }
+        )
+        if selected_city:
+            df = df.filter(pl.col("city").eq(selected_city))
+        data_source_label = f"processed from raw: `{selected_raw_folder.name}`"
 
     mo.md(f"""
-    **Dataset loaded with unique ID tracking**
+    **Dataset ready** — {data_source_label}
 
-    - Total records: {len(raw_df):,}
-    - Columns: {len(raw_df.columns)}
+    - Total records: {len(df):,}
+    - Columns: {len(df.columns)}
     """)
-    return (raw_df,)
+    return (cleaned_all_cities_path, data_source_label, df, folder_suffix)
 
 
 @app.cell
 def _(mo):
-    mo.md(r"""## 🔍 Data processing""")
-    return
-
-
-@app.cell
-def _():
-    original_to_reduced_age_group = {
-        "< 1 ano": "< 1 ano",
-        "1 a 4 anos": "1 a 15 anos",
-        "5 a 11 anos": "1 a 15 anos",
-        "12 a 15 anos": "1 a 15 anos",
-        "16 a 18 anos": "16 a 59 anos",
-        "19 a 24 anos": "16 a 59 anos",
-        "25 a 29 anos": "16 a 59 anos",
-        "30 a 39 anos": "16 a 59 anos",
-        "40 a 49 anos": "16 a 59 anos",
-        "50 a 59 anos": "16 a 59 anos",
-        "60 a 65 anos": "Maior que 60 anos",
-        "66 a 85 anos": "Maior que 60 anos",
-        "Maior que 85 anos": "Maior que 60 anos",
-    }
-    code_types_mapping = {
-        "CID": "cid10",
-        "CIAP": "ciap2",
-        "AB": "ab",
-    }
-    return code_types_mapping, original_to_reduced_age_group
-
-
-@app.cell
-def _(code_types_mapping, ibge_df, original_to_reduced_age_group, pl, raw_df):
-    df = (
-        raw_df.with_columns(
-            pl.col("CIDCIAP").str.extract(r"^([A-Z]+)\(", 1).alias("code_type"),
-            pl.col("CIDCIAP").str.extract(r"\(([^)]+)\)", 1).alias("code"),
-        )
-        .drop(["CIDCIAP", "Data_folder"])
-        .drop_nulls(subset=["ANO", "SEMANA", "FX_ETARIA"])
-    )
-    df = df.with_columns(
-        pl.when(pl.col("code_type").eq("AB"))
-        .then(pl.col("code").str.replace(r"-\d+", ""))
-        .otherwise(pl.col("code"))
-    )
-    df = df.with_columns(
-        pl.col("code_type").map_elements(
-            lambda code_type: code_types_mapping.get(code_type), return_dtype=pl.String
-        )
-    )
-    df = df.with_columns(
-        pl.col("FX_ETARIA").map_elements(
-            lambda age_group: original_to_reduced_age_group.get(age_group), return_dtype=pl.String
-        )
-    )
-    df = df.join(ibge_df, on="CO_MUNICIPIO_IBGE", how="left")
-    df = df.drop(["CO_CNES", "CO_MUNICIPIO_IBGE"])
-    df = df.rename(
-        {
-            "ANO": "year",
-            "SEMANA": "week",
-            "SG_UF": "state",
-            "SEXO": "sex",
-            "FX_ETARIA": "age_group",
-            "QT": "quantity",
-        }
-    )
-    return (df,)
-
-
-@app.cell
-def _(df):
-    df
-    return
-
-
-@app.cell
-def _(df):
-    df.columns
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""## ✅ Data quality""")
+    mo.md(r"""
+    ## Data quality
+    """)
     return
 
 
@@ -209,7 +279,7 @@ def _(
 ):
     unique_ids = df["unique_id"].n_unique()
     mo.md(f"""
-    ### Data Quality Report
+    ### Data Report
 
     **1. Unique ID Integrity:**
 
@@ -246,7 +316,9 @@ def _(
 
 @app.cell
 def _(mo):
-    mo.md(r"""## 📊 Data preview""")
+    mo.md(r"""
+    ## Data preview
+    """)
     return
 
 
@@ -263,78 +335,46 @@ def _(df):
 
 
 @app.cell
-def _(PROCESSED_DATA_DIR, pl):
-    codes_df = pl.read_csv(f"{PROCESSED_DATA_DIR}/cid10_ciap2_ab.csv")
-    codes_df
-    return (codes_df,)
+def _(df, mo):
+    export_button = mo.ui.run_button(label="Export to parquet")
+    mo.hstack([mo.md(f"**{len(df):,} records ready to export**"), export_button])
+    return (export_button,)
 
 
 @app.cell
-def _(mo):
-    mo.md(r"""### 75% of diagnosis in this dataset""")
-    return
-
-
-@app.cell
-def _(codes_df, df, pl):
-    count = df.group_by("code_type", "code").len().sort(by="len")
-    count = count.join(codes_df, on=["code", "code_type"])
-    quantile75 = count["len"].quantile(0.75)
-    count.filter(pl.col("len").gt(quantile75))
-    return
-
-
-@app.cell
-def _(codes_df, df, pl):
-    _count = df.group_by(["code_type", "code"]).agg(pl.col("quantity").sum())
-    _count = _count.join(codes_df, on=["code", "code_type"])
-    _quantile75 = _count["quantity"].quantile(0.75)
-    _count.filter(pl.col("quantity").gt(_quantile75))
-    return
-
-
-@app.cell
-def _(df):
-    df.group_by(["code_type", "code"]).len().describe()
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""## 📋 Cleaning data""")
-    return
-
-
-@app.cell
-def _(INTERIM_DATA_DIR, RAW_DATA_FILE, df, mo, pl, suffix_from):
-    if mo.app_meta().mode == "script":
-        args = mo.cli_args()
-
-        city = args.get("city", "")
-        label = args.get("label", "")
-        if label:
-            label = f"_{label}"
-
-        # load data clean data
-        suffix = suffix_from(RAW_DATA_FILE, break_on="", remove_extension=True)
-        if not city:  # all data
-            output_path = INTERIM_DATA_DIR / f"cleaned_{suffix}{label}_all_cities.parquet"
+def _(
+    IBGE_CITY_MAP,
+    INTERIM_DATA_DIR,
+    cleaned_all_cities_path,
+    df,
+    export_button,
+    folder_suffix,
+    mo,
+    output_dir_override,
+    pl,
+    raw_output_label,
+    selected_city,
+):
+    should_export = mo.app_meta().mode == "script" or export_button.value
+    if should_export:
+        output_dir = output_dir_override if output_dir_override is not None else INTERIM_DATA_DIR
+        if not selected_city:
             cities_over_100 = [
-                city["city"]
-                for city in IBGE_CITY_MAP.values()
-                if city["population_range"] != "< 100 mil"
+                city_data["city"]
+                for city_data in IBGE_CITY_MAP.values()
+                if city_data["population_range"] != "< 100 mil"
             ]
+            output_path = output_dir / cleaned_all_cities_path.name
             df.filter(pl.col("city").is_in(cities_over_100)).write_parquet(output_path)
-        else:  # sample with a city
+        else:
             output_path = (
-                INTERIM_DATA_DIR
-                / f"cleaned_{suffix}{label}_{city.lower().replace(' ', '_')}.parquet"
+                output_dir
+                / f"cleaned_{folder_suffix}{raw_output_label}_{selected_city.lower().replace(' ', '_')}.parquet"
             )
-            city_df = df.filter(pl.col("city").eq(city.title()))
-            city_df.write_parquet(output_path)
+            df.write_parquet(output_path)
 
         mo.md(f"""
-        **Cleaned data saved successfully!** {city or "all cities"}
+        **Cleaned data saved successfully!** {selected_city or "all cities"}
 
         - **Location**: `{output_path}`
         - **Records**: {len(df):,}

@@ -112,6 +112,9 @@ def prepare_clean(
     ),
     input_file: Optional[Path] = typer.Option(None, "--input", help="Input parquet file"),
     output_dir: Optional[Path] = typer.Option(None, "--output", help="Output directory"),
+    force: bool = typer.Option(
+        False, "--force", help="Reprocess from raw even if cached output exists"
+    ),
 ):
     """Clean and standardize raw data."""
     notebook = PROJ_ROOT / "vir/modeling/data_cleaning.py"
@@ -122,6 +125,8 @@ def prepare_clean(
         args.extend(["--input", str(input_file)])
     if output_dir:
         args.extend(["--output", str(output_dir)])
+    if force:
+        args.append("--force")
 
     exit_code = run_marimo_notebook(notebook, args)
     if exit_code == 0:
