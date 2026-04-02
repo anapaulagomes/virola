@@ -116,3 +116,16 @@ Source:
 
 * [code_list_arbovirus_apr2024.csv](https://raw.githubusercontent.com/cidacslab/AESOP-Data-Documentation/refs/heads/main/DataPipeline/documentation/code_list_arbovirus_apr2024.csv)
 * [code_list_uri_apr2024.csv](https://raw.githubusercontent.com/cidacslab/AESOP-Data-Documentation/refs/heads/main/DataPipeline/documentation/code_list_uri_apr2024.csv)
+
+### Indicative codes
+
+An expert in our team have checked and labeled the most representative codes in the dataset
+and classified them as indicative (sends an epidemiological signal) or not. This is useful
+to filter out codes aren't adding much information to the approach. To create this CSV to
+be labeled, you can run:
+
+```bash
+marimo run notebooks/non_indicative_codes.py
+```
+
+It will open a webpage. Use the Download button in the interface to download the files.
