@@ -32,35 +32,32 @@ def _():
 
 
 @app.cell
+def _(IBGE_CITY_MAP):
+    cities_md_table = [
+        "| IBGE Code | City/Name               | State | Region         | Population Range  |",
+        "|-----------|-------------------------|-------|----------------|-------------------|",
+    ]
+    for _code, _data in IBGE_CITY_MAP.items():
+        _row = f"| {_code} | {_data['city']} | {_data['state']} | {_data['region']} | {_data['population_range']} |"
+        cities_md_table.append(_row)
+
+    cities_md_table = "\n".join(cities_md_table)
+    return (cities_md_table,)
+
+
+@app.cell
 def _(mo):
     mo.md(r"""
     # Exploratory data analysis - Primary care - Fiocruz/Brazil
 
     The data includes 20 municipalities sampled from different regions and population ranges in Brazil.
-
-    | IBGE Code | City/Name               | State | Region         | Population Range  |
-    |-----------|-------------------------|-------|----------------|-------------------|
-    | 292740   | Salvador                | BA    | Nordeste       | > 500 mil         |
-    | 431490   | Porto Alegre            | RS    | Sul            | > 500 mil         |
-    | 130260   | Manaus                  | AM    | Norte          | > 500 mil         |
-    | 310620   | Belo Horizonte          | MG    | Sudeste        | > 500 mil         |
-    | 530010   | Distrito Federal        | DF    | Centro-Oeste   | > 500 mil         |
-    | 230370    | Caucaia                 | CE    | Nordeste       | 250 - 500 mil     |
-    | 430920    | Gravataí                | RS    | Sul            | 250 - 500 mil     |
-    | 120040    | Rio Branco              | AC    | Norte          | 250 - 500 mil     |
-    | 354980    | São José do Rio Preto   | SP    | Sudeste        | 250 - 500 mil     |
-    | 520110    | Anápolis                | GO    | Centro-Oeste   | 250 - 500 mil     |
-    | 241200    | São Gonçalo do Amarante | CE    | Nordeste       | 100 - 250 mil     |
-    | 410765    | Fazenda Rio Grande      | PR    | Sul            | 100 - 250 mil     |
-    | 150180    | Breves                  | PA    | Norte          | 100 - 250 mil     |
-    | 330340    | Nova Friburgo           | RJ    | Sudeste        | 100 - 250 mil     |
-    | 510792    | Sorriso                 | MT    | Centro-Oeste   | 100 - 250 mil     |
-    | 291300    | Ibitiara                | BA    | Nordeste       | < 100 mil         |
-    | 430230    | Bom Jesus               | RS    | Sul            | < 100 mil         |
-    | 120035    | Marechal Thaumaturgo    | AC    | Norte          | < 100 mil         |
-    | 311320    | Carandaí                | MG    | Sudeste        | < 100 mil         |
-    | 510622    | Nova Mutum              | MT    | Centro-Oeste   | < 100 mil         |
     """)
+    return
+
+
+@app.cell
+def _(cities_md_table, mo):
+    mo.md(cities_md_table)
     return
 
 
@@ -312,6 +309,7 @@ def _(df, pl, px):
     _fig.update_layout(xaxis={"categoryorder": "total descending"})
     _fig.update_xaxes(tickangle=45)
     _fig
+    return
 
 
 @app.cell
@@ -370,6 +368,7 @@ def _(df, pl, px):
     _fig.update_layout(xaxis={"categoryorder": "total descending"})
     _fig.update_xaxes(tickangle=30)
     _fig
+    return
 
 
 @app.cell
