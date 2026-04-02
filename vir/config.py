@@ -26,7 +26,7 @@ REFERENCES_DIR = PROJ_ROOT / "references"
 REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 
-RAW_DATA_FILE = RAW_DATA_DIR / "base_aesop_raw_extracao_01042026.parquet"
+RAW_DATA_FILE = RAW_DATA_DIR / "base_aesop_raw_extracao_01042026.parquet/*.parquet"
 
 VIEWS_CACHE_DIR = DATA_DIR / "views"
 VALIDATION_DIR = DATA_DIR / "validation"
