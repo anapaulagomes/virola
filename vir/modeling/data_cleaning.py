@@ -14,7 +14,6 @@ def _():
     from vir.config import (
         INTERIM_DATA_DIR,
         PROCESSED_DATA_DIR,
-        RAW_DATA_DIR,
         RAW_DATA_FILE,
     )
     from vir.features import IBGE_CITY_MAP
@@ -24,7 +23,6 @@ def _():
         IBGE_CITY_MAP,
         INTERIM_DATA_DIR,
         PROCESSED_DATA_DIR,
-        RAW_DATA_DIR,
         RAW_DATA_FILE,
         mo,
         pl,
@@ -57,8 +55,8 @@ def _(mo):
 
 
 @app.cell
-def _(RAW_DATA_DIR, mo, pl):
-    raw_df = pl.read_parquet(RAW_DATA_DIR / "aesop_raw_dados_2017_20250223_20municipios.parquet")
+def _(RAW_DATA_FILE, mo, pl):
+    raw_df = pl.read_parquet(RAW_DATA_FILE)
     raw_df = raw_df.with_row_index("unique_id", offset=0)
 
     mo.md(f"""
