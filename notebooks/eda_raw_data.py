@@ -10,7 +10,6 @@ def _():
     import numpy as np
     import plotly.express as px
     import polars as pl
-    from scipy.stats import chi2_contingency
 
     from vir.config import RAW_DATA_FILE
     from vir.features import IBGE_CITY_MAP, ORIGINAL_AGE_GROUP, POPULATION_RANGE
@@ -21,7 +20,6 @@ def _():
         ORIGINAL_AGE_GROUP,
         POPULATION_RANGE,
         RAW_DATA_FILE,
-        chi2_contingency,
         mo,
         np,
         pl,
@@ -399,88 +397,6 @@ def _(df, pl, px):
         values="count",
         title="Record distribution by region and city",
     )
-    _fig
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    ## 🔗 Correlation analysis
-    """)
-    return
-
-
-@app.cell
-def _(chi2_contingency, np, pl):
-    def cramers_v(df, col1, col2) -> float:
-        try:
-            _pivot = (
-                df.group_by([col1, col2])
-                .agg(pl.len().alias("count"))
-                .pivot(values="count", index=col1, on=col2)
-                .fill_null(0)
-            )
-            table = _pivot.select(pl.all().exclude(col1)).to_numpy()
-            chi2, _, _, _ = chi2_contingency(table)
-            n = table.sum()
-            r, k = table.shape
-            return np.sqrt(chi2 / (n * (min(k, r) - 1)))
-        except:  # noqa E722
-            return 0.0
-
-    return (cramers_v,)
-
-
-@app.cell
-def _(cramers_v, df, pl):
-    assoc_results = []
-    for _index, col1 in enumerate(df.columns):
-        for col2 in df.columns[_index + 1 :]:
-            cv = cramers_v(df, col1, col2)
-            assoc_results.append((col1, col2, cv))
-
-    assoc_df = pl.DataFrame(assoc_results, schema=["var1", "var2", "cramers_v"], orient="row")
-    assoc_df.sort("cramers_v", descending=True)
-    return (assoc_df,)
-
-
-@app.cell
-def _(np):
-    def df_to_heatmap_matrix(df, variables):
-        number_of_variables = len(variables)
-        matrix = np.zeros(shape=(number_of_variables, number_of_variables))
-        index_variables = {variable: _index for _index, variable in enumerate(variables)}
-
-        for _index in range(number_of_variables):
-            matrix[_index][_index] = 1.0
-
-        for _row in df.iter_rows(named=True):
-            _var1_index = index_variables.get(_row["var1"])
-            _var2_index = index_variables.get(_row["var2"])
-            if _var1_index is not None and _var2_index is not None:
-                matrix[_var1_index][_var2_index] = _row["cramers_v"]
-                matrix[_var2_index][_var1_index] = _row["cramers_v"]
-        return matrix, index_variables
-
-    return (df_to_heatmap_matrix,)
-
-
-@app.cell
-def _(assoc_df, df, df_to_heatmap_matrix, px):
-    matrix, index_variables = df_to_heatmap_matrix(assoc_df, df.columns)
-    _fig = px.imshow(
-        matrix,
-        x=list(index_variables.keys()),
-        y=list(index_variables.keys()),
-        aspect="auto",
-        origin="lower",
-        text_auto=".2f",
-        color_continuous_scale="RdBu_r",
-        title="Variables correlation (Cramér's V)",
-    )
-    _fig.update_layout(coloraxis_colorbar=dict(title="Cramér's V"))
-    _fig.update_xaxes(tickangle=45)
     _fig
     return
 
