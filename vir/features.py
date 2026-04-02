@@ -32,6 +32,7 @@ AGE_GROUP = [
 IBGE_CITY_MAP = {
     530010: {
         "city": "Distrito Federal",
+        "state": "DF",
         "region": "Centro-Oeste",
         "population_range": "> 500 mil",
         "lat": -15.793889,
@@ -39,6 +40,7 @@ IBGE_CITY_MAP = {
     },
     520110: {
         "city": "Anápolis",
+        "state": "GO",
         "region": "Centro-Oeste",
         "population_range": "250 - 500 mil",
         "lat": -16.326667,
@@ -46,6 +48,7 @@ IBGE_CITY_MAP = {
     },
     431490: {
         "city": "Porto Alegre",
+        "state": "RS",
         "region": "Sul",
         "population_range": "> 500 mil",
         "lat": -30.033056,
@@ -53,6 +56,7 @@ IBGE_CITY_MAP = {
     },
     430920: {
         "city": "Gravataí",
+        "state": "RS",
         "region": "Sul",
         "population_range": "250 - 500 mil",
         "lat": -29.934722,
@@ -60,6 +64,7 @@ IBGE_CITY_MAP = {
     },
     354980: {
         "city": "Bauru",
+        "state": "SP",
         "region": "Sudeste",
         "population_range": "250 - 500 mil",
         "lat": -22.314722,
@@ -67,6 +72,7 @@ IBGE_CITY_MAP = {
     },
     310620: {
         "city": "Belo Horizonte",
+        "state": "MG",
         "region": "Sudeste",
         "population_range": "> 500 mil",
         "lat": -19.916667,
@@ -74,6 +80,7 @@ IBGE_CITY_MAP = {
     },
     292740: {
         "city": "Salvador",
+        "state": "BA",
         "region": "Nordeste",
         "population_range": "> 500 mil",
         "lat": -12.974722,
@@ -81,6 +88,7 @@ IBGE_CITY_MAP = {
     },
     230370: {
         "city": "Caucaia",
+        "state": "CE",
         "region": "Nordeste",
         "population_range": "250 - 500 mil",
         "lat": -3.731944,
@@ -88,6 +96,7 @@ IBGE_CITY_MAP = {
     },
     130260: {
         "city": "Manaus",
+        "state": "AM",
         "region": "Norte",
         "population_range": "> 500 mil",
         "lat": -3.118889,
@@ -95,6 +104,7 @@ IBGE_CITY_MAP = {
     },
     120040: {
         "city": "Rio Branco",
+        "state": "AC",
         "region": "Norte",
         "population_range": "250 - 500 mil",
         "lat": -9.974722,
