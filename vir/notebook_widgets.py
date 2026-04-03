@@ -11,10 +11,9 @@ from vir.config import (
     DEFAULT_MODEL,
     INDICATIVE_CODES_FILE,
     INDICATIVE_ENABLED,
-    INTERIM_DATA_DIR,
-    SKIP_PATTERNS,
+    PROCESSED_DATA_DIR,
 )
-from vir.data_filters import filter_min_temporal_coverage, filter_skip_patterns
+from vir.data_filters import filter_min_temporal_coverage
 from vir.db import fetch_terminologies
 
 
@@ -58,10 +57,10 @@ def load_indicative_codes(
 
 
 def create_file_dropdown(
-    default_pattern: str = "cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet",
+    default_pattern: str = "prepared_base_aesop_raw_extracao_01042026_salvador.parquet",
 ) -> mo.ui.dropdown:
     """
-    Create dropdown for selecting dataset files.
+    Create dropdown for selecting prepared dataset files.
 
     Args:
         default_pattern: Pattern to match for default selection
@@ -69,7 +68,9 @@ def create_file_dropdown(
     Returns:
         Marimo dropdown widget
     """
-    all_options = [str(file.resolve()) for file in INTERIM_DATA_DIR.glob("**/cleaned_*.parquet")]
+    all_options = [
+        str(file.resolve()) for file in PROCESSED_DATA_DIR.glob("**/prepared_*.parquet")
+    ]
     default = [option for option in all_options if default_pattern in option]
 
     return mo.ui.dropdown(
@@ -80,104 +81,41 @@ def create_file_dropdown(
     )
 
 
-def extract_dataset_name(file_path: str) -> str:
-    """
-    Extract dataset name from file path.
-
-    Args:
-        file_path: Full path to dataset file
-
-    Returns:
-        Dataset name (text between "municipios_" and ".parquet")
-    """
-    if "municipios" in file_path and ".parquet" in file_path:
-        start_idx = file_path.find("municipios") + 11  # len("municipios_") = 11
-        end_idx = file_path.find(".parquet")
-        return file_path[start_idx:end_idx]
-    return "unknown"
-
-
 def load_and_prepare_dataframe(
     file_path: str,
-    terminology_labels: pl.DataFrame,
-    exclude_codes: Optional[List[str]] = None,
     year_min: Optional[int] = 2022,
     year_max: Optional[int] = 2025,
-    skip_patterns: Optional[List[Tuple]] = None,
 ) -> pl.DataFrame:
     """
-    Load and prepare dataframe for view analysis.
+    Load a prepared dataframe and apply year filtering and temporal coverage.
 
-    Standard preprocessing:
-    - Drop unnecessary columns (unique_id, state, city, region, population_range)
-    - Group by year, week, sex, age_group, code_type, code
-    - Join with terminology labels
-    - Filter by year range
-    - Exclude non-indicative codes (if provided)
+    Reads a pre-processed parquet file from data/processed/ (produced by the
+    ``vir prepare process`` step) and applies the two parametric filters that
+    depend on the user's year selection:
+
+    - Year range filter (year_min / year_max)
+    - Minimum temporal coverage (filter_min_temporal_coverage)
 
     Args:
-        file_path: Path to parquet file
-        terminology_labels: DataFrame with terminology labels
-        exclude_codes: Optional list of code labels to exclude (format: "code:code_type")
-        year_min: Minimum year (inclusive), None for no filter
-        year_max: Maximum year (inclusive), None for no filter
+        file_path: Path to a prepared parquet file
+        year_min: Minimum year (inclusive), None for no lower bound
+        year_max: Maximum year (inclusive), None for no upper bound
 
     Returns:
-        Prepared DataFrame with columns:
-        - year, week, sex, age_group, code_type, code, quantity
-        - terminology_id, terminology_label
+        Filtered DataFrame ready for view analysis
     """
-    df = pl.read_parquet(file_path)
+    dataframe = pl.read_parquet(file_path)
 
-    # drop unnecessary columns if present (raw files have them, pre-processed ones may not)
-    columns_to_drop = [
-        c for c in ["unique_id", "state", "city", "region", "population_range"] if c in df.columns
-    ]
-    df = df.drop(columns_to_drop)
-
-    print(f"Raw: {df.shape}")
-
-    # filter by year range
     if year_min is not None and year_max is not None:
-        df = df.filter(pl.col("year").is_between(year_min, year_max))
+        dataframe = dataframe.filter(pl.col("year").is_between(year_min, year_max))
     elif year_min is not None:
-        df = df.filter(pl.col("year").ge(year_min))
+        dataframe = dataframe.filter(pl.col("year").ge(year_min))
     elif year_max is not None:
-        df = df.filter(pl.col("year").le(year_max))
+        dataframe = dataframe.filter(pl.col("year").le(year_max))
 
-    print(f"After temporal filter: {df.shape}")
+    dataframe = filter_min_temporal_coverage(dataframe)
 
-    # guarantee that there are no orphans from dropped columns
-    df = df.group_by(["year", "week", "sex", "age_group", "code_type", "code"]).agg(
-        pl.col("quantity").sum()
-    )
-    print(f"After quantity aggregation: {df.shape}")
-
-    df = df.with_columns(
-        code_type=pl.col("code_type").str.to_lowercase().replace({"cid": "cid10", "ciap": "ciap2"})
-    )
-    df = df.join(terminology_labels, on=["code", "code_type"], how="left").rename(
-        {"id": "terminology_id", "label": "terminology_label"}
-    )
-    print(f"After joining terminologies: {df.shape}")
-
-    # exclude non-indicative codes
-    if exclude_codes:
-        df = df.filter(~pl.col("terminology_label").is_in(exclude_codes))
-
-    print(f"After exclusion of non-indicative codes: {df.shape}")
-
-    # skip codes matching configured patterns (e.g. ICD-10 Z-chapter)
-    resolved_patterns = SKIP_PATTERNS if skip_patterns is None else skip_patterns
-    if resolved_patterns:
-        df = filter_skip_patterns(df, resolved_patterns)
-    print(f"After skip-pattern filter: {df.shape}")
-
-    # ensure temporal representation
-    df = filter_min_temporal_coverage(df)
-    print(f"After ensuring temporal representation: {df.shape}")
-
-    return df
+    return dataframe
 
 
 def normalize_distance(D: np.ndarray) -> np.ndarray:

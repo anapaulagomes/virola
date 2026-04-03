@@ -61,10 +61,10 @@ if [[ -z "$DATASET" ]]; then
     DATASET=$(DATASET_NAME="$DATASET_NAME" PROJ_ROOT="$PROJ_ROOT" uv run --active python -c "
 import os
 from pathlib import Path
-interim = Path(os.environ['PROJ_ROOT']) / 'data' / 'interim'
-matches = sorted(interim.glob(f\"*municipios_{os.environ['DATASET_NAME']}.parquet\"))
+processed = Path(os.environ['PROJ_ROOT']) / 'data' / 'processed'
+matches = sorted(processed.glob(f\"prepared_{os.environ['DATASET_NAME']}.parquet\"))
 if not matches:
-    raise SystemExit(f\"No dataset file found for '{os.environ['DATASET_NAME']}' in {interim}. Pass --dataset explicitly.\")
+    raise SystemExit(f\"No prepared dataset file found for '{os.environ['DATASET_NAME']}' in {processed}. Run 'vir prepare process' first or pass --dataset explicitly.\")
 print(matches[-1])
 ")
     echo "Dataset:     $DATASET"

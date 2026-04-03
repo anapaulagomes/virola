@@ -1,0 +1,157 @@
+import marimo
+
+__generated_with = "0.19.0"
+app = marimo.App(width="medium")
+
+
+@app.cell
+def _():
+    import marimo as mo
+    import polars as pl
+
+    from vir.config import INTERIM_DATA_DIR, PROCESSED_DATA_DIR
+    from vir.modeling.prepare import prepare_dataframe
+    from vir.notebook_widgets import (
+        extract_dataset_name,
+        load_indicative_codes,
+        load_terminology_labels,
+    )
+
+    return (
+        INTERIM_DATA_DIR,
+        PROCESSED_DATA_DIR,
+        extract_dataset_name,
+        load_indicative_codes,
+        load_terminology_labels,
+        mo,
+        pl,
+        prepare_dataframe,
+    )
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    # Data preparation pipeline
+
+    Transforms a cleaned interim dataset into a prepared parquet file ready for view analysis.
+
+    Steps applied:
+    - Drop administrative columns
+    - Aggregate quantities per (year, week, sex, age_group, code_type, code)
+    - Normalise code_type values
+    - Join with terminology labels
+    - Filter non-indicative codes
+    - Filter ICD-10 Z-chapter codes
+
+    The result is saved to `data/processed/prepared_<suffix>.parquet`.
+    Year filtering and temporal coverage are applied later at view time.
+    """)
+    return
+
+
+@app.cell
+def _(INTERIM_DATA_DIR, mo):
+    if INTERIM_DATA_DIR.exists():
+        available_cleaned_files = sorted(
+            INTERIM_DATA_DIR.glob("cleaned_*.parquet"),
+            key=lambda path: path.name,
+        )
+    else:
+        available_cleaned_files = []
+
+    dataset_dropdown = mo.ui.dropdown(
+        options={path.name: path for path in available_cleaned_files},
+        label="Cleaned interim file",
+        value=available_cleaned_files[0].name if available_cleaned_files else None,
+    )
+    run_button = mo.ui.run_button(label="Run preparation pipeline")
+
+    mo.vstack([dataset_dropdown, run_button])
+    return dataset_dropdown, run_button
+
+
+@app.cell
+def _(dataset_dropdown, mo, run_button):
+    mo.stop(
+        mo.app_meta().mode != "script" and not run_button.value,
+        mo.md("Select a cleaned file above and click **Run preparation pipeline**"),
+    )
+
+    if mo.app_meta().mode == "script":
+        cli_args = mo.cli_args()
+        input_path_override = cli_args.get("dataset")
+    else:
+        input_path_override = None
+
+    selected_input_path = input_path_override or (
+        str(dataset_dropdown.value) if dataset_dropdown.value else None
+    )
+
+    mo.stop(
+        selected_input_path is None,
+        mo.md("No dataset selected."),
+    )
+    return (selected_input_path,)
+
+
+@app.cell
+def _(load_indicative_codes, load_terminology_labels, mo, selected_input_path):
+    mo.stop(selected_input_path is None)
+
+    terminology_labels = load_terminology_labels()
+    exclude_codes, _ = load_indicative_codes()
+
+    mo.md(f"""
+    **Configuration**
+    - Input: `{selected_input_path}`
+    - Terminology terms loaded: {len(terminology_labels):,}
+    - Codes to exclude: {len(exclude_codes):,}
+    """)
+    return exclude_codes, terminology_labels
+
+
+@app.cell
+def _(
+    PROCESSED_DATA_DIR,
+    exclude_codes,
+    extract_dataset_name,
+    mo,
+    pl,
+    prepare_dataframe,
+    selected_input_path,
+    terminology_labels,
+):
+    mo.stop(selected_input_path is None)
+
+    interim_df = pl.read_parquet(selected_input_path)
+    prepared_df = prepare_dataframe(
+        dataframe=interim_df,
+        terminology_labels=terminology_labels,
+        exclude_codes=exclude_codes,
+    )
+
+    dataset_name = extract_dataset_name(selected_input_path)
+    output_path = PROCESSED_DATA_DIR / f"prepared_{dataset_name}.parquet"
+    PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    prepared_df.write_parquet(output_path)
+
+    mo.md(f"""
+    **Preparation complete**
+
+    - Input records: {len(interim_df):,}
+    - Output records: {len(prepared_df):,}
+    - Columns: {len(prepared_df.columns)}
+    - Saved to: `{output_path}`
+    """)
+    return output_path, prepared_df
+
+
+@app.cell
+def _(prepared_df):
+    prepared_df.head(10)
+    return
+
+
+if __name__ == "__main__":
+    app.run()

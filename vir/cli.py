@@ -7,7 +7,7 @@ from typing import Optional
 
 import typer
 
-from vir.config import CLUSTERING_DIR, DEFAULT_MODEL, PROJ_ROOT
+from vir.config import CLUSTERING_DIR, DEFAULT_MODEL, INTERIM_DATA_DIR, PROJ_ROOT
 from vir.dataset import app as helper_app
 from vir.db import (
     fetch_cluster_assignments,
@@ -18,8 +18,6 @@ from vir.helpers import get_n_jobs
 from vir.notebook_widgets import (
     extract_dataset_name,
     load_and_prepare_dataframe,
-    load_indicative_codes,
-    load_terminology_labels,
 )
 from vir.views import ClinicalView, DemographicView, TemporalView
 
@@ -131,6 +129,22 @@ def prepare_clean(
     exit_code = run_marimo_notebook(notebook, args)
     if exit_code == 0:
         typer.secho("✓ Data cleaning completed successfully", fg=typer.colors.GREEN)
+    sys.exit(exit_code)
+
+
+@prepare_app.command("process")
+def prepare_process(
+    dataset: str = typer.Option(
+        ..., "--dataset", "-d", help="Path to a cleaned interim parquet file"
+    ),
+):
+    """Prepare a cleaned interim dataset: aggregate, join terminology, filter codes."""
+    notebook = PROJ_ROOT / "vir/modeling/data_preparation.py"
+    args = ["--dataset", dataset]
+
+    exit_code = run_marimo_notebook(notebook, args)
+    if exit_code == 0:
+        typer.secho("✓ Data preparation completed successfully", fg=typer.colors.GREEN)
     sys.exit(exit_code)
 
 
@@ -309,7 +323,7 @@ def pipeline_run(
         None, "--notes", help="Free-text note attached to the SNF run (e.g. 'run for paper')"
     ),
 ):
-    """Run complete pipeline for a city: clean -> views -> model snf."""
+    """Run complete pipeline for a city: clean -> process -> views -> model snf."""
 
     if city not in CITY_NAMES:
         typer.secho(
@@ -322,9 +336,11 @@ def pipeline_run(
     typer.secho(f"Running pipeline for: {city}", fg=typer.colors.CYAN, bold=True)
     typer.secho(f"{'=' * 60}\n", fg=typer.colors.CYAN)
 
+    city_slug = city.lower().replace(" ", "_")
+
     # Step 1: Clean data
     if not skip_clean:
-        typer.secho("Step 1/5: Cleaning data...", fg=typer.colors.BLUE, bold=True)
+        typer.secho("Step 1/6: Cleaning data...", fg=typer.colors.BLUE, bold=True)
         notebook = PROJ_ROOT / "vir/modeling/data_cleaning.py"
         args = ["--city", city]
         exit_code = run_marimo_notebook(notebook, args)
@@ -333,15 +349,34 @@ def pipeline_run(
             sys.exit(exit_code)
         typer.secho("✓ Data cleaning completed\n", fg=typer.colors.GREEN)
     else:
-        typer.secho("Step 1/5: Skipping data cleaning\n", fg=typer.colors.YELLOW)
+        typer.secho("Step 1/6: Skipping data cleaning\n", fg=typer.colors.YELLOW)
 
-    # Construct dataset name based on city (use normalized name for file matching)
-    dataset = city.lower().replace(" ", "_")
+    # Step 2: Process data (terminology join + code filtering)
+    matching_interim = sorted(INTERIM_DATA_DIR.glob(f"cleaned_*{city_slug}*.parquet"))
+    if not matching_interim:
+        typer.secho(
+            f"✗ No cleaned interim file found for city '{city}' in {INTERIM_DATA_DIR}",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(1)
+    interim_file = matching_interim[-1]
+
+    typer.secho("Step 2/6: Processing data...", fg=typer.colors.BLUE, bold=True)
+    notebook = PROJ_ROOT / "vir/modeling/data_preparation.py"
+    args = ["--dataset", str(interim_file)]
+    exit_code = run_marimo_notebook(notebook, args)
+    if exit_code != 0:
+        typer.secho("✗ Data preparation failed", fg=typer.colors.RED)
+        sys.exit(exit_code)
+    typer.secho("✓ Data preparation completed\n", fg=typer.colors.GREEN)
+
+    # Construct dataset pattern based on city for view notebooks
+    dataset = city_slug
 
     indicative_args = ["--no-indicative"] if no_indicative else []
 
-    # Step 2: Clinical view
-    typer.secho("Step 2/5: Running clinical view analysis...", fg=typer.colors.BLUE, bold=True)
+    # Step 3: Clinical view
+    typer.secho("Step 3/6: Running clinical view analysis...", fg=typer.colors.BLUE, bold=True)
     notebook = PROJ_ROOT / "notebooks/view_clinical.py"
     args = [
         "--dataset",
@@ -358,8 +393,8 @@ def pipeline_run(
         sys.exit(exit_code)
     typer.secho("✓ Clinical view completed\n", fg=typer.colors.GREEN)
 
-    # Step 3: Demographic view
-    typer.secho("Step 3/5: Running demographic view analysis...", fg=typer.colors.BLUE, bold=True)
+    # Step 4: Demographic view
+    typer.secho("Step 4/6: Running demographic view analysis...", fg=typer.colors.BLUE, bold=True)
     notebook = PROJ_ROOT / "notebooks/view_demographic.py"
     args = [
         "--dataset",
@@ -376,8 +411,8 @@ def pipeline_run(
         sys.exit(exit_code)
     typer.secho("✓ Demographic view completed\n", fg=typer.colors.GREEN)
 
-    # Step 4: Temporal view
-    typer.secho("Step 4/5: Running temporal view analysis...", fg=typer.colors.BLUE, bold=True)
+    # Step 5: Temporal view
+    typer.secho("Step 5/6: Running temporal view analysis...", fg=typer.colors.BLUE, bold=True)
     notebook = PROJ_ROOT / "notebooks/view_temporal.py"
     args = [
         "--dataset",
@@ -396,8 +431,8 @@ def pipeline_run(
         sys.exit(exit_code)
     typer.secho("✓ Temporal view completed\n", fg=typer.colors.GREEN)
 
-    # Step 5: SNF clustering
-    typer.secho("Step 5/5: Running SNF clustering...", fg=typer.colors.BLUE, bold=True)
+    # Step 6: SNF clustering
+    typer.secho("Step 6/6: Running SNF clustering...", fg=typer.colors.BLUE, bold=True)
     notebook = PROJ_ROOT / "notebooks/model_similarity_network_fusion.py"
     args = [
         "--dataset",
@@ -450,19 +485,12 @@ def results_build_profiles(
     dataset: str = typer.Option(..., "--dataset", "-d", help="Dataset file path or name"),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
     year_max: int = typer.Option(2025, "--year-max", help="Maximum year (inclusive)"),
-    no_indicative: bool = typer.Option(
-        False, "--no-indicative", help="Include all codes (skip indicative filtering)"
-    ),
 ):
     """Build cluster profiles (stats + temporal + demographic) for a run."""
     from vir.results import build_cluster_profiles
 
-    terminology_labels = load_terminology_labels()
-    exclude_codes, _ = load_indicative_codes(enabled=not no_indicative)
     df = load_and_prepare_dataframe(
         file_path=dataset,
-        terminology_labels=terminology_labels,
-        exclude_codes=exclude_codes,
         year_min=year_min,
         year_max=year_max,
     )
@@ -493,9 +521,6 @@ def results_explain(
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
     year_max: int = typer.Option(2025, "--year-max", help="Maximum year (inclusive)"),
     min_weeks: int = typer.Option(12, "--min-weeks", help="Minimum weeks for temporal view"),
-    no_indicative: bool = typer.Option(
-        False, "--no-indicative", help="Include all codes (skip indicative filtering)"
-    ),
 ):
     """Compute per-cluster explanations: primary view driver and central code.
 
@@ -511,12 +536,8 @@ def results_explain(
 
     typer.secho(f"Loading data for run {run_id}...", fg=typer.colors.BLUE)
 
-    terminology_labels = load_terminology_labels()
-    exclude_codes, _ = load_indicative_codes(enabled=not no_indicative)
     df = load_and_prepare_dataframe(
         file_path=dataset,
-        terminology_labels=terminology_labels,
-        exclude_codes=exclude_codes,
         year_min=year_min,
         year_max=year_max,
     )
