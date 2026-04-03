@@ -13,6 +13,7 @@ def _():
 
 @app.cell
 def _():
+    from vir.config import INDICATIVE_CODES_FILE
     from vir.data_filters import filter_most_representative_rows
     from vir.notebook_widgets import create_file_dropdown, load_terminology_labels
 
@@ -20,6 +21,7 @@ def _():
         create_file_dropdown,
         filter_most_representative_rows,
         load_terminology_labels,
+        INDICATIVE_CODES_FILE,
     )
 
 
@@ -90,9 +92,9 @@ def _(mo):
 
 
 @app.cell
-def _(indicative_starter_file):
+def _(indicative_starter_file, INDICATIVE_CODES_FILE):
     if not indicative_starter_file.value:
-        indicative_file = "data/indicative_codes_yes_no__2022_2024.csv"
+        indicative_file = INDICATIVE_CODES_FILE
     else:
         indicative_file = indicative_starter_file.value
     indicative_file

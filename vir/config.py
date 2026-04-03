@@ -38,7 +38,7 @@ MODEL_DIMENSIONS = 768
 
 EMBEDDING_COMPONENTS = 64
 CHUNK_SIZE = 100_000  # Records per chunk - adjust based on available RAM
-INDICATIVE_CODES_FILE = REFERENCES_DIR / "indicative_codes_yes_no_75perc.csv"
+INDICATIVE_CODES_FILE = REFERENCES_DIR / "indicative_codes_yes_no__2022_2025__90perc.csv"
 INDICATIVE_ENABLED = True
 MIN_WEEKS = 12
 DEFAULT_SKIP_PATTERNS = [("cid10", r"^Z")]
