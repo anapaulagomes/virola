@@ -18,13 +18,8 @@ if os.getenv("DATA_DIR"):
 RAW_DATA_DIR = DATA_DIR / "raw"
 INTERIM_DATA_DIR = DATA_DIR / "interim"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
-EXTERNAL_DATA_DIR = DATA_DIR / "external"
 CLUSTERING_DIR = DATA_DIR / "clustering"
-MODELS_DIR = PROJ_ROOT / "models"
 REFERENCES_DIR = PROJ_ROOT / "references"
-
-REPORTS_DIR = PROJ_ROOT / "reports"
-FIGURES_DIR = REPORTS_DIR / "figures"
 
 RAW_DATA_FILE = RAW_DATA_DIR / "base_aesop_raw_extracao_01042026.parquet/*.parquet"
 
@@ -36,7 +31,6 @@ VALIDATION_DIR = DATA_DIR / "validation"
 DEFAULT_MODEL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
 MODEL_DIMENSIONS = 768
 
-EMBEDDING_COMPONENTS = 64
 CHUNK_SIZE = 100_000  # Records per chunk - adjust based on available RAM
 INDICATIVE_CODES_FILE = REFERENCES_DIR / "indicative_codes_yes_no__2022_2025__90perc.csv"
 INDICATIVE_ENABLED = True
