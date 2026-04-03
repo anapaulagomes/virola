@@ -17,13 +17,13 @@ uv run vir setup embeddings     # Generate embeddings database
 uv run vir prepare clean --city "Carandaí"  # Optional: filter by city
 
 # Run analysis views
-uv run vir view clinical --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024
-uv run vir view demographic --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024
-uv run vir view temporal --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024 --min-weeks 12
+uv run vir view clinical --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2025
+uv run vir view demographic --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2025
+uv run vir view temporal --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2025 --min-weeks 12
 
 # Run SNF clustering (results saved automatically to virola.db)
-uv run vir model snf --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024 --snf-k 10 --n-clusters 200
-uv run vir model snf --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2024 --snf-k 10 --n-clusters 200 --notes "run for paper"
+uv run vir model snf --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2025 --snf-k 10 --n-clusters 200
+uv run vir model snf --dataset data/interim/cleaned_*.parquet --year-min 2022 --year-max 2025 --snf-k 10 --n-clusters 200 --notes "run for paper"
 
 # Inspect saved runs
 uv run vir results list
@@ -81,7 +81,7 @@ You can also run notebooks directly with marimo (bypassing the `vir` CLI):
 
 ```bash
 # Run with arguments
-marimo run notebooks/view_clinical.py -- --dataset data.parquet --year-min 2022 --year-max 2024
+marimo run notebooks/view_clinical.py -- --dataset data.parquet --year-min 2022 --year-max 2025
 
 marimo run vir/modeling/data_cleaning.py -- --city "São Gonçalo do Amarante"
 ```

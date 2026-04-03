@@ -63,7 +63,7 @@ def _(mo):
 @app.cell
 def _(args):
     year_min = args.get("year-min", 2022)
-    year_max = args.get("year-max", 2024)
+    year_max = args.get("year-max", 2025)
     return year_max, year_min
 
 
