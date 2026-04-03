@@ -105,8 +105,12 @@ Visual inspection: [Embedding Atlas](https://github.com/apple/embedding-atlas)
 
 ### Terminology
 
-ABP008 is duplicated and it was renamed to ABP008-1 and ABP008-2 for distinction
-in `cid10_ciap2_ab.csv`.
+ABP008 is duplicated in the official AB terminology source
+(https://integracao.esusab.ufsc.br/ledi/documentacao/estrutura_arquivos/dicionario-fai.html#listaciapcondicaoavaliada),
+mapping to two distinct conditions: Beribéri (ABP008-1) and Desnutrição (ABP008-2).
+The suffixes `-1` / `-2` are added in the reference files (`abp_ciap2.csv`,
+`terminology_mapping.csv`) for disambiguation only — the raw data always carries
+the base code `ABP008` without any suffix.
 
 ### Validation files
 
@@ -119,9 +123,11 @@ Source:
 
 ### Indicative codes
 
-An expert in our team have checked and labeled the most representative codes in the dataset
-and classified them as indicative (sends an epidemiological signal) or not. This is useful
-to filter out codes aren't adding much information to the approach. To create this CSV to
+An expert in our team reviewed the codes covering the top 90% of record volume and
+labeled each as indicative (carries an epidemiological signal) or non-indicative.
+Codes explicitly labeled non-indicative are excluded from the analysis; codes not yet
+reviewed (outside the top 90%, or reviewed but unlabeled) are retained. This filters
+out administrative and procedural codes while preserving coverage of rare conditions. To create this CSV to
 be labeled, you can run:
 
 ```bash
