@@ -28,8 +28,6 @@ def _():
         create_file_dropdown,
         extract_dataset_name,
         load_and_prepare_dataframe,
-        load_indicative_codes,
-        load_terminology_labels,
     )
     from vir.views.demographic import DemographicView
 
@@ -39,8 +37,6 @@ def _():
         extract_dataset_name,
         get_connection,
         load_and_prepare_dataframe,
-        load_indicative_codes,
-        load_terminology_labels,
     )
 
 
@@ -78,18 +74,6 @@ def _(args):
 
 
 @app.cell
-def _(load_terminology_labels):
-    terminology_labels = load_terminology_labels()
-    return (terminology_labels,)
-
-
-@app.cell
-def _(load_indicative_codes):
-    exclude_codes, _ = load_indicative_codes()
-    return (exclude_codes,)
-
-
-@app.cell
 def _(args, create_file_dropdown):
     default_dataset = args.get("dataset", "salvador")
     files_dropdown = create_file_dropdown(default_pattern=default_dataset)
@@ -109,19 +93,9 @@ def _(files_dropdown):
 
 
 @app.cell
-def _(
-    exclude_codes,
-    extract_dataset_name,
-    file_path,
-    load_and_prepare_dataframe,
-    terminology_labels,
-    year_max,
-    year_min,
-):
+def _(extract_dataset_name, file_path, load_and_prepare_dataframe, year_max, year_min):
     df = load_and_prepare_dataframe(
         file_path=file_path,
-        terminology_labels=terminology_labels,
-        exclude_codes=exclude_codes,
         year_min=year_min,
         year_max=year_max,
     )

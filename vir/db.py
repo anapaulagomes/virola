@@ -11,7 +11,7 @@ import duckdb
 import polars as pl
 
 from vir.config import DATA_DIR, DEFAULT_MODEL, MODEL_DIMENSIONS
-from vir.helpers import get_n_jobs
+from vir.helpers import extract_dataset_name, get_n_jobs
 
 PROJECT_DB = DATA_DIR / "virola.db"
 
@@ -346,8 +346,6 @@ def find_run(
         return subset.row(0, named=True)
 
     if dataset_path is not None:
-        from vir.notebook_widgets import extract_dataset_name
-
         name = extract_dataset_name(dataset_path)
         subset = runs.filter(pl.col("dataset_name") == name)
         if subset.is_empty():

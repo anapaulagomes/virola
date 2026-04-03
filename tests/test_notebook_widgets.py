@@ -25,50 +25,34 @@ def indicative_csv(tmp_path) -> Path:
 
 
 @pytest.fixture
-def terminology_labels() -> pl.DataFrame:
-    return pl.DataFrame(
-        {
-            "id": [1, 2, 3, 4, 5],
-            "code": ["I10", "Z760", "ABP005", "Z000", "K86"],
-            "code_type": ["cid10", "cid10", "ab", "cid10", "ciap2"],
-            "description": [
-                "hypertension",
-                "repeat prescription",
-                "hypertension program",
-                "general exam",
-                "hypertension uncomplicated",
-            ],
-            "label": ["I10:cid10", "Z760:cid10", "ABP005:ab", "Z000:cid10", "K86:ciap2"],
-        }
-    )
-
-
-@pytest.fixture
-def raw_parquet(tmp_path, terminology_labels) -> Path:
-    """Write a minimal raw parquet file with all required columns."""
+def prepared_parquet(tmp_path) -> Path:
+    """Write a minimal prepared parquet file (already has terminology columns, no admin cols)."""
     rows = []
-    for i, row in enumerate(terminology_labels.iter_rows(named=True)):
+    codes = [
+        ("I10", "cid10", "I10:cid10"),
+        ("Z760", "cid10", "Z760:cid10"),
+        ("ABP005", "ab", "ABP005:ab"),
+        ("Z000", "cid10", "Z000:cid10"),
+        ("K86", "ciap2", "K86:ciap2"),
+    ]
+    for terminology_id, (code, code_type, label) in enumerate(codes, start=1):
         for year in [2022, 2023]:
-            for week in range(1, 14):  # 13 weeks to pass min_weeks filter
+            for week in range(1, 14):
                 rows.append(
                     {
-                        "unique_id": f"uid_{i}",
-                        "state": "SP",
-                        "city": "Salvador",
-                        "region": "NE",
-                        "population_range": "large",
                         "year": year,
                         "week": week,
                         "sex": "M",
                         "age_group": "adult",
-                        "code_type": row["code_type"],
-                        "code": row["code"],
+                        "code_type": code_type,
+                        "code": code,
                         "quantity": 10,
+                        "terminology_id": terminology_id,
+                        "terminology_label": label,
                     }
                 )
-    df = pl.DataFrame(rows)
-    path = tmp_path / "cleaned_20municipios_salvador.parquet"
-    df.write_parquet(path)
+    path = tmp_path / "prepared_base_aesop_raw_extracao_01042026_salvador.parquet"
+    pl.DataFrame(rows).write_parquet(path)
     return path
 
 
@@ -102,216 +86,59 @@ class TestLoadIndicativeCodes:
 
 
 class TestLoadAndPrepareDataframe:
-    def test_legacy_code_types_are_normalized(self, tmp_path, terminology_labels):
-        """Parquets cleaned with old code (cid/ciap) must join correctly after normalization."""
-        rows = []
-        for row in terminology_labels.iter_rows(named=True):
-            legacy_type = {"cid10": "cid", "ciap2": "ciap"}.get(row["code_type"], row["code_type"])
-            for year in [2022, 2023]:
-                for week in range(1, 14):
-                    rows.append(
-                        {
-                            "unique_id": "uid",
-                            "state": "SP",
-                            "city": "Salvador",
-                            "region": "NE",
-                            "population_range": "large",
-                            "year": year,
-                            "week": week,
-                            "sex": "M",
-                            "age_group": "adult",
-                            "code_type": legacy_type,
-                            "code": row["code"],
-                            "quantity": 10,
-                        }
-                    )
-        path = tmp_path / "cleaned_20municipios_legacy.parquet"
-        pl.DataFrame(rows).write_parquet(path)
-
+    def test_year_min_max_filter(self, prepared_parquet):
         df = load_and_prepare_dataframe(
-            file_path=str(path),
-            terminology_labels=terminology_labels,
-            skip_patterns=[],
-        )
-        assert df["terminology_id"].null_count() == 0
-        assert df["terminology_label"].n_unique() == len(terminology_labels)
-
-    def test_year_min_max_filter(self, raw_parquet, terminology_labels):
-        df = load_and_prepare_dataframe(
-            file_path=str(raw_parquet),
-            terminology_labels=terminology_labels,
+            file_path=str(prepared_parquet),
             year_min=2023,
             year_max=2023,
         )
         assert df["year"].unique().to_list() == [2023]
 
-    def test_year_min_only(self, raw_parquet, terminology_labels):
+    def test_year_min_only(self, prepared_parquet):
         df = load_and_prepare_dataframe(
-            file_path=str(raw_parquet),
-            terminology_labels=terminology_labels,
+            file_path=str(prepared_parquet),
             year_min=2023,
             year_max=None,
         )
-        assert all(y >= 2023 for y in df["year"].to_list())
+        assert all(year >= 2023 for year in df["year"].to_list())
 
-    def test_year_max_only(self, raw_parquet, terminology_labels):
+    def test_year_max_only(self, prepared_parquet):
         df = load_and_prepare_dataframe(
-            file_path=str(raw_parquet),
-            terminology_labels=terminology_labels,
+            file_path=str(prepared_parquet),
             year_min=None,
             year_max=2022,
         )
-        assert all(y <= 2022 for y in df["year"].to_list())
+        assert all(year <= 2022 for year in df["year"].to_list())
 
-    def test_exclude_codes_removes_non_indicative(self, raw_parquet, terminology_labels):
-        exclude = ["Z760:cid10", "Z000:cid10"]
+    def test_no_year_filter_keeps_all_years(self, prepared_parquet):
         df = load_and_prepare_dataframe(
-            file_path=str(raw_parquet),
-            terminology_labels=terminology_labels,
-            exclude_codes=exclude,
+            file_path=str(prepared_parquet),
+            year_min=None,
+            year_max=None,
         )
-        labels = df["terminology_label"].unique().to_list()
-        assert "Z760:cid10" not in labels
-        assert "Z000:cid10" not in labels
+        assert set(df["year"].unique().to_list()) == {2022, 2023}
 
-    def test_exclude_codes_keeps_yes_codes(self, raw_parquet, terminology_labels):
-        """Codes labeled 'yes' (not in exclude list) must remain in the dataframe."""
-        exclude = ["Z760:cid10", "Z000:cid10"]
-        df = load_and_prepare_dataframe(
-            file_path=str(raw_parquet),
-            terminology_labels=terminology_labels,
-            exclude_codes=exclude,
-        )
-        labels = df["terminology_label"].unique().to_list()
-        assert "I10:cid10" in labels
-        assert "ABP005:ab" in labels
-        assert "K86:ciap2" in labels
-
-    def test_no_exclude_codes_keeps_all(self, raw_parquet, terminology_labels):
-        df = load_and_prepare_dataframe(
-            file_path=str(raw_parquet),
-            terminology_labels=terminology_labels,
-            exclude_codes=None,
-            skip_patterns=[],
-        )
-        labels = set(df["terminology_label"].unique().to_list())
-        expected = {"I10:cid10", "Z760:cid10", "ABP005:ab", "Z000:cid10", "K86:ciap2"}
-        assert expected == labels
-
-    def test_codes_not_in_csv_are_kept_when_filtering(self, tmp_path, terminology_labels):
-        """Codes not present in the indicative CSV must NOT be removed when filtering."""
-        # Build a parquet with an extra code not in the indicative CSV
-        extra_labels = terminology_labels.vstack(
-            pl.DataFrame(
-                {
-                    "id": [99],
-                    "code": ["EXTRA"],
-                    "code_type": ["ab"],
-                    "description": ["some extra code"],
-                    "label": ["EXTRA:ab"],
-                }
-            )
-        )
-        rows = []
-        for row in extra_labels.iter_rows(named=True):
-            for year in [2022, 2023]:
-                for week in range(1, 14):
-                    rows.append(
-                        {
-                            "unique_id": "uid",
-                            "state": "SP",
-                            "city": "Salvador",
-                            "region": "NE",
-                            "population_range": "large",
-                            "year": year,
-                            "week": week,
-                            "sex": "M",
-                            "age_group": "adult",
-                            "code_type": row["code_type"],
-                            "code": row["code"],
-                            "quantity": 10,
-                        }
-                    )
-        path = tmp_path / "cleaned_20municipios_extra.parquet"
+    def test_temporal_coverage_filter_applied(self, tmp_path):
+        """Codes with fewer than MIN_WEEKS observations must be dropped."""
+        rows = [
+            {
+                "year": 2022,
+                "week": week,
+                "sex": "M",
+                "age_group": "adult",
+                "code_type": "cid10",
+                "code": "I10",
+                "quantity": 10,
+                "terminology_id": 1,
+                "terminology_label": "I10:cid10",
+            }
+            for week in range(1, 5)  # only 4 weeks — below MIN_WEEKS (12)
+        ]
+        path = tmp_path / "prepared_sparse.parquet"
         pl.DataFrame(rows).write_parquet(path)
 
-        # Only exclude the "no" codes from the CSV — EXTRA is not in the CSV
-        exclude = ["Z760:cid10", "Z000:cid10"]
-        df = load_and_prepare_dataframe(
-            file_path=str(path),
-            terminology_labels=extra_labels,
-            exclude_codes=exclude,
-        )
-        labels = df["terminology_label"].unique().to_list()
-        assert "EXTRA:ab" in labels
-
-    def test_skip_patterns_removes_z_chapter_cid10(self, raw_parquet, terminology_labels):
-        df = load_and_prepare_dataframe(
-            file_path=str(raw_parquet),
-            terminology_labels=terminology_labels,
-            skip_patterns=[("cid10", r"^Z")],
-        )
-        labels = df["terminology_label"].unique().to_list()
-        assert "Z760:cid10" not in labels
-        assert "Z000:cid10" not in labels
-        assert "I10:cid10" in labels
-        assert "ABP005:ab" in labels
-        assert "K86:ciap2" in labels
-
-    def test_skip_patterns_respects_code_type_scope(self, tmp_path, terminology_labels):
-        """A cid10 Z-pattern must not remove a ciap2 code that starts with Z."""
-        extra_labels = terminology_labels.vstack(
-            pl.DataFrame(
-                {
-                    "id": [99],
-                    "code": ["Z96"],
-                    "code_type": ["ciap2"],
-                    "description": ["some ciap2 Z code"],
-                    "label": ["Z96:ciap2"],
-                }
-            )
-        )
-        rows = []
-        for row in extra_labels.iter_rows(named=True):
-            for year in [2022, 2023]:
-                for week in range(1, 14):
-                    rows.append(
-                        {
-                            "unique_id": "uid",
-                            "state": "SP",
-                            "city": "Salvador",
-                            "region": "NE",
-                            "population_range": "large",
-                            "year": year,
-                            "week": week,
-                            "sex": "M",
-                            "age_group": "adult",
-                            "code_type": row["code_type"],
-                            "code": row["code"],
-                            "quantity": 10,
-                        }
-                    )
-        path = tmp_path / "cleaned_20municipios_z96.parquet"
-        pl.DataFrame(rows).write_parquet(path)
-
-        df = load_and_prepare_dataframe(
-            file_path=str(path),
-            terminology_labels=extra_labels,
-            skip_patterns=[("cid10", r"^Z")],
-        )
-        labels = df["terminology_label"].unique().to_list()
-        assert "Z96:ciap2" in labels
-        assert "Z760:cid10" not in labels
-
-    def test_no_skip_patterns_keeps_all_codes(self, raw_parquet, terminology_labels):
-        df = load_and_prepare_dataframe(
-            file_path=str(raw_parquet),
-            terminology_labels=terminology_labels,
-            skip_patterns=[],
-        )
-        labels = set(df["terminology_label"].unique().to_list())
-        expected = {"I10:cid10", "Z760:cid10", "ABP005:ab", "Z000:cid10", "K86:ciap2"}
-        assert expected == labels
+        df = load_and_prepare_dataframe(file_path=str(path), year_min=None, year_max=None)
+        assert df.is_empty()
 
 
 class TestExtractDatasetName:
@@ -319,24 +146,28 @@ class TestExtractDatasetName:
         "file_path,expected",
         [
             (
-                "/data/interim/cleaned_aesop_20municipios_salvador.parquet",
-                "salvador",
+                "/data/processed/prepared_base_aesop_raw_extracao_01042026_all_cities.parquet",
+                "base_aesop_raw_extracao_01042026_all_cities",
             ),
             (
-                "/data/interim/cleaned_20municipios_sao_paulo.parquet",
-                "sao_paulo",
+                "/data/processed/prepared_base_aesop_raw_extracao_01042026_salvador.parquet",
+                "base_aesop_raw_extracao_01042026_salvador",
             ),
             (
-                "/data/interim/cleaned_20municipios_porto_alegre.parquet",
-                "porto_alegre",
+                "/data/interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_salvador.parquet",
+                "aesop_raw_dados_2017_20250223_20municipios_salvador",
+            ),
+            (
+                "/data/interim/cleaned_base_aesop_raw_extracao_01042026_porto_alegre.parquet",
+                "base_aesop_raw_extracao_01042026_porto_alegre",
             ),
         ],
     )
-    def test_extracts_name_after_municipios(self, file_path, expected):
+    def test_strips_known_prefix(self, file_path, expected):
         assert extract_dataset_name(file_path) == expected
 
-    def test_returns_unknown_when_no_municipios(self):
-        assert extract_dataset_name("/data/raw/dados.parquet") == "unknown"
+    def test_returns_stem_when_no_known_prefix(self):
+        assert extract_dataset_name("/data/raw/dados.parquet") == "dados"
 
-    def test_returns_unknown_when_no_parquet(self):
-        assert extract_dataset_name("/data/interim/cleaned_20municipios_salvador") == "unknown"
+    def test_works_on_plain_filename(self):
+        assert extract_dataset_name("prepared_my_dataset.parquet") == "my_dataset"

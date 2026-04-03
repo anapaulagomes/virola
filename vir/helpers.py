@@ -48,6 +48,20 @@ def suffix_from(filename: Path, break_on="20municipios", remove_extension=False)
     return suffix
 
 
+def extract_dataset_name(file_path: str) -> str:
+    """
+    Extract dataset name from file path.
+
+    Strips the ``cleaned_`` or ``prepared_`` prefix from the filename stem,
+    returning the suffix that identifies the dataset and city.
+    """
+    stem = Path(file_path).stem
+    for prefix in ("cleaned_", "prepared_"):
+        if stem.startswith(prefix):
+            return stem[len(prefix) :]
+    return stem
+
+
 def get_n_jobs():
     if slurm_cpus := os.getenv("SLURM_CPUS_PER_TASK"):
         return int(slurm_cpus)

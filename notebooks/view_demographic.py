@@ -31,7 +31,6 @@ def _():
         create_file_dropdown,
         extract_dataset_name,
         load_and_prepare_dataframe,
-        load_indicative_codes,
         load_terminology_labels,
     )
     from vir.views.demographic import DemographicView
@@ -43,7 +42,6 @@ def _():
         extract_dataset_name,
         get_connection,
         load_and_prepare_dataframe,
-        load_indicative_codes,
         load_terminology_labels,
     )
 
@@ -85,14 +83,6 @@ def _(load_terminology_labels):
 
 
 @app.cell
-def _(args, load_indicative_codes):
-    exclude_codes, indicative_codes_enabled = load_indicative_codes(
-        enabled="no-indicative" not in args
-    )
-    return exclude_codes, indicative_codes_enabled
-
-
-@app.cell
 def _(mo):
     mo.md(r"""
     ### Prepare dataframe
@@ -114,20 +104,9 @@ def _(files_dropdown):
 
 
 @app.cell
-def _(
-    extract_dataset_name,
-    file_path,
-    exclude_codes,
-    load_and_prepare_dataframe,
-    mo,
-    terminology_descriptions,
-    year_max,
-    year_min,
-):
+def _(extract_dataset_name, file_path, load_and_prepare_dataframe, mo, year_max, year_min):
     df = load_and_prepare_dataframe(
         file_path=file_path,
-        terminology_labels=terminology_descriptions,
-        exclude_codes=exclude_codes,
         year_min=year_min,
         year_max=year_max,
     )

@@ -131,19 +131,9 @@ def _(files_dropdown):
 
 
 @app.cell
-def _(
-    file_path,
-    exclude_codes,
-    load_and_prepare_dataframe,
-    mo,
-    terminology_labels,
-    year_max,
-    year_min,
-):
+def _(file_path, load_and_prepare_dataframe, mo, year_max, year_min):
     df = load_and_prepare_dataframe(
         file_path=file_path,
-        terminology_labels=terminology_labels,
-        exclude_codes=exclude_codes,
         year_min=year_min,
         year_max=year_max,
     )

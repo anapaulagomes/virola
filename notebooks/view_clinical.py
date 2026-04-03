@@ -41,8 +41,6 @@ def _():
         create_file_dropdown,
         extract_dataset_name,
         load_and_prepare_dataframe,
-        load_indicative_codes,
-        load_terminology_labels,
     )
     from vir.views import ClinicalView
 
@@ -52,8 +50,6 @@ def _():
         extract_dataset_name,
         get_n_jobs,
         load_and_prepare_dataframe,
-        load_indicative_codes,
-        load_terminology_labels,
     )
 
 
@@ -102,36 +98,6 @@ def _(mo):
 @app.cell
 def _(mo):
     mo.md(r"""
-    ### Fetch diagnosis terminology
-    """)
-    return
-
-
-@app.cell
-def _(load_terminology_labels):
-    terminology_labels = load_terminology_labels()
-    return (terminology_labels,)
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    ### Select codes that are indicative
-    """)
-    return
-
-
-@app.cell
-def _(args, load_indicative_codes):
-    exclude_codes, indicative_codes_enabled = load_indicative_codes(
-        enabled="no-indicative" not in args
-    )
-    return exclude_codes, indicative_codes_enabled
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
     ### Load and filter dataset
     """)
     return
@@ -158,19 +124,9 @@ def _(extract_dataset_name, file_path):
 
 
 @app.cell
-def _(
-    file_path,
-    exclude_codes,
-    load_and_prepare_dataframe,
-    mo,
-    terminology_labels,
-    year_max,
-    year_min,
-):
+def _(file_path, load_and_prepare_dataframe, mo, year_max, year_min):
     df = load_and_prepare_dataframe(
         file_path=file_path,
-        terminology_labels=terminology_labels,
-        exclude_codes=exclude_codes,
         year_min=year_min,
         year_max=year_max,
     )
