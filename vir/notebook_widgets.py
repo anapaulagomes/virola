@@ -102,7 +102,7 @@ def load_and_prepare_dataframe(
     terminology_labels: pl.DataFrame,
     exclude_codes: Optional[List[str]] = None,
     year_min: Optional[int] = 2022,
-    year_max: Optional[int] = 2024,
+    year_max: Optional[int] = 2025,
     skip_patterns: Optional[List[Tuple]] = None,
 ) -> pl.DataFrame:
     """

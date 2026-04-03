@@ -143,7 +143,7 @@ def prepare_clean(
 def view_clinical(
     dataset: str = typer.Option(..., "--dataset", "-d", help="Dataset file path or name"),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
-    year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
+    year_max: int = typer.Option(2025, "--year-max", help="Maximum year (inclusive)"),
     no_indicative: bool = typer.Option(
         False, "--no-indicative", help="Include all codes (skip indicative filtering)"
     ),
@@ -169,7 +169,7 @@ def view_clinical(
 def view_demographic(
     dataset: str = typer.Option(..., "--dataset", "-d", help="Dataset file path or name"),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
-    year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
+    year_max: int = typer.Option(2025, "--year-max", help="Maximum year (inclusive)"),
     no_indicative: bool = typer.Option(
         False, "--no-indicative", help="Include all codes (skip indicative filtering)"
     ),
@@ -195,7 +195,7 @@ def view_demographic(
 def view_temporal(
     dataset: str = typer.Option(..., "--dataset", "-d", help="Dataset file path or name"),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
-    year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
+    year_max: int = typer.Option(2025, "--year-max", help="Maximum year (inclusive)"),
     min_weeks: int = typer.Option(12, "--min-weeks", help="Minimum weeks of data required"),
     no_indicative: bool = typer.Option(
         False, "--no-indicative", help="Include all codes (skip indicative filtering)"
@@ -253,7 +253,7 @@ def model_indicative_codes(
 def model_snf(
     dataset: str = typer.Option(..., "--dataset", "-d", help="Dataset file path or name"),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
-    year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
+    year_max: int = typer.Option(2025, "--year-max", help="Maximum year (inclusive)"),
     snf_k: int = typer.Option(10, "--snf-k", help="SNF parameter k"),
     n_clusters: int = typer.Option(200, "--n-clusters", help="Number of clusters"),
     notes: Optional[str] = typer.Option(
@@ -297,7 +297,7 @@ def model_snf(
 def pipeline_run(
     city: str = typer.Argument(..., help=f"City name: {', '.join(CITY_NAMES)}"),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
-    year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
+    year_max: int = typer.Option(2025, "--year-max", help="Maximum year (inclusive)"),
     min_weeks: int = typer.Option(12, "--min-weeks", help="Minimum weeks for temporal view"),
     snf_k: int = typer.Option(10, "--snf-k", help="SNF parameter k"),
     n_clusters: int = typer.Option(200, "--n-clusters", help="Number of clusters"),
@@ -449,7 +449,7 @@ def results_build_profiles(
     run_id: int = typer.Argument(..., help="run_id to build profiles for"),
     dataset: str = typer.Option(..., "--dataset", "-d", help="Dataset file path or name"),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
-    year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
+    year_max: int = typer.Option(2025, "--year-max", help="Maximum year (inclusive)"),
     no_indicative: bool = typer.Option(
         False, "--no-indicative", help="Include all codes (skip indicative filtering)"
     ),
@@ -491,7 +491,7 @@ def results_explain(
     run_id: int = typer.Argument(..., help="run_id to compute explanations for"),
     dataset: str = typer.Option(..., "--dataset", "-d", help="Dataset file path or name"),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
-    year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
+    year_max: int = typer.Option(2025, "--year-max", help="Maximum year (inclusive)"),
     min_weeks: int = typer.Option(12, "--min-weeks", help="Minimum weeks for temporal view"),
     no_indicative: bool = typer.Option(
         False, "--no-indicative", help="Include all codes (skip indicative filtering)"
