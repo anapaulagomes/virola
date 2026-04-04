@@ -35,6 +35,13 @@ def _():
 
 
 @app.cell
+def _():
+    from vir.viz import AGE_GROUP_COLOR, SEX_COLOR
+
+    return AGE_GROUP_COLOR, SEX_COLOR
+
+
+@app.cell
 def _(load_dotenv):
     _ = load_dotenv()
     return
@@ -462,7 +469,7 @@ def _(mo, pl, profile_temporal, px):
 
 
 @app.cell
-def _(mo, pl, profile_demographic, px):
+def _(AGE_GROUP_COLOR, SEX_COLOR, mo, pl, profile_demographic, px):
     if profile_demographic:
         _demo_df = pl.DataFrame(profile_demographic).with_columns(
             [
@@ -475,7 +482,13 @@ def _(mo, pl, profile_demographic, px):
         _age_df = _demo_df.group_by("age_group").agg(pl.col("proportion").sum()).sort("age_group")
 
         _fig_sex = px.bar(
-            _sex_df, x="sex", y="proportion", title="Sex", labels={"proportion": "Proportion"}
+            _sex_df,
+            x="sex",
+            y="proportion",
+            color="sex",
+            title="Sex",
+            labels={"proportion": "Proportion"},
+            color_discrete_map=SEX_COLOR,
         )
         _fig_sex.update_layout(yaxis_tickformat=".0%")
 
@@ -483,8 +496,10 @@ def _(mo, pl, profile_demographic, px):
             _age_df,
             x="age_group",
             y="proportion",
+            color="age_group",
             title="Age group",
             labels={"proportion": "Proportion"},
+            color_discrete_map=AGE_GROUP_COLOR,
         )
         _fig_age.update_layout(yaxis_tickformat=".0%")
 

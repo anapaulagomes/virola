@@ -47,6 +47,13 @@ def _():
 
 
 @app.cell
+def _():
+    from vir.viz import AGE_GROUP_COLOR, SEX_COLOR
+
+    return AGE_GROUP_COLOR, SEX_COLOR
+
+
+@app.cell
 def _(load_dotenv):
     _ = load_dotenv()
     return
@@ -354,7 +361,7 @@ def _(px):
 
 
 @app.cell
-def _(mo, px):
+def _(SEX_COLOR, mo, px):
     def plot_cluster_sex_distribution(sex_dist_df, title):
         """Generates a bar chart for sex distribution by cluster."""
         if sex_dist_df.is_empty():
@@ -367,6 +374,7 @@ def _(mo, px):
             title=title,
             barmode="group",
             labels={"percentage": "% of Diagnoses"},
+            color_discrete_map=SEX_COLOR,
         )
         return fig
 
@@ -374,7 +382,7 @@ def _(mo, px):
 
 
 @app.cell
-def _(mo, px):
+def _(AGE_GROUP_COLOR, mo, px):
     def plot_cluster_age_distribution(age_dist_df, title):
         """Generates a stacked bar chart for age distribution by cluster."""
         if age_dist_df.is_empty():
@@ -387,6 +395,7 @@ def _(mo, px):
             title=title,
             barmode="stack",
             labels={"percentage": "% of Diagnoses"},
+            color_discrete_map=AGE_GROUP_COLOR,
         )
         return fig
 
