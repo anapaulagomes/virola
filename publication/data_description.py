@@ -49,6 +49,14 @@ def _(mo):
 
 
 @app.cell
+def _(INTERIM_DATA_DIR, pl):
+    all_cities_df = pl.read_parquet(
+        INTERIM_DATA_DIR / "cleaned_base_aesop_raw_extracao_01042026_all_cities.parquet"
+    )
+    return (all_cities_df,)
+
+
+@app.cell
 def _(IBGE_CITY_MAP, TABLEAU_COLORS, pl):
     REGION_TRANSLATIONS = {
         "Norte": "North",
@@ -282,7 +290,7 @@ def _(mo):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ### Unique codes
+    #### Unique codes
 
     Indicative vs non-indicative
     """)
@@ -290,12 +298,8 @@ def _(mo):
 
 
 @app.cell
-def _(CODE_TYPE_COLOR, INDICATIVE_CODES_FILE, INTERIM_DATA_DIR, go, mo, pl):
-    _parquet_file = (
-        INTERIM_DATA_DIR / "cleaned_base_aesop_raw_extracao_01042026_all_cities.parquet"
-    )
-
-    _unique_codes = pl.read_parquet(_parquet_file).select(["code", "code_type"]).unique()
+def _(CODE_TYPE_COLOR, INDICATIVE_CODES_FILE, all_cities_df, go, mo, pl):
+    _unique_codes = all_cities_df.select(["code", "code_type"]).unique()
 
     _indicative_lookup = pl.read_csv(INDICATIVE_CODES_FILE).select(
         ["code", "code_type", "indicative"]
@@ -393,12 +397,8 @@ def _(CODE_TYPE_COLOR, INDICATIVE_CODES_FILE, INTERIM_DATA_DIR, go, mo, pl):
 
 
 @app.cell
-def _(CODE_TYPE_COLOR, INDICATIVE_CODES_FILE, INTERIM_DATA_DIR, go, mo, pl):
-    _parquet_file = (
-        INTERIM_DATA_DIR / "cleaned_base_aesop_raw_extracao_01042026_all_cities.parquet"
-    )
-
-    _record_counts = pl.read_parquet(_parquet_file).group_by(["code", "code_type"]).len("quantity")
+def _(CODE_TYPE_COLOR, INDICATIVE_CODES_FILE, all_cities_df, go, mo, pl):
+    _record_counts = all_cities_df.group_by(["code", "code_type"]).len("quantity")
 
     _indicative_lookup_freq = pl.read_csv(INDICATIVE_CODES_FILE).select(
         ["code", "code_type", "indicative"]
@@ -488,6 +488,37 @@ def _(CODE_TYPE_COLOR, INDICATIVE_CODES_FILE, INTERIM_DATA_DIR, go, mo, pl):
 
     _fig_freq.write_image("indicative_representation.pdf")
     mo.ui.plotly(_fig_freq)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    #### Records and unique diagnosis
+
+    Per city
+    """)
+    return
+
+
+@app.cell
+def _(all_cities_df, pl):
+    all_cities_df.select(pl.col("quantity").sum().alias("total"))  # unique records
+    return
+
+
+@app.cell
+def _(all_cities_df):
+    all_cities_df.select(["code", "code_type"]).n_unique()  # sanity check
+    return
+
+
+@app.cell(hide_code=True)
+def _(all_cities_df, pl):
+    all_cities_df.group_by("city").agg(
+        pl.col("quantity").sum().alias("total"),
+        pl.struct("code", "code_type").n_unique().alias("unique_codes"),
+    ).sort("total", descending=True)
     return
 
 
