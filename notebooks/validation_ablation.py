@@ -21,10 +21,10 @@ def _():
     from snf import compute, metrics
 
     from vir.db import fetch_cluster_assignments, fetch_runs
+    from vir.helpers import extract_dataset_name
     from vir.notebook_widgets import (
         create_file_dropdown,
         distance_to_affinity,
-        extract_dataset_name,
         load_and_prepare_dataframe,
         load_indicative_codes,
         load_terminology_labels,

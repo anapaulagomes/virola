@@ -25,9 +25,9 @@ def _():
 @app.cell
 def _():
     from vir.db import get_connection, get_cross_terminology_pairs
+    from vir.helpers import extract_dataset_name
     from vir.notebook_widgets import (
         create_file_dropdown,
-        extract_dataset_name,
         load_and_prepare_dataframe,
     )
     from vir.views.clinical import ClinicalView
