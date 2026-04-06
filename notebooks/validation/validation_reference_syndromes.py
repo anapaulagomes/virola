@@ -39,23 +39,24 @@ def _(load_dotenv):
 @app.cell
 def _(mo):
     mo.md(r"""
-    # Layer 2 — Anchor-Based Validation
+    # Reference Syndrome Recovery
 
     Tests whether the SNF clustering naturally recovers two published syndrome
-    definitions from AESOP/Fiocruz, without those definitions being used as model inputs:
+    definitions from AESOP/Fiocruz (peer-reviewed, operationally used by the
+    Brazilian national health surveillance system), without those definitions
+    being used as model inputs:
 
     - **Arboviroses**: dengue, chikungunya, zika and related
     - **URI / Respiratory**: influenza, acute upper respiratory infections and related
 
-    **Logic**: if both syndromes emerge as coherent clusters, the remaining clusters
-    inherit epidemiological credibility. This is the primary result of the paper.
+    **Logic**: if both reference syndromes emerge as coherent clusters, the remaining
+    clusters inherit epidemiological credibility. This is the primary result of the paper.
 
     **Metrics**:
-    - *Dominant purity*: fraction of anchor codes in the single largest anchor cluster
-    - *Recovered purity*: fraction of anchor codes in any cluster above the precision threshold
-      (accounts for valid sub-syndrome fragmentation)
-    - *Precision*: fraction of a cluster that belongs to the anchor definition
-    - *NMI*: normalised mutual information between anchor membership and cluster labels
+    - *Best-cluster recall*: fraction of reference codes in the single most concentrated cluster (Manning et al. 2008)
+    - *Aggregated recall*: fraction of reference codes in any cluster above the precision threshold — accounts for valid sub-syndrome fragmentation (proposed; inspired by BCubed completeness, Amigó et al. 2009)
+    - *Cluster precision*: fraction of a cluster that belongs to the reference definition (Manning et al. 2008)
+    - *NMI*: normalised mutual information between reference membership and cluster labels (Strehl & Ghosh 2002)
     """)
     return
 
@@ -126,7 +127,7 @@ def _(anchor_arbovirus, anchor_uri, assignments, mo, pl):
 
     _coverage = pl.DataFrame(
         {
-            "Anchor": ["Arboviroses", "URI / Respiratory"],
+            "Reference syndrome": ["Arboviroses", "URI / Respiratory"],
             "Defined codes": [len(anchor_arbovirus), len(anchor_uri)],
             "Found in run": [len(arbovirus_hits), len(uri_hits)],
         }
@@ -136,7 +137,7 @@ def _(anchor_arbovirus, anchor_uri, assignments, mo, pl):
 
     mo.vstack(
         [
-            mo.md("## Anchor Coverage in Selected Run"),
+            mo.md("## Reference Syndrome Coverage in Selected Run"),
             mo.ui.table(_coverage, selection=None),
         ]
     )
@@ -157,8 +158,8 @@ def _(mo):
             mo.md("""
         ### Precision threshold
 
-        A cluster is considered a **coherent recovery** of the anchor syndrome if at least
-        this fraction of its codes belongs to the anchor definition.
+        A cluster is considered a **coherent recovery** of the reference syndrome if at least
+        this fraction of its codes belongs to the reference definition (cluster precision ≥ τ).
         Lowering the threshold counts fragmented or diluted clusters as valid recoveries.
         """),
             precision_threshold,
@@ -172,8 +173,8 @@ def _(mo):
     mo.md(r"""
     ## 1. Arboviroses — Cluster Recovery
 
-    How do arbovirus anchor codes distribute across clusters?
-    The dominant cluster is the primary candidate; fragmentation analysis shows
+    How do arbovirus reference codes distribute across clusters?
+    The best cluster is the primary candidate; fragmentation analysis shows
     whether remaining codes landed in coherent sub-syndrome clusters.
     """)
     return
@@ -196,33 +197,33 @@ def _(
 
     _cluster_counts = (
         arbovirus_hits.group_by("cluster_id")
-        .agg(pl.len().alias("anchor_codes"))
-        .sort("anchor_codes", descending=True)
+        .agg(pl.len().alias("reference_codes"))
+        .sort("reference_codes", descending=True)
     )
     arbo_dominant_cluster = int(_cluster_counts["cluster_id"][0])
-    _n_in_dominant = int(_cluster_counts["anchor_codes"][0])
+    _n_in_dominant = int(_cluster_counts["reference_codes"][0])
     _n_anchor_found = len(arbovirus_hits)
     _n_cluster_size = int(assignments.filter(pl.col("cluster_id") == arbo_dominant_cluster).height)
 
     arbo_purity = _n_in_dominant / _n_anchor_found
     _arbo_precision = _n_in_dominant / _n_cluster_size
-    _is_anchor = (
+    _is_reference = (
         assignments["terminology_id"]
         .is_in(arbovirus_hits["terminology_id"])
         .cast(pl.Int8)
         .to_numpy()
     )
     arbo_nmi = float(
-        normalized_mutual_info_score(_is_anchor, assignments["cluster_id"].to_numpy())
+        normalized_mutual_info_score(_is_reference, assignments["cluster_id"].to_numpy())
     )
 
     _pass = arbo_purity >= 0.5
     _fig = px.bar(
         _cluster_counts.sort("cluster_id"),
         x="cluster_id",
-        y="anchor_codes",
-        title="Arboviroses anchor codes per cluster",
-        labels={"cluster_id": "Cluster", "anchor_codes": "Anchor codes in cluster"},
+        y="reference_codes",
+        title="Arboviroses reference codes per cluster",
+        labels={"cluster_id": "Cluster", "reference_codes": "Reference codes in cluster"},
     )
     _fig.add_vline(x=arbo_dominant_cluster, line_dash="dash", annotation_text="dominant")
 
@@ -231,11 +232,11 @@ def _(
             _fig,
             mo.callout(
                 mo.md(f"""
-            **Arboviroses dominant-cluster recovery: {"✅ PASS" if _pass else "❌ FAIL"}**
+            **Arboviroses best-cluster recall: {"✅ PASS" if _pass else "❌ FAIL"}**
 
-            Anchor codes found in run: `{_n_anchor_found}` / {len(anchor_arbovirus)} defined
+            Reference codes found in run: `{_n_anchor_found}` / {len(anchor_arbovirus)} defined
             Dominant cluster: **{arbo_dominant_cluster}** ({_n_cluster_size} codes total)
-            Purity: `{arbo_purity:.2%}` | Precision: `{_arbo_precision:.2%}` | NMI: `{arbo_nmi:.4f}`
+            Best-cluster recall: `{arbo_purity:.2%}` | Cluster precision: `{_arbo_precision:.2%}` | NMI: `{arbo_nmi:.4f}`
             """),
                 kind="success" if _pass else "danger",
             ),
@@ -250,27 +251,30 @@ def _(arbovirus_hits, assignments, mo, pl, precision_threshold, px):
 
     _frag = (
         arbovirus_hits.group_by("cluster_id")
-        .agg(pl.len().alias("anchor_codes"))
+        .agg(pl.len().alias("reference_codes"))
         .join(_cluster_sizes, on="cluster_id")
         .with_columns(
-            (pl.col("anchor_codes") / pl.col("cluster_size") * 100).round(1).alias("precision_%"),
+            (pl.col("reference_codes") / pl.col("cluster_size") * 100)
+            .round(1)
+            .alias("precision_%"),
             (
-                pl.col("anchor_codes") / pl.col("cluster_size") >= precision_threshold.value / 100
+                pl.col("reference_codes") / pl.col("cluster_size")
+                >= precision_threshold.value / 100
             ).alias("coherent"),
         )
-        .sort("anchor_codes", descending=True)
+        .sort("reference_codes", descending=True)
     )
 
     arbo_coherent_clusters = _frag.filter(pl.col("coherent"))["cluster_id"].to_list()
-    _n_recovered = int(_frag.filter(pl.col("coherent"))["anchor_codes"].sum())
+    _n_recovered = int(_frag.filter(pl.col("coherent"))["reference_codes"].sum())
     _n_anchor_found = len(arbovirus_hits)
     arbo_recovered_purity = _n_recovered / _n_anchor_found if _n_anchor_found > 0 else 0.0
 
-    # Stacked bar: anchor vs other codes, only clusters that have anchor codes
+    # Stacked bar: reference vs other codes, only clusters that have reference codes
     _anchor_bar = (
         arbovirus_hits.group_by("cluster_id")
         .agg(pl.len().alias("count"))
-        .with_columns(pl.lit("anchor").alias("type"))
+        .with_columns(pl.lit("reference").alias("type"))
     )
     _other_bar = (
         assignments.join(arbovirus_hits.select("terminology_id"), on="terminology_id", how="anti")
@@ -286,8 +290,8 @@ def _(arbovirus_hits, assignments, mo, pl, precision_threshold, px):
         x="cluster_id",
         y="count",
         color="type",
-        color_discrete_map={"anchor": "#2ca02c", "other": "#cccccc"},
-        title="Arboviroses: anchor vs other codes in clusters that contain anchor codes",
+        color_discrete_map={"reference": "#2ca02c", "other": "#cccccc"},
+        title="Arboviroses: reference vs other codes in clusters containing reference codes",
         labels={"cluster_id": "Cluster", "count": "Codes", "type": ""},
     )
 
@@ -297,8 +301,8 @@ def _(arbovirus_hits, assignments, mo, pl, precision_threshold, px):
                 f"### Fragmentation analysis (precision threshold: {precision_threshold.value}%)"
             ),
             mo.md(
-                f"Recovered purity (multi-cluster): `{arbo_recovered_purity:.2%}` — "
-                f"{_n_recovered}/{_n_anchor_found} anchor codes in coherent clusters"
+                f"Aggregated recall (multi-cluster): `{arbo_recovered_purity:.2%}` — "
+                f"{_n_recovered}/{_n_anchor_found} reference codes in coherent clusters"
             ),
             mo.ui.table(_frag, selection=None),
             _fig,
@@ -312,7 +316,7 @@ def _(mo):
     mo.md(r"""
     ## 2. URI / Respiratory — Cluster Recovery
 
-    Distribution of URI anchor codes across clusters.
+    Distribution of URI reference codes across clusters.
     """)
     return
 
@@ -334,28 +338,30 @@ def _(
 
     _cluster_counts = (
         uri_hits.group_by("cluster_id")
-        .agg(pl.len().alias("anchor_codes"))
-        .sort("anchor_codes", descending=True)
+        .agg(pl.len().alias("reference_codes"))
+        .sort("reference_codes", descending=True)
     )
     uri_dominant_cluster = int(_cluster_counts["cluster_id"][0])
-    _n_in_dominant = int(_cluster_counts["anchor_codes"][0])
+    _n_in_dominant = int(_cluster_counts["reference_codes"][0])
     _n_anchor_found = len(uri_hits)
     _n_cluster_size = int(assignments.filter(pl.col("cluster_id") == uri_dominant_cluster).height)
 
     uri_purity = _n_in_dominant / _n_anchor_found
     _uri_precision = _n_in_dominant / _n_cluster_size
-    _is_anchor = (
+    _is_reference = (
         assignments["terminology_id"].is_in(uri_hits["terminology_id"]).cast(pl.Int8).to_numpy()
     )
-    uri_nmi = float(normalized_mutual_info_score(_is_anchor, assignments["cluster_id"].to_numpy()))
+    uri_nmi = float(
+        normalized_mutual_info_score(_is_reference, assignments["cluster_id"].to_numpy())
+    )
 
     _pass = uri_purity >= 0.5
     _fig = px.bar(
         _cluster_counts.sort("cluster_id"),
         x="cluster_id",
-        y="anchor_codes",
-        title="URI / Respiratory anchor codes per cluster",
-        labels={"cluster_id": "Cluster", "anchor_codes": "Anchor codes in cluster"},
+        y="reference_codes",
+        title="URI / Respiratory reference codes per cluster",
+        labels={"cluster_id": "Cluster", "reference_codes": "Reference codes in cluster"},
     )
     _fig.add_vline(x=uri_dominant_cluster, line_dash="dash", annotation_text="dominant")
 
@@ -364,11 +370,11 @@ def _(
             _fig,
             mo.callout(
                 mo.md(f"""
-            **URI dominant-cluster recovery: {"✅ PASS" if _pass else "❌ FAIL"}**
+            **URI best-cluster recall: {"✅ PASS" if _pass else "❌ FAIL"}**
 
-            Anchor codes found in run: `{_n_anchor_found}` / {len(anchor_uri)} defined
+            Reference codes found in run: `{_n_anchor_found}` / {len(anchor_uri)} defined
             Dominant cluster: **{uri_dominant_cluster}** ({_n_cluster_size} codes total)
-            Purity: `{uri_purity:.2%}` | Precision: `{_uri_precision:.2%}` | NMI: `{uri_nmi:.4f}`
+            Best-cluster recall: `{uri_purity:.2%}` | Cluster precision: `{_uri_precision:.2%}` | NMI: `{uri_nmi:.4f}`
             """),
                 kind="success" if _pass else "danger",
             ),
@@ -383,26 +389,29 @@ def _(assignments, mo, pl, precision_threshold, px, uri_hits):
 
     _frag = (
         uri_hits.group_by("cluster_id")
-        .agg(pl.len().alias("anchor_codes"))
+        .agg(pl.len().alias("reference_codes"))
         .join(_cluster_sizes, on="cluster_id")
         .with_columns(
-            (pl.col("anchor_codes") / pl.col("cluster_size") * 100).round(1).alias("precision_%"),
+            (pl.col("reference_codes") / pl.col("cluster_size") * 100)
+            .round(1)
+            .alias("precision_%"),
             (
-                pl.col("anchor_codes") / pl.col("cluster_size") >= precision_threshold.value / 100
+                pl.col("reference_codes") / pl.col("cluster_size")
+                >= precision_threshold.value / 100
             ).alias("coherent"),
         )
-        .sort("anchor_codes", descending=True)
+        .sort("reference_codes", descending=True)
     )
 
     uri_coherent_clusters = _frag.filter(pl.col("coherent"))["cluster_id"].to_list()
-    _n_recovered = int(_frag.filter(pl.col("coherent"))["anchor_codes"].sum())
+    _n_recovered = int(_frag.filter(pl.col("coherent"))["reference_codes"].sum())
     _n_anchor_found = len(uri_hits)
     uri_recovered_purity = _n_recovered / _n_anchor_found if _n_anchor_found > 0 else 0.0
 
     _anchor_bar = (
         uri_hits.group_by("cluster_id")
         .agg(pl.len().alias("count"))
-        .with_columns(pl.lit("anchor").alias("type"))
+        .with_columns(pl.lit("reference").alias("type"))
     )
     _other_bar = (
         assignments.join(uri_hits.select("terminology_id"), on="terminology_id", how="anti")
@@ -418,8 +427,8 @@ def _(assignments, mo, pl, precision_threshold, px, uri_hits):
         x="cluster_id",
         y="count",
         color="type",
-        color_discrete_map={"anchor": "#1f77b4", "other": "#cccccc"},
-        title="URI / Respiratory: anchor vs other codes in clusters that contain anchor codes",
+        color_discrete_map={"reference": "#1f77b4", "other": "#cccccc"},
+        title="URI / Respiratory: reference vs other codes in clusters containing reference codes",
         labels={"cluster_id": "Cluster", "count": "Codes", "type": ""},
     )
 
@@ -429,8 +438,8 @@ def _(assignments, mo, pl, precision_threshold, px, uri_hits):
                 f"### Fragmentation analysis (precision threshold: {precision_threshold.value}%)"
             ),
             mo.md(
-                f"Recovered purity (multi-cluster): `{uri_recovered_purity:.2%}` — "
-                f"{_n_recovered}/{_n_anchor_found} anchor codes in coherent clusters"
+                f"Aggregated recall (multi-cluster): `{uri_recovered_purity:.2%}` — "
+                f"{_n_recovered}/{_n_anchor_found} reference codes in coherent clusters"
             ),
             mo.ui.table(_frag, selection=None),
             _fig,
@@ -444,9 +453,9 @@ def _(mo):
     mo.md(r"""
     ## 3. Geometric Coherence
 
-    What non-anchor codes share the coherent clusters with each syndrome?
+    What non-reference codes share the coherent clusters with each syndrome?
     Epidemiologically coherent co-travelers confirm the clustering captures real signal.
-    All clusters above the precision threshold are shown, not only the dominant one.
+    All clusters above the precision threshold are shown, not only the best one.
     """)
     return
 
@@ -461,31 +470,32 @@ def _(
     pl,
     uri_coherent_clusters,
 ):
-    _arbo_anchor_codes = set(anchor_arbovirus["code"].to_list())
-    _uri_anchor_codes = set(anchor_uri["code"].to_list())
+    _arbo_reference_codes = set(anchor_arbovirus["code"].to_list())
+    _uri_reference_codes = set(anchor_uri["code"].to_list())
 
-    def _show_cluster(cluster_id: int, anchor_codes: set, label: str):
+    def _show_cluster(cluster_id: int, reference_codes: set, label: str):
         _df = (
             assignments.filter(pl.col("cluster_id") == cluster_id)
-            .with_columns(pl.col("code").is_in(list(anchor_codes)).alias("is_anchor"))
-            .select("code", "code_type", "description", "is_anchor")
-            .sort("is_anchor", descending=True)
+            .with_columns(pl.col("code").is_in(list(reference_codes)).alias("is_reference"))
+            .select("code", "code_type", "description", "is_reference")
+            .sort("is_reference", descending=True)
         )
         return mo.vstack(
             [
                 mo.md(
                     f"**{label} — cluster {cluster_id}** "
-                    f"({len(_df)} codes, {_df['is_anchor'].sum()} anchor)"
+                    f"({len(_df)} codes, {_df['is_reference'].sum()} reference)"
                 ),
                 mo.ui.table(_df, selection=None),
             ]
         )
 
     _arbo_panels = [
-        _show_cluster(c, _arbo_anchor_codes, "Arboviroses") for c in sorted(arbo_coherent_clusters)
+        _show_cluster(c, _arbo_reference_codes, "Arboviroses")
+        for c in sorted(arbo_coherent_clusters)
     ]
     _uri_panels = [
-        _show_cluster(c, _uri_anchor_codes, "URI / Respiratory")
+        _show_cluster(c, _uri_reference_codes, "URI / Respiratory")
         for c in sorted(uri_coherent_clusters)
     ]
 
@@ -523,9 +533,9 @@ def _(
     _both_pass = _arbo_pass and _uri_pass
 
     _lines = (
-        f"**Arboviroses**: dominant purity `{arbo_purity:.2%}` → recovered purity `{arbo_recovered_purity:.2%}` | NMI `{arbo_nmi:.4f}` — "
+        f"**Arboviroses**: best-cluster recall `{arbo_purity:.2%}` → aggregated recall `{arbo_recovered_purity:.2%}` | NMI `{arbo_nmi:.4f}` — "
         f"{'✅ PASS' if _arbo_pass else '❌ FAIL'}  \n"
-        f"**URI / Respiratory**: dominant purity `{uri_purity:.2%}` → recovered purity `{uri_recovered_purity:.2%}` | NMI `{uri_nmi:.4f}` — "
+        f"**URI / Respiratory**: best-cluster recall `{uri_purity:.2%}` → aggregated recall `{uri_recovered_purity:.2%}` | NMI `{uri_nmi:.4f}` — "
         f"{'✅ PASS' if _uri_pass else '❌ FAIL'}"
     )
 
@@ -533,7 +543,7 @@ def _(
         _message = f"""
         **Primary result confirmed**
 
-        Both published syndrome definitions were recovered naturally by the SNF
+        Both published reference syndromes were recovered naturally by the SNF
         clustering without being used as model inputs.
 
         {_lines}
@@ -544,7 +554,7 @@ def _(
 
         {_lines}
 
-        At least one syndrome was not recovered with recovered purity ≥ 50%.
+        At least one reference syndrome was not recovered with aggregated recall ≥ 50%.
         Adjust the precision threshold or inspect the fragmentation bar charts
         to understand the failure mode (coverage gap vs. cluster dilution).
         """
