@@ -13,31 +13,19 @@ def _():
 
 @app.cell
 def _():
-    import os
-
     import numpy as np
     import plotly.express as px
     import plotly.graph_objects as go
     import polars as pl
-    from aeon.clustering import TimeSeriesKMedoids
-    from aeon.distances import pairwise_distance
-    from aeon.transformations.collection import MinMaxScaler
-    from aeon.visualisation import plot_cluster_algorithm, plot_series_collection
+    from aeon.visualisation import plot_series_collection
     from dotenv import load_dotenv
     from sklearn.metrics import silhouette_samples, silhouette_score
-    from sklearn.pipeline import make_pipeline
 
     return (
-        MinMaxScaler,
-        TimeSeriesKMedoids,
         go,
         load_dotenv,
-        make_pipeline,
         np,
-        os,
-        pairwise_distance,
         pl,
-        plot_cluster_algorithm,
         plot_series_collection,
         px,
         silhouette_samples,
@@ -221,176 +209,11 @@ def _(X, plot_series_collection):
 
 
 @app.cell
-def _(mo):
-    mo.md(r"""
-    **Note**: Distance matrix will be computed after Grid Search with optimal c parameter.
-    """)
-    return
-
-
-@app.cell
-def _(MinMaxScaler, TimeSeriesKMedoids, X, make_pipeline):
-    pipeline = make_pipeline(
-        MinMaxScaler(), TimeSeriesKMedoids(distance="msm", random_state=42, n_clusters=3)
-    )
-
-    pipeline.fit(X)
-    return (pipeline,)
-
-
-@app.cell
-def _(X, pipeline):
-    pipeline.named_steps["timeserieskmedoids"].predict(X)
-    return
-
-
-@app.cell
-def _(pipeline):
-    pipeline.named_steps["timeserieskmedoids"].inertia_
-    return
-
-
-@app.cell
-def _(MinMaxScaler, X):
-    Xt = MinMaxScaler().fit_transform(X)
-    return (Xt,)
-
-
-@app.cell
-def _(Xt, pipeline, plot_cluster_algorithm):
-    _fig, _ = plot_cluster_algorithm(pipeline.named_steps["timeserieskmedoids"], Xt, 3)
-    _fig
-    return
-
-
-@app.cell
-def _(mo):
-    validation_mode_toggle = mo.ui.checkbox(
-        label="Enable validation mode (run grid search for parameter c)", value=False
-    )
-    validation_mode_toggle
-    return (validation_mode_toggle,)
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    ### Grid Search for optimal c parameter
-
-    The `c` parameter in MSM controls the cost of split/merge operations.
-    Low values make these operations cheaper (more flexibility),
-    high values make them more expensive (more rigidity).
-
-    Find the `c` that maximizes Silhouette Score for k=3 or k=4, as these are the natural number of clusters identified in the data.
-    """)
-    return
-
-
-@app.cell
-def _(mo):
-    k_for_grid_search = mo.ui.slider(start=2, stop=5, value=3, label="k for c Grid Search")
-    k_for_grid_search
-    return (k_for_grid_search,)
-
-
-@app.cell
-def _(
-    MinMaxScaler,
-    TimeSeriesKMedoids,
-    VALIDATION_DIR,
-    X,
-    extract_dataset_name,
-    files_dropdown,
-    k_for_grid_search,
-    make_pipeline,
-    n_jobs,
-    pairwise_distance,
-    pl,
-    silhouette_score,
-    validation_mode_toggle,
-):
-    if validation_mode_toggle.value:
-        # Grid search enabled - test multiple c values
-        c_values = [0.01, 0.1, 0.5, 1.0, 5.0, 10.0]
-        grid_search_results = []
-
-        print(f"Grid Search for k={k_for_grid_search.value}...")
-        print("-" * 60)
-
-        for _c in c_values:
-            _dist_matrix = pairwise_distance(X, method="msm", n_jobs=n_jobs, c=_c)
-            _pipeline = make_pipeline(
-                MinMaxScaler(),
-                TimeSeriesKMedoids(
-                    n_clusters=k_for_grid_search.value,
-                    distance="msm",
-                    random_state=42,
-                    distance_params={"c": _c},
-                ),
-            )
-
-            _pipeline.fit(_dist_matrix)
-            _labels = _pipeline.named_steps["timeserieskmedoids"].labels_
-            _silhouette = silhouette_score(_dist_matrix, _labels, metric="precomputed")
-
-            grid_search_results.append(
-                {"c": _c, "silhouette": _silhouette, "k": k_for_grid_search.value}
-            )
-
-            print(f"c={_c:6.2f} | Silhouette={_silhouette:.4f}")
-
-        grid_df = pl.DataFrame(grid_search_results)
-        best_c_row = grid_df.sort("silhouette", descending=True)[0]
-        best_c = best_c_row["c"][0]
-        best_silhouette = best_c_row["silhouette"][0]
-
-        # Save results to JSON
-        VALIDATION_DIR.mkdir(parents=True, exist_ok=True)
-        dataset_name = extract_dataset_name(files_dropdown.value)
-        output_file = VALIDATION_DIR / f"temporal_grid_search_{dataset_name}.json"
-        grid_df.write_json(output_file)
-
-        print("-" * 60)
-        print(f"🏆 BEST c = {best_c} (Silhouette = {best_silhouette:.4f})")
-        print(f"✓ Results saved to: {output_file}")
-
-    else:
-        # Use default optimal value
-        best_c = 1.0  # Known optimal from previous validation
-        grid_df = pl.DataFrame([{"c": best_c, "silhouette": 0.0, "k": 0}])
-        print(f"Using default c={best_c}")
-    return best_c, grid_df
-
-
-@app.cell
-def _(grid_df, px):
-    _fig = px.line(
-        grid_df,
-        x="c",
-        y="silhouette",
-        markers=True,
-        title="Grid Search: Silhouette Score vs c parameter (MSM)",
-        labels={"c": "Parameter c", "silhouette": "Silhouette Score"},
-        color_discrete_sequence=["#E15759"],  # Tableau Red
-    )
-    _fig.update_traces(marker=dict(size=10))
-    _fig
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
-    ### Distance matrix with optimal c
-    """)
-    return
-
-
-@app.cell
-def _(TemporalView, df, extract_dataset_name, files_dropdown):
+def _(TemporalView, df, extract_dataset_name, files_dropdown, min_weeks, n_jobs):
     temporal_view_optimal = TemporalView(
         df=df,
         dataset_name=extract_dataset_name(files_dropdown.value),
+        params={"min_weeks": min_weeks, "c": 1.0, "n_jobs": n_jobs},
     )
 
     # get optimal distance matrix (cached for reuse)
