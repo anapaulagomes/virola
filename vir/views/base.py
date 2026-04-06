@@ -96,8 +96,12 @@ class BaseView(ABC):
         Returns:
             Cache key string
         """
-        # Sort params for consistent key generation
-        param_str = "_".join(f"{k}={v}" for k, v in sorted(self.params.items()))
+        # Sort params for consistent key generation, excluding runtime-only
+        # params that affect performance but not the result
+        excluded_params = {"n_jobs"}
+        param_str = "_".join(
+            f"{k}={v}" for k, v in sorted(self.params.items()) if k not in excluded_params
+        )
 
         # Hash dataframe content (only relevant columns)
         df_hash = self._hash_dataframe()
