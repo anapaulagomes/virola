@@ -194,11 +194,23 @@ def create_results_schema():
                 silhouette      FLOAT,
                 largest_cluster INTEGER,
                 median_size     FLOAT,
+                affinity_zscore FLOAT,
                 PRIMARY KEY (run_id, k)
+            );
+
+            CREATE TABLE IF NOT EXISTS run_leiden (
+                run_id        INTEGER NOT NULL REFERENCES runs(run_id),
+                resolution    FLOAT NOT NULL,
+                n_communities INTEGER NOT NULL,
+                PRIMARY KEY (run_id, resolution)
             );
         """)
 
         # Migrate existing runs table — add new columns if they don't exist yet
+        con.execute("""
+            ALTER TABLE run_multi_k ADD COLUMN IF NOT EXISTS affinity_zscore FLOAT;
+        """)
+
         con.execute("""
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS n_codes_clinical    INTEGER;
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS n_codes_temporal    INTEGER;
@@ -486,21 +498,29 @@ def insert_run_multi_k(run_id: int, results: list[dict]) -> None:
 
     Args:
         run_id: The run identifier.
-        results: List of {n_clusters, silhouette, largest_cluster, median_size} dicts.
+        results: List of {n_clusters, silhouette, largest_cluster, median_size, affinity_zscore} dicts.
     """
     rows = [
-        (run_id, r["n_clusters"], r["silhouette"], r["largest_cluster"], r["median_size"])
+        (
+            run_id,
+            r["n_clusters"],
+            r["silhouette"],
+            r["largest_cluster"],
+            r["median_size"],
+            r.get("affinity_zscore"),
+        )
         for r in results
     ]
     with _write_context() as con:
         con.executemany(
             """
-            INSERT INTO run_multi_k (run_id, k, silhouette, largest_cluster, median_size)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO run_multi_k (run_id, k, silhouette, largest_cluster, median_size, affinity_zscore)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT (run_id, k) DO UPDATE SET
                 silhouette      = EXCLUDED.silhouette,
                 largest_cluster = EXCLUDED.largest_cluster,
-                median_size     = EXCLUDED.median_size
+                median_size     = EXCLUDED.median_size,
+                affinity_zscore = EXCLUDED.affinity_zscore
             """,
             rows,
         )
@@ -511,7 +531,42 @@ def fetch_run_multi_k(run_id: int) -> pl.DataFrame:
     return (
         get_connection()
         .execute(
-            "SELECT k, silhouette, largest_cluster, median_size FROM run_multi_k WHERE run_id = ? ORDER BY k",
+            """
+            SELECT k, silhouette, largest_cluster, median_size, affinity_zscore
+            FROM run_multi_k WHERE run_id = ? ORDER BY k
+            """,
+            [run_id],
+        )
+        .pl()
+    )
+
+
+def insert_run_leiden(run_id: int, results: list[dict]) -> None:
+    """Bulk insert Leiden community detection sweep results for a run.
+
+    Args:
+        run_id: The run identifier.
+        results: List of {resolution, n_communities} dicts.
+    """
+    rows = [(run_id, r["resolution"], r["n_communities"]) for r in results]
+    with _write_context() as con:
+        con.executemany(
+            """
+            INSERT INTO run_leiden (run_id, resolution, n_communities)
+            VALUES (?, ?, ?)
+            ON CONFLICT (run_id, resolution) DO UPDATE SET
+                n_communities = EXCLUDED.n_communities
+            """,
+            rows,
+        )
+
+
+def fetch_run_leiden(run_id: int) -> pl.DataFrame:
+    """Return Leiden sweep results for a run as a Polars DataFrame."""
+    return (
+        get_connection()
+        .execute(
+            "SELECT resolution, n_communities FROM run_leiden WHERE run_id = ? ORDER BY resolution",
             [run_id],
         )
         .pl()
