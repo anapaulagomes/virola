@@ -38,6 +38,7 @@ def _():
 
 @app.cell
 def _():
+    from vir.config import VALIDATION_DIR
     from vir.db import get_connection
     from vir.helpers import extract_dataset_name, get_n_jobs
     from vir.notebook_widgets import (
@@ -48,6 +49,7 @@ def _():
 
     return (
         TemporalView,
+        VALIDATION_DIR,
         create_file_dropdown,
         extract_dataset_name,
         get_connection,
@@ -152,6 +154,15 @@ def _(MinMaxScaler, time_series_matrix):
 
 
 @app.cell
+def _(get_connection):
+    _connection = get_connection()
+    code_lookup = _connection.execute(
+        "SELECT id, code, code_type, description FROM medical_terminologies ORDER BY id"
+    ).pl()
+    return (code_lookup,)
+
+
+@app.cell
 def _(mo):
     mo.md(r"""
     ## Computing pairwise distances
@@ -181,21 +192,36 @@ def _(n_jobs, normalized_matrix, np, pairwise_distance):
 
 
 @app.cell
+def _(distance_matrices, np):
+    p90_per_method = {}
+    for _name, _matrix in distance_matrices.items():
+        _upper = _matrix[np.triu_indices_from(_matrix, k=1)]
+        p90_per_method[_name] = float(np.percentile(_upper, 90))
+    return (p90_per_method,)
+
+
+@app.cell
 def _(mo):
     mo.md(r"""
-    ## Distance distributions
+    ## Distance distributions (P90-normalized)
+
+    All distances are divided by their method's 90th percentile, placing
+    every method on a comparable [0, ~1] scale. Values above 1.0 are the
+    10% most distant pairs.
     """)
     return
 
 
 @app.cell
-def _(distance_matrices, go, mo, np):
+def _(distance_matrices, go, mo, np, p90_per_method):
     _dist_figs = []
     for _name, _matrix in distance_matrices.items():
         _upper = _matrix[np.triu_indices_from(_matrix, k=1)]
-        _counts, _bin_edges = np.histogram(_upper, bins=80)
+        _p90 = p90_per_method[_name]
+        _normalized = _upper / _p90 if _p90 > 0 else _upper
+        _counts, _bin_edges = np.histogram(_normalized, bins=80)
         _bin_centers = (_bin_edges[:-1] + _bin_edges[1:]) / 2
-        _median = float(np.median(_upper))
+        _median = float(np.median(_normalized))
 
         _fig = go.Figure(
             data=go.Bar(x=_bin_centers, y=_counts, width=_bin_edges[1] - _bin_edges[0])
@@ -205,9 +231,10 @@ def _(distance_matrices, go, mo, np):
             line_dash="dash",
             annotation_text=f"median={_median:.2f}",
         )
+        _fig.add_vline(x=1.0, line_dash="dot", line_color="red", annotation_text="P90")
         _fig.update_layout(
-            title=f"{_name} distance distribution",
-            xaxis_title="Distance",
+            title=f"{_name} (P90={_p90:.2f})",
+            xaxis_title="Distance / P90",
             yaxis_title="Count",
             template="plotly_white",
             height=280,
@@ -331,21 +358,142 @@ def _(distance_matrices, kmedoids_precomputed, pl, px, silhouette_score):
 @app.cell
 def _(mo):
     mo.md(r"""
-    ## Interactive comparison: pick codes and compare
+    ## Structural separation test
 
-    Select diagnosis codes and see their time series side by side, plus the
-    pairwise distance that each method assigns to every selected pair.
+    Does a method assign **higher** distances to pairs with opposite temporal
+    structure than to pairs with similar structure?
+
+    Pairs are loaded from `data/validation/sanity_pairs.csv`.
+    All distances are P90-normalized so values are comparable across methods.
+    The **separation ratio** = mean(opposite) / mean(similar). Higher = better.
     """)
     return
 
 
 @app.cell
-def _(get_connection):
-    _connection = get_connection()
-    code_lookup = _connection.execute(
-        "SELECT id, code, code_type, description FROM medical_terminologies ORDER BY id"
-    ).pl()
-    return (code_lookup,)
+def _(VALIDATION_DIR, code_lookup, pl):
+    _pairs_df = pl.read_csv(VALIDATION_DIR / "sanity_pairs.csv")
+
+    _resolved = []
+    for _row in _pairs_df.iter_rows(named=True):
+        _meta_a = code_lookup.filter(
+            (pl.col("code") == _row["code_a"]) & (pl.col("code_type") == _row["code_type_a"])
+        )
+        _meta_b = code_lookup.filter(
+            (pl.col("code") == _row["code_b"]) & (pl.col("code_type") == _row["code_type_b"])
+        )
+        if _meta_a.is_empty() or _meta_b.is_empty():
+            continue
+        _resolved.append(
+            {
+                "id_a": _meta_a["id"][0],
+                "id_b": _meta_b["id"][0],
+                "code_a": _row["code_a"],
+                "code_b": _row["code_b"],
+                "expected": _row["expected"],
+                "rationale": _row["rationale"],
+            }
+        )
+    structural_resolved = _resolved
+    return (structural_resolved,)
+
+
+@app.cell
+def _(distance_matrices, mo, np, p90_per_method, pl, px, structural_resolved, terminology_ids):
+    mo.stop(len(structural_resolved) < 2)
+
+    _id_to_idx = {tid: idx for idx, tid in enumerate(terminology_ids)}
+    _method_names = list(distance_matrices.keys())
+
+    _rows = []
+    for _pair in structural_resolved:
+        _idx_a = _id_to_idx.get(_pair["id_a"])
+        _idx_b = _id_to_idx.get(_pair["id_b"])
+        if _idx_a is None or _idx_b is None:
+            continue
+        _row = {
+            "pair": f"{_pair['code_a']} vs {_pair['code_b']}",
+            "expected": _pair["expected"],
+            "rationale": _pair["rationale"],
+        }
+        for _name, _matrix in distance_matrices.items():
+            _raw = float(_matrix[_idx_a, _idx_b])
+            _p90 = p90_per_method[_name]
+            _row[_name] = round(_raw / _p90, 4) if _p90 > 0 else 0.0
+        _rows.append(_row)
+
+    _results_df = pl.DataFrame(_rows)
+
+    _summary_rows = []
+    for _method in _method_names:
+        _similar = _results_df.filter(pl.col("expected") == "similar")[_method].to_numpy()
+        _opposite = _results_df.filter(pl.col("expected") == "opposite")[_method].to_numpy()
+        _sim_mean = float(np.mean(_similar)) if len(_similar) > 0 else 0.0
+        _opp_mean = float(np.mean(_opposite)) if len(_opposite) > 0 else 0.0
+        _ratio = round(_opp_mean / _sim_mean, 2) if _sim_mean > 0 else None
+        _summary_rows.append(
+            {
+                "method": _method,
+                "similar_mean_p90": round(_sim_mean, 4),
+                "opposite_mean_p90": round(_opp_mean, 4),
+                "separation_ratio": _ratio,
+            }
+        )
+
+    _summary_df = pl.DataFrame(_summary_rows).sort("separation_ratio", descending=True)
+
+    _bar_rows = []
+    for _row in _rows:
+        for _method in _method_names:
+            _bar_rows.append(
+                {
+                    "pair": _row["pair"],
+                    "expected": _row["expected"],
+                    "method": _method,
+                    "distance_p90": _row[_method],
+                }
+            )
+
+    _bar_fig = px.bar(
+        pl.DataFrame(_bar_rows),
+        x="distance_p90",
+        y="pair",
+        color="method",
+        facet_row="expected",
+        barmode="group",
+        orientation="h",
+        title="P90-normalized distances (comparable across methods)",
+        labels={"distance_p90": "Distance / P90", "pair": ""},
+    )
+    _bar_fig.update_layout(
+        height=max(400, len(_rows) * 40),
+        template="plotly_white",
+    )
+    _bar_fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+
+    mo.vstack(
+        [
+            mo.md("### Separation ratio by method"),
+            mo.md("Higher = better discrimination. All values are P90-normalized."),
+            _summary_df,
+            mo.md("### Per-pair P90-normalized distances"),
+            _bar_fig,
+            mo.md("### Full table"),
+            _results_df,
+        ]
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Interactive comparison: pick codes and compare
+
+    Select diagnosis codes and see their time series side by side, plus the
+    pairwise distance (P90-normalized) that each method assigns to every pair.
+    """)
+    return
 
 
 @app.cell
@@ -373,7 +521,7 @@ def _(
     col_labels,
     distance_matrices,
     mo,
-    np,
+    p90_per_method,
     pl,
     px,
     temporal_view,
@@ -425,20 +573,12 @@ def _(
             _label_b = _meta_b["code"][0] if not _meta_b.is_empty() else str(_valid_ids[_j])
             _row = {"pair": f"{_label_a} ↔ {_label_b}"}
             for _name, _matrix in distance_matrices.items():
-                _row[_name] = round(float(_matrix[_idx_a, _idx_b]), 4)
+                _raw = float(_matrix[_idx_a, _idx_b])
+                _p90 = p90_per_method[_name]
+                _row[_name] = round(_raw / _p90, 4) if _p90 > 0 else 0.0
             _dist_rows.append(_row)
 
     _dist_df = pl.DataFrame(_dist_rows)
-
-    _rank_rows = []
-    for _row in _dist_rows:
-        _rank_row = {"pair": _row["pair"]}
-        _values = [(k, v) for k, v in _row.items() if k != "pair"]
-        _sorted_methods = sorted(_values, key=lambda x: x[1])
-        for _rank, (_method, _val) in enumerate(_sorted_methods, 1):
-            _rank_row[_method] = f"#{_rank} ({_val:.3f})"
-        _rank_rows.append(_rank_row)
-    _rank_df = pl.DataFrame(_rank_rows)
 
     _bar_rows = []
     for _row in _dist_rows:
@@ -447,29 +587,27 @@ def _(
                 {
                     "pair": _row["pair"],
                     "method": _method,
-                    "distance": _row[_method],
+                    "distance_p90": _row[_method],
                 }
             )
 
     _bar_fig = px.bar(
         pl.DataFrame(_bar_rows),
-        x="distance",
+        x="distance_p90",
         y="pair",
         color="method",
         barmode="group",
         orientation="h",
-        title="Distance by method for each pair",
-        labels={"distance": "Distance", "pair": "", "method": "Method"},
+        title="P90-normalized distance by method",
+        labels={"distance_p90": "Distance / P90", "pair": "", "method": "Method"},
     )
     _bar_fig.update_layout(height=max(300, len(_dist_rows) * 80), template="plotly_white")
 
     mo.vstack(
         [
             _ts_fig,
-            mo.md("### Pairwise distances"),
+            mo.md("### Pairwise distances (P90-normalized)"),
             _dist_df,
-            mo.md("### Rankings (which method sees each pair as most/least similar)"),
-            _rank_df,
             _bar_fig,
         ]
     )
