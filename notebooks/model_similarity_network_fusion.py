@@ -25,6 +25,8 @@ def _():
     from datetime import datetime
     from pathlib import Path
 
+    import igraph
+    import leidenalg
     import marimo as mo
     import numpy as np
     import plotly.express as px
@@ -35,16 +37,30 @@ def _():
     from sklearn import cluster
     from snf import compute, metrics
 
-    return Path, cluster, compute, datetime, go, load_dotenv, metrics, mo, np, pl, px, umap
+    return (
+        Path,
+        cluster,
+        compute,
+        datetime,
+        go,
+        igraph,
+        leidenalg,
+        load_dotenv,
+        metrics,
+        mo,
+        np,
+        pl,
+        px,
+        umap,
+    )
 
 
 @app.cell
 def _():
     from vir.config import CLUSTERING_DIR, get_indicative_label
-    from vir.db import insert_run_multi_k, update_run_finished_at
+    from vir.db import insert_run_leiden, insert_run_multi_k, update_run_finished_at
     from vir.notebook_widgets import (
         create_file_dropdown,
-        extract_dataset_name,
         load_and_prepare_dataframe,
         load_indicative_codes,
         load_terminology_labels,
@@ -61,6 +77,7 @@ def _():
         create_file_dropdown,
         extract_dataset_name,
         get_indicative_label,
+        insert_run_leiden,
         insert_run_multi_k,
         load_and_prepare_dataframe,
         load_indicative_codes,
@@ -634,6 +651,35 @@ def _(cluster, common_ids, fused, metrics, np, pl):
 
 
 @app.cell
+def _(fused, igraph, leidenalg, np):
+    _resolutions = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
+
+    _knn = 20
+    _n = fused.shape[0]
+    _sparse = np.zeros_like(fused)
+    for _i in range(_n):
+        _top = np.argpartition(fused[_i], -_knn)[-_knn:]
+        _sparse[_i, _top] = fused[_i, _top]
+    _sparse = np.maximum(_sparse, _sparse.T)
+
+    _graph = igraph.Graph.Weighted_Adjacency(_sparse.tolist(), mode="undirected")
+
+    leiden_results = []
+    for _resolution in _resolutions:
+        _partition = leidenalg.find_partition(
+            _graph,
+            leidenalg.RBConfigurationVertexPartition,
+            weights="weight",
+            resolution_parameter=_resolution,
+            seed=42,
+        )
+        leiden_results.append({"resolution": _resolution, "n_communities": len(_partition)})
+
+    leiden_results
+    return (leiden_results,)
+
+
+@app.cell
 def _(
     cluster_largest,
     cluster_median,
@@ -643,6 +689,8 @@ def _(
     file_path,
     fused_labels,
     indicative_codes_enabled,
+    insert_run_leiden,
+    leiden_results,
     multi_k_results,
     n_clusters,
     n_codes_clinical,
@@ -687,6 +735,7 @@ def _(
         pct_singletons=pct_singletons,
         multi_k_results=multi_k_results,
     )
+    insert_run_leiden(run_id, leiden_results)
     update_run_finished_at(run_id)
     print(f"💾 Run {run_id} saved to virola.db")
     return (run_id,)

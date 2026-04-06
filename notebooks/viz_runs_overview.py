@@ -9,15 +9,13 @@ def _():
     import marimo as mo
     import plotly.express as px
     import polars as pl
-
     return mo, pl, px
 
 
 @app.cell
 def _():
-    from vir.db import fetch_run_multi_k, fetch_runs
-
-    return fetch_run_multi_k, fetch_runs
+    from vir.db import fetch_run_leiden, fetch_run_multi_k, fetch_runs
+    return fetch_run_leiden, fetch_run_multi_k, fetch_runs
 
 
 @app.cell
@@ -223,6 +221,111 @@ def _(all_runs, fetch_run_multi_k, mo, multi_k_city, pl, px):
         markers=True,
         title=f"Silhouette vs K — {multi_k_city.value}",
         labels={"k": "Number of clusters (K)", "silhouette": "Silhouette Score", "run": "Run"},
+    )
+    _fig
+    return
+
+
+@app.cell
+def _(all_runs, fetch_run_multi_k, mo, multi_k_city, pl, px):
+    mo.stop(not multi_k_city.value)
+
+    _city_runs = (
+        all_runs.filter(pl.col("city") == multi_k_city.value)
+        .sort("created_at", descending=True)
+        .select(["run_id", "created_at", "notes", "n_clusters"])
+    )
+
+    mo.stop(_city_runs.is_empty())
+
+    _frames = []
+    for _row in _city_runs.iter_rows(named=True):
+        _mk = fetch_run_multi_k(_row["run_id"])
+        if _mk.is_empty() or "affinity_zscore" not in _mk.columns:
+            continue
+        if _mk["affinity_zscore"].is_null().all():
+            continue
+        _label = f"#{_row['run_id']}"
+        if _row["notes"]:
+            _label += f" – {_row['notes']}"
+        _frames.append(_mk.with_columns(pl.lit(_label).alias("run")))
+
+    mo.stop(
+        not _frames,
+        mo.callout(
+            mo.md(f"No affinity Z-score data for {multi_k_city.value}. Re-run the pipeline to populate."),
+            kind="warn",
+        ),
+    )
+
+    _combined_zaff = pl.concat(_frames)
+
+    _fig = px.line(
+        _combined_zaff,
+        x="k",
+        y="affinity_zscore",
+        color="run",
+        markers=True,
+        title=f"Affinity Z-score vs K — {multi_k_city.value}",
+        labels={"k": "Number of clusters (K)", "affinity_zscore": "Affinity Z-score", "run": "Run"},
+    )
+    _fig
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md("""
+    ## Leiden community detection sweep
+    """)
+    return
+
+
+@app.cell
+def _(all_runs, fetch_run_leiden, mo, multi_k_city, pl, px):
+    mo.stop(not multi_k_city.value)
+
+    _city_runs_leiden = (
+        all_runs.filter(pl.col("city") == multi_k_city.value)
+        .sort("created_at", descending=True)
+        .select(["run_id", "created_at", "notes"])
+    )
+
+    mo.stop(_city_runs_leiden.is_empty())
+
+    _frames_leiden = []
+    for _row in _city_runs_leiden.iter_rows(named=True):
+        _ld = fetch_run_leiden(_row["run_id"])
+        if _ld.is_empty():
+            continue
+        _label = f"#{_row['run_id']}"
+        if _row["notes"]:
+            _label += f" – {_row['notes']}"
+        _frames_leiden.append(_ld.with_columns(pl.lit(_label).alias("run")))
+
+    mo.stop(
+        not _frames_leiden,
+        mo.callout(
+            mo.md(f"No Leiden data for {multi_k_city.value}. Re-run the pipeline to populate."),
+            kind="warn",
+        ),
+    )
+
+    _combined_leiden = pl.concat(_frames_leiden)
+
+    _fig = px.line(
+        _combined_leiden,
+        x="resolution",
+        y="n_communities",
+        color="run",
+        markers=True,
+        log_x=True,
+        title=f"Leiden: communities vs resolution — {multi_k_city.value}",
+        labels={
+            "resolution": "Resolution (γ, log scale)",
+            "n_communities": "Number of communities",
+            "run": "Run",
+        },
     )
     _fig
     return
