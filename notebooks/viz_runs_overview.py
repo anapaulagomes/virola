@@ -9,12 +9,14 @@ def _():
     import marimo as mo
     import plotly.express as px
     import polars as pl
+
     return mo, pl, px
 
 
 @app.cell
 def _():
     from vir.db import fetch_run_leiden, fetch_run_multi_k, fetch_runs
+
     return fetch_run_leiden, fetch_run_multi_k, fetch_runs
 
 
@@ -253,7 +255,9 @@ def _(all_runs, fetch_run_multi_k, mo, multi_k_city, pl, px):
     mo.stop(
         not _frames,
         mo.callout(
-            mo.md(f"No affinity Z-score data for {multi_k_city.value}. Re-run the pipeline to populate."),
+            mo.md(
+                f"No affinity Z-score data for {multi_k_city.value}. Re-run the pipeline to populate."
+            ),
             kind="warn",
         ),
     )
@@ -267,7 +271,11 @@ def _(all_runs, fetch_run_multi_k, mo, multi_k_city, pl, px):
         color="run",
         markers=True,
         title=f"Affinity Z-score vs K — {multi_k_city.value}",
-        labels={"k": "Number of clusters (K)", "affinity_zscore": "Affinity Z-score", "run": "Run"},
+        labels={
+            "k": "Number of clusters (K)",
+            "affinity_zscore": "Affinity Z-score",
+            "run": "Run",
+        },
     )
     _fig
     return
