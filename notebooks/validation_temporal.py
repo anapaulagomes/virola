@@ -18,20 +18,18 @@ def _():
     import plotly.graph_objects as go
     import polars as pl
     from dotenv import load_dotenv
-
     return go, load_dotenv, np, pl, px
 
 
 @app.cell
 def _():
     from vir.db import get_connection
+    from vir.helpers import extract_dataset_name
     from vir.notebook_widgets import (
         create_file_dropdown,
-        extract_dataset_name,
         load_and_prepare_dataframe,
     )
     from vir.views.temporal import TemporalView
-
     return (
         TemporalView,
         create_file_dropdown,
@@ -98,7 +96,13 @@ def _(files_dropdown):
 
 
 @app.cell
-def _(extract_dataset_name, file_path, load_and_prepare_dataframe, year_max, year_min):
+def _(
+    extract_dataset_name,
+    file_path,
+    load_and_prepare_dataframe,
+    year_max,
+    year_min,
+):
     df = load_and_prepare_dataframe(
         file_path=file_path,
         year_min=year_min,

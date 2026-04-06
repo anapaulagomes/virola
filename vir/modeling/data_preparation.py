@@ -10,9 +10,9 @@ def _():
     import polars as pl
 
     from vir.config import INTERIM_DATA_DIR, PROCESSED_DATA_DIR
+    from vir.helpers import extract_dataset_name
     from vir.modeling.prepare import prepare_dataframe
     from vir.notebook_widgets import (
-        extract_dataset_name,
         load_indicative_codes,
         load_terminology_labels,
     )

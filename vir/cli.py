@@ -14,11 +14,8 @@ from vir.db import (
     fetch_runs,
 )
 from vir.features import CITY_NAMES
-from vir.helpers import get_n_jobs
-from vir.notebook_widgets import (
-    extract_dataset_name,
-    load_and_prepare_dataframe,
-)
+from vir.helpers import extract_dataset_name, get_n_jobs
+from vir.notebook_widgets import load_and_prepare_dataframe
 from vir.views import ClinicalView, DemographicView, TemporalView
 
 app = typer.Typer(

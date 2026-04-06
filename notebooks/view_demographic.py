@@ -27,9 +27,9 @@ def _():
 def _():
     from archive.demographic_features import DemographicFeaturesView
     from vir.db import get_connection
+    from vir.helpers import extract_dataset_name
     from vir.notebook_widgets import (
         create_file_dropdown,
-        extract_dataset_name,
         load_and_prepare_dataframe,
         load_terminology_labels,
     )
