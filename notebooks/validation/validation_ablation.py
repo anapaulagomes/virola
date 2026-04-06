@@ -26,8 +26,6 @@ def _():
         create_file_dropdown,
         distance_to_affinity,
         load_and_prepare_dataframe,
-        load_indicative_codes,
-        load_terminology_labels,
     )
     from vir.views import ClinicalView, DemographicView, TemporalView
 
@@ -48,8 +46,6 @@ def _():
         go,
         load_and_prepare_dataframe,
         load_dotenv,
-        load_indicative_codes,
-        load_terminology_labels,
         metrics,
         mo,
         normalized_mutual_info_score,
@@ -67,7 +63,7 @@ def _(load_dotenv):
 @app.cell
 def _(mo):
     mo.md(r"""
-    # Layer 3 — Ablation Study
+    # Ablation Study
 
     An **ablation study** systematically removes components of a model to measure each
     component's individual contribution. In multi-view learning, this answers the question:
@@ -186,8 +182,6 @@ def _(
     extract_dataset_name,
     file_dropdown,
     load_and_prepare_dataframe,
-    load_indicative_codes,
-    load_terminology_labels,
     mo,
     run_meta,
 ):
@@ -196,14 +190,10 @@ def _(
         mo.callout(mo.md("Select a data file above."), kind="warn"),
     )
 
-    _terminology_labels = load_terminology_labels()
-    _exclude_codes, _ = load_indicative_codes(enabled=run_meta["indicative_enabled"])
     _dataset_name = extract_dataset_name(file_dropdown.value)
 
     _df = load_and_prepare_dataframe(
-        file_dropdown.value,
-        _terminology_labels,
-        exclude_codes=_exclude_codes,
+        file_path=file_dropdown.value,
         year_min=run_meta["year_min"],
         year_max=run_meta["year_max"],
     )
