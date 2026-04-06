@@ -630,6 +630,7 @@ def _(cluster, common_ids, fused, metrics, np, pl):
     for _nr_cluster in [50, 100, 150, 200, 250, 300]:
         _labels = cluster.spectral_clustering(fused, n_clusters=_nr_cluster)
         _silhouette = metrics.silhouette_score(fused, _labels)
+        _zaff = metrics.affinity_zscore(fused, _labels, n_perms=100, seed=42)
 
         _sizes = (
             pl.DataFrame({"cluster": _labels, "id": common_ids})
@@ -642,6 +643,7 @@ def _(cluster, common_ids, fused, metrics, np, pl):
             {
                 "n_clusters": _nr_cluster,
                 "silhouette": round(_silhouette, 4),
+                "affinity_zscore": round(float(_zaff), 4),
                 "largest_cluster": int(_sizes["size"].max()),
                 "median_size": float(_sizes["size"].median()),
             }
