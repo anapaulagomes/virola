@@ -6,26 +6,34 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
+    import unicodedata
+
     import marimo as mo
     import numpy as np
     import plotly.express as px
     import polars as pl
 
-    from vir.config import RAW_DATA_FILE
+    from vir.config import PROCESSED_DATA_DIR, RAW_DATA_FILE
     from vir.features import IBGE_CITY_MAP, ORIGINAL_AGE_GROUP, POPULATION_RANGE
+    from vir.helpers import extract_dataset_name
+    from vir.notebook_widgets import load_and_prepare_dataframe
     from vir.viz import plot_categories, scatter_plot_year_per_week
 
     return (
         IBGE_CITY_MAP,
         ORIGINAL_AGE_GROUP,
         POPULATION_RANGE,
+        PROCESSED_DATA_DIR,
         RAW_DATA_FILE,
+        extract_dataset_name,
+        load_and_prepare_dataframe,
         mo,
         np,
         pl,
         plot_categories,
         px,
         scatter_plot_year_per_week,
+        unicodedata,
     )
 
 
@@ -398,6 +406,174 @@ def _(df, pl, px):
         title="Record distribution by region and city",
     )
     _fig
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Code sparsity distributions by city
+
+    Before choosing a filtering threshold, inspect how **non-zero weeks** and
+    **weekly mean quantity** are distributed per city. If the distributions have
+    similar shapes (even at different scales), a percentile-based threshold
+    auto-calibrates across cities. If bimodal, two structurally different code
+    populations exist and need separate treatment.
+
+    | Metric | Definition |
+    |--------|------------|
+    | `nonzero_weeks` | Number of distinct (year, week) pairs with quantity > 0 |
+    | `weekly_mean` | Mean quantity across non-zero weeks |
+    """)
+    return
+
+
+@app.cell
+def _(
+    PROCESSED_DATA_DIR,
+    extract_dataset_name,
+    load_and_prepare_dataframe,
+    pl,
+    unicodedata,
+):
+    def _normalize_ascii(text):
+        return unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode()
+
+    CITIES = {
+        "salvador": "Nordeste",
+        "belo_horizonte": "Sudeste",
+        "gravatai": "Sul",
+    }
+
+    _all_stats = []
+    for _city_key, _region in CITIES.items():
+        _matches = [
+            _f
+            for _f in PROCESSED_DATA_DIR.glob("**/prepared_*.parquet")
+            if _city_key in _normalize_ascii(str(_f.name).lower())
+        ]
+        if not _matches:
+            continue
+        _path = _matches[0]
+        _city = extract_dataset_name(str(_path))
+        _df = load_and_prepare_dataframe(file_path=str(_path))
+
+        _code_stats = (
+            _df.group_by("terminology_id")
+            .agg(
+                pl.col("quantity").filter(pl.col("quantity") > 0).count().alias("nonzero_weeks"),
+                pl.col("quantity").filter(pl.col("quantity") > 0).mean().alias("weekly_mean"),
+                pl.col("code_type").first().alias("code_type"),
+            )
+            .with_columns(
+                pl.lit(_city).alias("city"),
+                pl.lit(_region).alias("region"),
+            )
+        )
+        _all_stats.append(_code_stats)
+
+    sparsity_df = pl.concat(_all_stats) if _all_stats else pl.DataFrame()
+    return (sparsity_df,)
+
+
+@app.cell
+def _(mo, np, pl, px, sparsity_df):
+    mo.stop(sparsity_df.is_empty())
+
+    _cities = sparsity_df["city"].unique(maintain_order=True).to_list()
+
+    _nonzero_figs = []
+    _mean_figs = []
+    for _city in _cities:
+        _city_df = sparsity_df.filter(pl.col("city") == _city)
+        _nonzero = _city_df["nonzero_weeks"].to_numpy()
+        _weekly = _city_df["weekly_mean"].drop_nulls().to_numpy()
+
+        _p20_weeks = float(np.percentile(_nonzero, 20))
+        _p20_mean = float(np.percentile(_weekly, 20)) if len(_weekly) > 0 else 0.0
+
+        _fig_nz = px.histogram(
+            _city_df,
+            x="nonzero_weeks",
+            nbins=50,
+            title=f"{_city} — non-zero weeks (P20={_p20_weeks:.0f})",
+            labels={"nonzero_weeks": "Non-zero weeks"},
+            color_discrete_sequence=["#2E86AB"],
+        )
+        _fig_nz.add_vline(
+            x=_p20_weeks,
+            line_dash="dash",
+            line_color="red",
+            annotation_text=f"P20={_p20_weeks:.0f}",
+        )
+        _fig_nz.update_layout(height=300, template="plotly_white")
+        _nonzero_figs.append(_fig_nz)
+
+        _fig_wm = px.histogram(
+            _city_df.filter(pl.col("weekly_mean").is_not_null()),
+            x="weekly_mean",
+            nbins=50,
+            log_y=True,
+            title=f"{_city} — weekly mean (P20={_p20_mean:.2f})",
+            labels={"weekly_mean": "Mean weekly quantity"},
+            color_discrete_sequence=["#F18F01"],
+        )
+        _fig_wm.add_vline(
+            x=_p20_mean, line_dash="dash", line_color="red", annotation_text=f"P20={_p20_mean:.2f}"
+        )
+        _fig_wm.update_layout(height=300, template="plotly_white")
+        _mean_figs.append(_fig_wm)
+
+    mo.vstack([mo.hstack([_nz, _wm]) for _nz, _wm in zip(_nonzero_figs, _mean_figs)])
+    return
+
+
+@app.cell
+def _(mo, np, pl, sparsity_df):
+    mo.stop(sparsity_df.is_empty())
+
+    _cities = sparsity_df["city"].unique(maintain_order=True).to_list()
+    _rows = []
+    for _city in _cities:
+        _city_df = sparsity_df.filter(pl.col("city") == _city)
+        _nonzero = _city_df["nonzero_weeks"].to_numpy()
+        _weekly = _city_df["weekly_mean"].drop_nulls().to_numpy()
+
+        _p20_weeks = float(np.percentile(_nonzero, 50))
+        _p20_mean = float(np.percentile(_weekly, 50)) if len(_weekly) > 0 else 0.0
+        _n_total = len(_city_df)
+        _n_kept = int(
+            _city_df.filter(
+                (pl.col("nonzero_weeks") >= _p20_weeks) & (pl.col("weekly_mean") >= _p20_mean)
+            ).height
+        )
+
+        _rows.append(
+            {
+                "city": _city,
+                "n_codes": _n_total,
+                "P20_nonzero_weeks": round(_p20_weeks, 0),
+                "P20_weekly_mean": round(_p20_mean, 2),
+                "kept": _n_kept,
+                "dropped": _n_total - _n_kept,
+                "kept_pct": round(_n_kept / _n_total * 100, 1),
+            }
+        )
+
+    _summary = pl.DataFrame(_rows)
+
+    mo.vstack(
+        [
+            mo.md(r"""
+        ### P20 adaptive threshold summary
+
+        Keep a code if `nonzero_weeks >= P20` **and** `weekly_mean >= P20` for
+        that city. P20 is conservative — discards only the 20% sparsest codes,
+        preserving the long tail that may carry real signal.
+        """),
+            _summary,
+        ]
+    )
     return
 
 
