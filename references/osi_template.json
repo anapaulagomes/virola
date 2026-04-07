@@ -1,0 +1,25 @@
+{
+  "title": "",
+  "description": "",
+  "scope": "broad",
+  "category": "suspected",
+  "version": "1.0.0",
+  "open_syndrome_version": "1.0.0",
+  "published_in": "https://opensyndrome.org",
+  "published_at": "",
+  "published_by": [],
+  "location": "Brazil",
+  "language": "Portuguese",
+  "organization": "Fiocruz/Cidacs Bahia",
+  "authors": [
+    "Alert-Early System of Outbreaks with Pandemic Potential (AESOP)"
+  ],
+  "inclusion_criteria": [],
+  "references": [],
+  "notes": [],
+  "status": "draft",
+  "human_readable_definition": "",
+  "target_public_health_threats": [],
+  "keywords": [],
+  "definition_type": "syndrome_definition"
+}
