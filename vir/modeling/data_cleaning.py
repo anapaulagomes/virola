@@ -379,6 +379,8 @@ def _(
         - **Location**: `{output_path}`
         - **Records**: {len(df):,}
         - **Columns**: {len(df.columns)}
+
+        Note: The `city` column is preserved in this file for cross-city analysis.
         """)
     return
 

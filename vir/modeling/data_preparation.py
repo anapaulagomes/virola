@@ -54,7 +54,7 @@ def _(mo):
 def _(INTERIM_DATA_DIR, mo):
     if INTERIM_DATA_DIR.exists():
         available_cleaned_files = sorted(
-            INTERIM_DATA_DIR.glob("cleaned_*.parquet"),
+            INTERIM_DATA_DIR.glob("cleaned_base*.parquet"),
             key=lambda path: path.name,
         )
     else:
@@ -125,14 +125,18 @@ def _(
     mo.stop(selected_input_path is None)
 
     interim_df = pl.read_parquet(selected_input_path)
+    keep_city = interim_df["city"].n_unique() > 1
+    dataset_name = extract_dataset_name(selected_input_path)
+    output_suffix = "_multiple_cities" if keep_city else ""
+    output_path = PROCESSED_DATA_DIR / f"prepared_{dataset_name}{output_suffix}.parquet"
+
     prepared_df = prepare_dataframe(
         dataframe=interim_df,
         terminology_labels=terminology_labels,
         exclude_codes=exclude_codes,
+        keep_city=keep_city,
     )
 
-    dataset_name = extract_dataset_name(selected_input_path)
-    output_path = PROCESSED_DATA_DIR / f"prepared_{dataset_name}.parquet"
     PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
     prepared_df.write_parquet(output_path)
 
@@ -144,7 +148,7 @@ def _(
     - Columns: {len(prepared_df.columns)}
     - Saved to: `{output_path}`
     """)
-    return output_path, prepared_df
+    return (prepared_df,)
 
 
 @app.cell
