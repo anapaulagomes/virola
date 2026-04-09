@@ -456,12 +456,9 @@ def _(processed_df):
 @app.cell
 def _(pl, px):
     def codes_per_week(_df):
-        # TODO remove prefix year=XXXX to just the actual year
-        # TODO remove repeated facet title on the left; use just "diagnosis code"
-        # TODO have the city names without the prefix city=; turn it 90 degrees (to it can be readable)
         codes_per_city = _df.group_by("city").agg(pl.col("code").n_unique().alias("total_codes"))
 
-        present_codes_per_week = (  # there is quantity = 0
+        present_codes_per_week = (
             _df.filter(pl.col("quantity") > 0)
             .group_by(["city", "year", "week"])
             .agg(pl.col("code").n_unique().alias("present_codes"))
@@ -472,11 +469,25 @@ def _(pl, px):
             .with_columns(
                 (pl.col("total_codes") - pl.col("present_codes")).alias("zero_code_count")
             )
-            .sort(by="year")
+            .sort(by=["year", "city"])
         )
-        return px.histogram(
-            weekly_zero_count, facet_row="city", facet_col="year", x="week", y="present_codes"
+        _fig = px.histogram(
+            weekly_zero_count,
+            facet_row="city",
+            facet_col="year",
+            x="week",
+            y="present_codes",
+            labels={"present_codes": "diagnosis codes"},
         )
+        for _annotation in _fig.layout.annotations:
+            _annotation.text = _annotation.text.replace("year=", "").replace("city=", "")
+            if _annotation.textangle is None or _annotation.textangle == 0:
+                pass
+            else:
+                _annotation.textangle = 0
+        _fig.for_each_yaxis(lambda axis: axis.update(title_text=""))
+        _fig.update_layout(yaxis_title="diagnosis codes")
+        return _fig
 
     return (codes_per_week,)
 
