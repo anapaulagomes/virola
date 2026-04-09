@@ -11,7 +11,7 @@ def _():
     import polars as pl
 
     from vir.config import PROCESSED_DATA_DIR, RAW_DATA_FILE
-    from vir.data_filters import filter_min_temporal_coverage
+    from vir.data_filters import filter_min_temporal_coverage, filter_temporal_quantiles
     from vir.features import IBGE_CITY_MAP, ORIGINAL_AGE_GROUP, POPULATION_RANGE
     from vir.viz import plot_categories, scatter_plot_year_per_week
 
@@ -22,6 +22,7 @@ def _():
         PROCESSED_DATA_DIR,
         RAW_DATA_FILE,
         filter_min_temporal_coverage,
+        filter_temporal_quantiles,
         mo,
         pl,
         plot_categories,
@@ -499,8 +500,68 @@ def _(codes_per_week, processed_df):
 
 
 @app.cell
-def _(codes_per_week, filter_min_temporal_coverage, processed_df):
-    codes_per_week(filter_min_temporal_coverage(processed_df))
+def _(mo):
+    by_year_checkbox = mo.ui.checkbox(label="Apply filter by year", value=True)
+    weeks_slider = mo.ui.slider(start=12, stop=24, step=2, value=12, label="Min weeks per year")
+    mo.hstack([by_year_checkbox, weeks_slider])
+    return by_year_checkbox, weeks_slider
+
+
+@app.cell
+def _(
+    by_year_checkbox,
+    codes_per_week,
+    df,
+    filter_min_temporal_coverage,
+    mo,
+    processed_df,
+    weeks_slider,
+):
+    _df = filter_min_temporal_coverage(processed_df, min_weeks=weeks_slider.value, by_year=True)
+
+    _chart = codes_per_week(_df)
+    _stat = mo.stat(
+        label="Total",
+        bordered=True,
+        caption=f"min per week {'by year' if by_year_checkbox.value else 'global'}",
+        direction="increase" if _df.shape[0] > df.shape[0] else "decrease",
+        value=_df.shape[0],  # "{len(filtered_movies):,.0f}",
+    )
+
+    mo.vstack([_stat, _chart])
+    return
+
+
+@app.cell
+def _(mo):
+    quantile_slider = mo.ui.slider(
+        start=0.0, stop=1.0, step=0.05, value=0.5, label="Quantile threshold"
+    )
+    quantile_slider
+    return (quantile_slider,)
+
+
+@app.cell
+def _(
+    codes_per_week,
+    df,
+    filter_temporal_quantiles,
+    mo,
+    processed_df,
+    quantile_slider,
+):
+    _df = filter_temporal_quantiles(processed_df, quantile_slider.value)
+
+    _chart = codes_per_week(_df)
+    _stat = mo.stat(
+        label="Total",
+        bordered=True,
+        caption=f"P{quantile_slider.value:.0%}",
+        direction="increase" if _df.shape[0] > df.shape[0] else "decrease",
+        value=_df.shape[0],
+    )
+
+    mo.vstack([_stat, _chart])
     return
 
 
