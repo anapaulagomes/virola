@@ -104,7 +104,7 @@ def _(mo):
 @app.cell
 def _(CLUSTERING_DIR, Path, args, datetime):
     year_min = args.get("year-min", 2022)
-    year_max = args.get("year-max", 2025)
+    year_max = args.get("year-max", 2024)
     snf_k = args.get("snf-k", 10)
     n_clusters = args.get("n-clusters", 200)
     output_dir = Path(args.get("output") or str(CLUSTERING_DIR))
