@@ -84,7 +84,7 @@ def create_file_dropdown(
 def load_and_prepare_dataframe(
     file_path: str,
     year_min: Optional[int] = 2022,
-    year_max: Optional[int] = 2025,
+    year_max: Optional[int] = 2024,
 ) -> pl.DataFrame:
     """
     Load a prepared dataframe and apply year filtering and temporal coverage.
