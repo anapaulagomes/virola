@@ -25,7 +25,8 @@ def filter_most_representative_rows(df, threshold=0.95, group_by=None, frequency
     )
 
 
-def filter_min_temporal_coverage(df, min_weeks=None, *, by_year: bool = False):
+def filter_min_temporal_coverage(df, min_weeks=None, *, by_year: bool = True):
+    """Filter by minimal temporal coverage per year."""
     if not min_weeks:
         min_weeks = MIN_WEEKS
 
