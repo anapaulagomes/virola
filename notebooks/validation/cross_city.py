@@ -380,7 +380,7 @@ def _(jaccard_df, mo, px, tau):
 @app.cell
 def _(mo):
     mo.md(r"""
-    ## Consistent Clusters — Full View
+    ## Consistent Clusters
 
     Clusters where the best match in **every** paired city exceeds τ.
     """)
@@ -388,33 +388,7 @@ def _(mo):
 
 
 @app.cell
-def _(all_assignments, jaccard_df, mo, pl, tau):
-    consistency = (
-        jaccard_df.group_by(["city_a", "cluster_a"])
-        .agg(
-            pl.col("jaccard").min().alias("min_jaccard"),
-            pl.col("jaccard").median().alias("median_jaccard"),
-            pl.len().alias("n_pairs"),
-        )
-        .with_columns((pl.col("min_jaccard") >= tau).alias("consistent"))
-        .sort("median_jaccard", descending=True)
-    )
-
-    n_consistent = consistency.filter(pl.col("consistent")).height
-    n_total = consistency.height
-
-    consistent_clusters = (
-        consistency.filter(pl.col("consistent"))
-        .join(
-            all_assignments.group_by(["city", "cluster_id"])
-            .agg(pl.len().alias("n_codes"))
-            .rename({"city": "city_a", "cluster_id": "cluster_a"}),
-            on=["city_a", "cluster_a"],
-            how="left",
-        )
-        .sort(["city_a", "median_jaccard"], descending=[False, True])
-    )
-
+def _(consistent_clusters, mo, n_consistent, n_total, tau):
     mo.vstack(
         [
             mo.stat(
@@ -431,7 +405,7 @@ def _(all_assignments, jaccard_df, mo, pl, tau):
             ),
         ]
     )
-    return (consistent_clusters,)
+    return
 
 
 @app.cell
@@ -671,6 +645,259 @@ def _(
                     "Epi week (1–52)": _fig_epi,
                     "Timeline": _fig_timeline,
                 }
+            ),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(mo, selected_cities):
+    k_slider = mo.ui.slider(
+        start=1,
+        stop=len(selected_cities),
+        value=len(selected_cities) - 2,
+        label="Minimum cities with Jaccard ≥ τ (K)",
+        show_value=True,
+    )
+    mo.vstack(
+        [
+            mo.md(r"""
+        ## Consistent Clusters
+
+        A cluster is *consistent* if its best match in at least **K** other cities
+        has Jaccard ≥ τ. K = total cities means "appears everywhere"; K = 1 means
+        "appears in at least one other city."
+        """),
+            k_slider,
+        ]
+    )
+    return (k_slider,)
+
+
+@app.cell
+def _(all_assignments, jaccard_df, k_slider, mo, pl, tau):
+    consistency = (
+        jaccard_df.with_columns((pl.col("jaccard") >= tau).alias("passes"))
+        .group_by(["city_a", "cluster_a"])
+        .agg(
+            pl.col("passes").sum().alias("n_cities_passing"),
+            pl.col("jaccard").median().alias("median_jaccard"),
+            pl.col("jaccard").min().alias("min_jaccard"),
+            pl.len().alias("n_pairs"),
+        )
+        .with_columns((pl.col("n_cities_passing") >= k_slider.value).alias("consistent"))
+        .sort("n_cities_passing", descending=True)
+    )
+
+    n_consistent = consistency.filter(pl.col("consistent")).height
+    n_total = consistency.height
+
+    consistent_clusters = (
+        consistency.filter(pl.col("consistent"))
+        .join(
+            all_assignments.group_by(["city", "cluster_id"])
+            .agg(pl.len().alias("n_codes"))
+            .rename({"city": "city_a", "cluster_id": "cluster_a"}),
+            on=["city_a", "cluster_a"],
+            how="left",
+        )
+        .sort(["n_cities_passing", "median_jaccard"], descending=[True, True])
+    )
+
+    mo.vstack(
+        [
+            mo.hstack(
+                [
+                    mo.stat(
+                        label="Consistent clusters",
+                        value=f"{n_consistent} / {n_total}",
+                        caption=f"Jaccard ≥ τ in ≥ {k_slider.value} cities",
+                        bordered=True,
+                    ),
+                    mo.stat(
+                        label="Unique syndromes (est.)",
+                        value=f"~{n_consistent // len(set(consistency['city_a'].to_list()))}",
+                        caption="consistent clusters ÷ n cities",
+                    ),
+                ]
+            ),
+            mo.ui.table(
+                consistent_clusters.select(
+                    [
+                        "city_a",
+                        "cluster_a",
+                        "n_codes",
+                        "n_cities_passing",
+                        "median_jaccard",
+                        "min_jaccard",
+                    ]
+                ),
+                selection=None,
+            ),
+        ]
+    )
+    return consistent_clusters, n_consistent, n_total
+
+
+@app.cell
+def _(jaccard_df, mo, pl, tau):
+    # Mutual best-match: aresta existe só se A→B e B→A ambos têm Jaccard ≥ τ
+    _forward = jaccard_df.filter(pl.col("jaccard") >= tau).select(
+        ["city_a", "cluster_a", "city_b", "cluster_b", "jaccard"]
+    )
+    _backward = _forward.rename(
+        {
+            "city_a": "city_b",
+            "cluster_a": "cluster_b",
+            "city_b": "city_a",
+            "cluster_b": "cluster_a",
+            "jaccard": "jaccard_rev",
+        }
+    )
+    mutual_edges = _forward.join(
+        _backward, on=["city_a", "cluster_a", "city_b", "cluster_b"], how="inner"
+    ).with_columns(pl.min_horizontal("jaccard", "jaccard_rev").alias("min_jaccard"))
+
+    mo.stat(
+        label="Mutual edges",
+        value=f"{len(mutual_edges):,}",
+        caption=f"pairs where both directions ≥ τ ({tau:.3f})",
+        bordered=True,
+    )
+    return (mutual_edges,)
+
+
+@app.cell
+def _(mutual_edges, pl):
+    import igraph as ig
+
+    # Build node index: (city, cluster_id) → int
+    all_nodes = (
+        mutual_edges.select(
+            pl.col("city_a").alias("city"),
+            pl.col("cluster_a").cast(pl.Int64).alias("cluster_id"),
+        )
+        .vstack(
+            mutual_edges.select(
+                pl.col("city_b").alias("city"),
+                pl.col("cluster_b").cast(pl.Int64).alias("cluster_id"),
+            )
+        )
+        .unique()
+        .sort(["city", "cluster_id"])
+        .with_row_index("node_id")
+    )
+
+    node_to_id = {
+        (row["city"], row["cluster_id"]): row["node_id"] for row in all_nodes.iter_rows(named=True)
+    }
+
+    edges_indexed = [
+        (
+            node_to_id[(row["city_a"], row["cluster_a"])],
+            node_to_id[(row["city_b"], row["cluster_b"])],
+        )
+        for row in mutual_edges.iter_rows(named=True)
+    ]
+    return all_nodes, edges_indexed, ig
+
+
+@app.cell
+def _(all_assignments, all_nodes, edges_indexed, ig, k_slider, pl):
+    g = ig.Graph(n=len(all_nodes), edges=edges_indexed)
+    components = g.connected_components()
+
+    # Build component summary
+    component_rows = []
+    for comp_id, member_node_ids in enumerate(components):
+        member_df = all_nodes.filter(pl.col("node_id").is_in(member_node_ids))
+        cities_in_comp = member_df["city"].unique().to_list()
+        n_cities = len(cities_in_comp)
+        if n_cities < k_slider.value:
+            continue
+        # Representative city: most codes in this component
+        rep_city = (
+            all_assignments.filter(
+                pl.col("city").is_in(cities_in_comp)
+                & pl.col("cluster_id")
+                .cast(pl.Int64)
+                .is_in(member_df.filter(pl.col("city").is_in(cities_in_comp))["cluster_id"])
+            )
+            .group_by("city")
+            .agg(pl.len().alias("n_records"))
+            .sort("n_records", descending=True)["city"][0]
+        )
+        rep_cluster = int(member_df.filter(pl.col("city") == rep_city)["cluster_id"][0])
+        sample_codes = (
+            all_assignments.filter(
+                (pl.col("city") == rep_city) & (pl.col("cluster_id") == rep_cluster)
+            )["description"]
+            .head(4)
+            .to_list()
+        )
+        component_rows.append(
+            {
+                "component_id": comp_id,
+                "n_cities": n_cities,
+                "n_clusters": len(member_node_ids),
+                "cities": ", ".join(sorted(cities_in_comp)),
+                "rep_city": rep_city,
+                "rep_cluster": rep_cluster,
+                "sample_codes": " | ".join(sample_codes),
+            }
+        )
+
+    return (component_rows,)
+
+
+@app.cell
+def _(all_nodes, component_rows, k_slider, mo, mutual_edges, pl):
+    syndromes_df = pl.DataFrame(component_rows) if component_rows else pl.DataFrame()
+
+    n_syndromes = len(syndromes_df)
+    mo.vstack(
+        [
+            mo.md(r"""## Syndrome Graph — Connected Components
+
+        Each component is a candidate syndrome: a set of city-level clusters
+        that mutually recognise each other across cities.
+        """),
+            mo.hstack(
+                [
+                    mo.stat(
+                        label="Candidate syndromes",
+                        value=str(n_syndromes),
+                        caption=f"components spanning ≥ {k_slider.value} cities",
+                        bordered=True,
+                    ),
+                    mo.stat(
+                        label="Total nodes",
+                        value=str(len(all_nodes)),
+                        caption="(city, cluster) pairs in the graph",
+                    ),
+                    mo.stat(
+                        label="Total edges",
+                        value=str(len(mutual_edges)),
+                        caption="mutual best-match pairs",
+                    ),
+                ]
+            ),
+            mo.ui.table(
+                syndromes_df.select(
+                    [
+                        "component_id",
+                        "n_cities",
+                        "n_clusters",
+                        "rep_city",
+                        "rep_cluster",
+                        "cities",
+                        "sample_codes",
+                    ]
+                )
+                if not syndromes_df.is_empty()
+                else syndromes_df,
+                selection=None,
             ),
         ]
     )
