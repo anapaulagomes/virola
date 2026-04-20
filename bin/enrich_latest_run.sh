@@ -21,6 +21,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJ_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+DATA_BASE_DIR="${DATA_DIR:-$PROJ_ROOT/data}"
 
 DATASET=""
 RUN_ID_ARG=""
@@ -58,15 +59,12 @@ YEAR_MAX="${YEAR_MAX:-$STORED_YEAR_MAX}"
 
 # Infer dataset path from the name stored in the run if not provided
 if [[ -z "$DATASET" ]]; then
-    DATASET=$(DATASET_NAME="$DATASET_NAME" PROJ_ROOT="$PROJ_ROOT" uv run --active python -c "
-import os
-from pathlib import Path
-processed = Path(os.environ['PROJ_ROOT']) / 'data' / 'processed'
-matches = sorted(processed.glob(f\"prepared_{os.environ['DATASET_NAME']}.parquet\"))
-if not matches:
-    raise SystemExit(f\"No prepared dataset file found for '{os.environ['DATASET_NAME']}' in {processed}. Run 'vir prepare process' first or pass --dataset explicitly.\")
-print(matches[-1])
-")
+    PROCESSED_DIR="$DATA_BASE_DIR/processed"
+    DATASET=$(ls "$PROCESSED_DIR"/prepared_"${DATASET_NAME}".parquet 2>/dev/null | sort | tail -1)
+    if [[ -z "$DATASET" ]]; then
+        echo "✗ No prepared dataset file found for '${DATASET_NAME}' in ${PROCESSED_DIR}. Run 'vir prepare process' first or pass --dataset explicitly." >&2
+        exit 1
+    fi
     echo "Dataset:     $DATASET"
 fi
 
