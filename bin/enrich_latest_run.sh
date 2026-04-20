@@ -25,6 +25,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJ_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [[ -z "${DATA_DIR:-}" && -f "$PROJ_ROOT/.env" ]]; then
+    eval "$(grep -E '^DATA_DIR=' "$PROJ_ROOT/.env")"
+    export DATA_DIR
+fi
+
 DATA_BASE_DIR="${DATA_DIR:-$PROJ_ROOT/data}"
 
 enrich_run() {
