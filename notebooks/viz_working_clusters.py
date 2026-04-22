@@ -236,9 +236,13 @@ def _(SEX_COLOR, cluster_records, pl, px):
 
 @app.cell
 def _(AGE_GROUP_COLOR, cluster_records, pl, px):
+    _age_order = list(AGE_GROUP_COLOR.keys())
     _age_dataframe = (
         cluster_records.group_by("age_group")
         .agg(pl.col("quantity").sum().alias("cases"))
+        .with_columns(
+            pl.col("age_group").cast(pl.Enum(_age_order)).alias("age_group"),
+        )
         .sort("age_group")
     )
     age_chart = px.bar(
@@ -248,6 +252,7 @@ def _(AGE_GROUP_COLOR, cluster_records, pl, px):
         color="age_group",
         labels={"cases": "Cases", "age_group": "Age group"},
         color_discrete_map=AGE_GROUP_COLOR,
+        category_orders={"age_group": _age_order},
     )
     return (age_chart,)
 
