@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.19.0"
-app = marimo.App(width="medium")
+app = marimo.App(width="medium", auto_download=["html"])
 
 
 @app.cell
@@ -70,7 +70,7 @@ def _(fetch_runs, mo, pl):
 
     city_selector = mo.ui.multiselect(
         options=city_options,
-        value=city_options[:2] if len(city_options) >= 2 else city_options,
+        value=city_options,
         label="Cities to compare (select 2 or more)",
     )
     city_selector
@@ -656,7 +656,7 @@ def _(mo, selected_cities):
     k_slider = mo.ui.slider(
         start=1,
         stop=len(selected_cities),
-        value=len(selected_cities) - 2,
+        value=len(selected_cities),
         label="Minimum cities with Jaccard ≥ τ (K)",
         show_value=True,
     )
@@ -804,82 +804,259 @@ def _(mutual_edges, pl):
 
 
 @app.cell
-def _(all_assignments, all_nodes, edges_indexed, ig, k_slider, pl):
-    g = ig.Graph(n=len(all_nodes), edges=edges_indexed)
-    components = g.connected_components()
+def _(all_nodes, edges_indexed, ig):
+    _graph = ig.Graph(n=len(all_nodes), edges=edges_indexed)
+    components = _graph.connected_components()
+    return (components,)
 
-    # Build component summary
-    component_rows = []
-    for comp_id, member_node_ids in enumerate(components):
-        member_df = all_nodes.filter(pl.col("node_id").is_in(member_node_ids))
-        cities_in_comp = member_df["city"].unique().to_list()
-        n_cities = len(cities_in_comp)
-        if n_cities < k_slider.value:
-            continue
-        # Representative city: most codes in this component
-        rep_city = (
-            all_assignments.filter(
-                pl.col("city").is_in(cities_in_comp)
-                & pl.col("cluster_id")
-                .cast(pl.Int64)
-                .is_in(member_df.filter(pl.col("city").is_in(cities_in_comp))["cluster_id"])
-            )
-            .group_by("city")
-            .agg(pl.len().alias("n_records"))
-            .sort("n_records", descending=True)["city"][0]
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Component Anatomy
+
+    For each component, derive its *core* (codes present in every city's
+    cluster), its *union* (codes present in any), and a per-city profile.
+    The summary table below is the unit of expert validation; details are
+    in the drill-down tabs at the end.
+    """)
+    return
+
+
+@app.cell
+def _(pl, run_datasets):
+    code_volume_per_city = (
+        pl.concat(
+            [
+                df.group_by(["code", "code_type"])
+                .agg(pl.col("quantity").sum().alias("total_records"))
+                .with_columns(pl.lit(city).alias("city"))
+                for city, df in run_datasets.items()
+            ]
         )
-        rep_cluster = int(member_df.filter(pl.col("city") == rep_city)["cluster_id"][0])
-        sample_codes = (
-            all_assignments.filter(
-                (pl.col("city") == rep_city) & (pl.col("cluster_id") == rep_cluster)
-            )["description"]
-            .head(4)
-            .to_list()
-        )
-        component_rows.append(
-            {
-                "component_id": comp_id,
-                "n_cities": n_cities,
-                "n_clusters": len(member_node_ids),
-                "cities": ", ".join(sorted(cities_in_comp)),
-                "rep_city": rep_city,
-                "rep_cluster": rep_cluster,
-                "sample_codes": " | ".join(sample_codes),
+        if run_datasets
+        else pl.DataFrame(
+            schema={
+                "code": pl.Utf8,
+                "code_type": pl.Utf8,
+                "total_records": pl.Int64,
+                "city": pl.Utf8,
             }
         )
+    )
+    return (code_volume_per_city,)
 
+
+@app.cell
+def _(all_nodes, components, k_slider, pl):
+    _membership_rows = []
+    for _component_id, _member_node_ids in enumerate(components):
+        _member_df = all_nodes.filter(pl.col("node_id").is_in(_member_node_ids))
+        if _member_df["city"].n_unique() < k_slider.value:
+            continue
+        for _row in _member_df.iter_rows(named=True):
+            _membership_rows.append(
+                {
+                    "component_id": _component_id,
+                    "city": _row["city"],
+                    "cluster_id": int(_row["cluster_id"]),
+                }
+            )
+    component_membership = (
+        pl.DataFrame(_membership_rows)
+        if _membership_rows
+        else pl.DataFrame(
+            schema={
+                "component_id": pl.Int64,
+                "city": pl.Utf8,
+                "cluster_id": pl.Int64,
+            }
+        )
+    )
+    return (component_membership,)
+
+
+@app.cell
+def _(all_assignments, code_volume_per_city, component_membership, pl):
+    component_codes = (
+        component_membership.join(
+            all_assignments.with_columns(pl.col("cluster_id").cast(pl.Int64)),
+            on=["city", "cluster_id"],
+            how="inner",
+        )
+        .select(["component_id", "city", "code", "code_type", "description"])
+        .join(
+            code_volume_per_city,
+            on=["city", "code", "code_type"],
+            how="left",
+        )
+        .with_columns(pl.col("total_records").fill_null(0))
+    )
+    return (component_codes,)
+
+
+@app.cell
+def _(component_codes, pl):
+    component_code_presence = (
+        component_codes.group_by(["component_id", "code", "code_type", "description"])
+        .agg(
+            pl.col("city").n_unique().alias("n_cities_with_code"),
+            pl.col("total_records").sum().alias("total_records_all_cities"),
+        )
+        .join(
+            component_codes.group_by("component_id").agg(
+                pl.col("city").n_unique().alias("n_cities_in_component")
+            ),
+            on="component_id",
+        )
+        .with_columns(
+            (pl.col("n_cities_with_code") == pl.col("n_cities_in_component")).alias("is_core"),
+            (pl.col("n_cities_with_code") == 1).alias("is_exclusive_to_one_city"),
+        )
+        .sort(
+            ["component_id", "n_cities_with_code", "total_records_all_cities"],
+            descending=[False, True, True],
+        )
+    )
+    return (component_code_presence,)
+
+
+@app.cell
+def _(component_code_presence, component_codes, pl):
+    component_per_city = (
+        component_codes.join(
+            component_code_presence.select(
+                ["component_id", "code", "code_type", "n_cities_with_code"]
+            ),
+            on=["component_id", "code", "code_type"],
+        )
+        .group_by(["component_id", "city"])
+        .agg(
+            pl.col("code").n_unique().alias("n_codes"),
+            pl.col("total_records").sum().alias("city_volume"),
+            (pl.col("n_cities_with_code") == 1).sum().alias("n_exclusive_codes"),
+        )
+        .sort(["component_id", "city"])
+    )
+    return (component_per_city,)
+
+
+@app.cell
+def _(component_code_presence, component_per_city, pl):
+    _cluster_size_stats = component_per_city.group_by("component_id").agg(
+        pl.col("n_codes").min().alias("n_codes_min"),
+        pl.col("n_codes").max().alias("n_codes_max"),
+        pl.col("n_codes").median().alias("n_codes_median"),
+    )
+    _set_size_stats = component_code_presence.group_by("component_id").agg(
+        pl.col("is_core").sum().alias("n_core_codes"),
+        pl.col("is_exclusive_to_one_city").sum().alias("n_exclusive_codes"),
+        pl.len().alias("n_union_codes"),
+    )
+    _volume_stats = component_code_presence.group_by("component_id").agg(
+        pl.col("total_records_all_cities").min().alias("code_volume_min"),
+        pl.col("total_records_all_cities").median().alias("code_volume_median"),
+    )
+    component_summary = _cluster_size_stats.join(_set_size_stats, on="component_id").join(
+        _volume_stats, on="component_id"
+    )
+    return (component_summary,)
+
+
+@app.cell
+def _(
+    all_nodes,
+    component_code_presence,
+    component_per_city,
+    components,
+    k_slider,
+    pl,
+):
+    component_rows = []
+    for _component_id, _member_node_ids in enumerate(components):
+        _member_df = all_nodes.filter(pl.col("node_id").is_in(_member_node_ids))
+        _cities_in_component = sorted(_member_df["city"].unique().to_list())
+        if len(_cities_in_component) < k_slider.value:
+            continue
+
+        _rep_city = component_per_city.filter(pl.col("component_id") == _component_id).sort(
+            "city_volume", descending=True
+        )["city"][0]
+        _rep_cluster = int(_member_df.filter(pl.col("city") == _rep_city)["cluster_id"][0])
+
+        _core_descriptions = (
+            component_code_presence.filter(
+                (pl.col("component_id") == _component_id) & pl.col("is_core")
+            )
+            .sort("total_records_all_cities", descending=True)["description"]
+            .to_list()
+        )
+        _union_descriptions = (
+            component_code_presence.filter(pl.col("component_id") == _component_id)
+            .sort(
+                ["n_cities_with_code", "total_records_all_cities"],
+                descending=[True, True],
+            )["description"]
+            .to_list()
+        )
+
+        component_rows.append(
+            {
+                "component_id": _component_id,
+                "n_cities": len(_cities_in_component),
+                "n_clusters": len(_member_node_ids),
+                "cities": ", ".join(_cities_in_component),
+                "rep_city": _rep_city,
+                "rep_cluster": _rep_cluster,
+                "core_codes": " | ".join(_core_descriptions)
+                if _core_descriptions
+                else "(empty core — no code present in every city)",
+                "all_codes": " | ".join(_union_descriptions),
+            }
+        )
     return (component_rows,)
 
 
 @app.cell
-def _(all_nodes, component_rows, k_slider, mo, mutual_edges, pl):
-    syndromes_df = pl.DataFrame(component_rows) if component_rows else pl.DataFrame()
+def _(
+    all_nodes,
+    component_rows,
+    component_summary,
+    k_slider,
+    mo,
+    mutual_edges,
+    pl,
+):
+    syndromes_df = (
+        pl.DataFrame(component_rows).join(component_summary, on="component_id")
+        if component_rows
+        else pl.DataFrame()
+    )
 
-    n_syndromes = len(syndromes_df)
+    _n_syndromes = len(syndromes_df)
     mo.vstack(
         [
-            mo.md(r"""## Syndrome Graph — Connected Components
-
-        Each component is a candidate syndrome: a set of city-level clusters
-        that mutually recognise each other across cities.
-        """),
+            mo.md(
+                "## Syndrome Graph — Connected Components\n\n"
+                "Each row is a candidate syndrome — clusters that mutually "
+                "recognise each other across cities. Read `core_codes` to "
+                "judge whether the cluster names a coherent syndrome; use "
+                "`n_codes_median` and `code_volume_median` as red flags "
+                "(very small / very rare clusters are unstable). The "
+                "drill-down tabs below expose per-city and per-code detail."
+            ),
             mo.hstack(
                 [
                     mo.stat(
                         label="Candidate syndromes",
-                        value=str(n_syndromes),
+                        value=str(_n_syndromes),
                         caption=f"components spanning ≥ {k_slider.value} cities",
                         bordered=True,
                     ),
                     mo.stat(
-                        label="Total nodes",
-                        value=str(len(all_nodes)),
-                        caption="(city, cluster) pairs in the graph",
-                    ),
-                    mo.stat(
-                        label="Total edges",
+                        label="Mutual edges",
                         value=str(len(mutual_edges)),
-                        caption="mutual best-match pairs",
+                        caption=f"on {len(all_nodes)} (city, cluster) nodes",
                     ),
                 ]
             ),
@@ -887,17 +1064,37 @@ def _(all_nodes, component_rows, k_slider, mo, mutual_edges, pl):
                 syndromes_df.select(
                     [
                         "component_id",
-                        "n_cities",
-                        "n_clusters",
+                        "n_codes_median",
+                        "n_core_codes",
+                        "code_volume_median",
                         "rep_city",
-                        "rep_cluster",
-                        "cities",
-                        "sample_codes",
+                        "core_codes",
                     ]
                 )
                 if not syndromes_df.is_empty()
                 else syndromes_df,
                 selection=None,
+            ),
+        ]
+    )
+    return
+
+
+@app.cell
+def _(component_code_presence, component_per_city, mo):
+    mo.vstack(
+        [
+            mo.md(
+                "### Drill-down\n\nFilter by `component_id` to inspect a "
+                "single component in detail."
+            ),
+            mo.ui.tabs(
+                {
+                    "Per-City": mo.ui.table(component_per_city, selection=None, page_size=20),
+                    "All codes": mo.ui.table(
+                        component_code_presence, selection=None, page_size=20
+                    ),
+                }
             ),
         ]
     )
