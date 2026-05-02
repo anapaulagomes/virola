@@ -11,12 +11,14 @@ def _():
     import polars as pl
 
     from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
+    from vir.config import INTERIM_DATA_DIR
     from vir.db import fetch_cluster_profiles_for_runs, fetch_runs
     from vir.features import CITY_NAMES
     from vir.viz import TABLEAU_COLORS
 
     return (
         CITY_NAMES,
+        INTERIM_DATA_DIR,
         POPULATION_RANGE_TRANSLATIONS,
         REGION_TRANSLATIONS,
         TABLEAU_COLORS,
@@ -80,6 +82,14 @@ def _(mo):
 
 
 @app.cell
+def _(mo):
+    mo.md(r"""
+    ### Partition
+    """)
+    return
+
+
+@app.cell
 def _(cluster_sizes, pl):
     partition_overview = (
         cluster_sizes.group_by("city")
@@ -94,6 +104,51 @@ def _(cluster_sizes, pl):
         .with_columns(pl.col("city").cast(pl.String))
     )
     partition_overview
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Number of unique codes through pipeline
+    """)
+    return
+
+
+@app.cell
+def _(CITY_NAMES, INTERIM_DATA_DIR, cluster_sizes, fetch_runs, pl):
+    _raw_codes = (
+        pl.read_parquet(
+            INTERIM_DATA_DIR / "cleaned_base_aesop_raw_extracao_01042026_all_cities.parquet"
+        )
+        .group_by("city")
+        .agg(pl.struct("code", "code_type").n_unique().alias("raw"))
+    )
+    _processed_codes = (
+        fetch_runs()
+        .filter(pl.col("city").is_in(CITY_NAMES))
+        .group_by("city")
+        .first()
+        .select(["city", "n_codes_common"])
+        .rename({"n_codes_common": "processed"})
+    )
+    _codes_in_clusters = cluster_sizes.group_by("city").agg(
+        pl.col("n_codes").sum().alias("n_code_clusters")
+    )
+    code_counts_overview = (
+        _raw_codes.join(_processed_codes, on="city")
+        .join(_codes_in_clusters, on="city")
+        .sort("city")
+    )
+    code_counts_overview
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Cluster size (ECDF)
+    """)
     return
 
 
