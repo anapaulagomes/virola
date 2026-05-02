@@ -806,20 +806,6 @@ def _(all_assignments, jaccard_df, k_slider, mo, pl, tau):
 
 
 @app.cell
-def _(px):
-    def plot_heatmap(df, from_pov, index, values, labels=None):
-        _z = (
-            df.select([index, from_pov, values])
-            .pivot(from_pov, index=index, values=values)
-            .fill_null(0)
-        )
-        _fig = px.imshow(_z, text_auto=True, labels=labels or {})
-        return _fig
-
-    return
-
-
-@app.cell
 def _(component_membership, mo, mutual_edges, pl, px, selected_cities, tau):
     _full_component_ids = (
         component_membership.group_by("component_id")
@@ -879,18 +865,18 @@ def _(component_membership, mo, mutual_edges, pl, px, selected_cities, tau):
         color_continuous_scale="Blues",
         zmin=tau,
         zmax=1.0,
-        title="Component × City — Jaccard (components spanning all cities, ordered by median Jaccard)",
         labels={"color": "Jaccard", "x": "Component ID", "y": "City"},
         text_auto=".2f",
     )
     _fig.update_layout(height=500, xaxis_title="Component ID", yaxis_title="City")
+    _fig.write_image("cross_city_components_heatmap.pdf")
     _fig
     return
 
 
 @app.cell
 def _(jaccard_df, mo, pl, tau):
-    # Mutual best-match: aresta existe só se A→B e B→A ambos têm Jaccard ≥ τ
+    # mutual best-match: edge only exists if A→B and B→A both have Jaccard ≥ τ
     _forward = jaccard_df.filter(pl.col("jaccard") >= tau).select(
         ["city_a", "cluster_a", "city_b", "cluster_b", "jaccard"]
     )
