@@ -6,11 +6,13 @@ app = marimo.App(width="medium", auto_download=["html"])
 
 @app.cell
 def _():
+    import json
+
     import marimo as mo
     import plotly.express as px
     import polars as pl
 
-    return mo, pl, px
+    return json, mo, pl, px
 
 
 @app.cell
@@ -755,8 +757,66 @@ def _(px):
 
 
 @app.cell
-def _(consistent_clusters, plot_heatmap):
-    plot_heatmap(consistent_clusters, "cluster_a", "city_a", "median_jaccard")
+def _(component_membership, jaccard_df, mo, pl, px, selected_cities, tau):
+    _full_component_ids = (
+        component_membership.group_by("component_id")
+        .agg(pl.col("city").n_unique().alias("n_cities"))
+        .filter(pl.col("n_cities") == len(selected_cities))
+        .sort("component_id")["component_id"]
+        .to_list()
+    )
+
+    mo.stop(
+        len(_full_component_ids) == 0,
+        mo.callout(mo.md("No components span all cities — nothing to plot."), kind="warn"),
+    )
+
+    _city_jaccard_per_cluster = (
+        jaccard_df.group_by(["city_a", "cluster_a"])
+        .agg(pl.col("jaccard").median().alias("median_jaccard"))
+        .rename({"city_a": "city", "cluster_a": "cluster_id"})
+        .with_columns(pl.col("cluster_id").cast(pl.Int64))
+    )
+
+    _heatmap_long = (
+        component_membership.filter(pl.col("component_id").is_in(_full_component_ids))
+        .join(_city_jaccard_per_cluster, on=["city", "cluster_id"], how="left")
+        .with_columns(pl.col("median_jaccard").fill_null(0))
+        .group_by(["component_id", "city"])
+        .agg(pl.col("median_jaccard").max())
+        .with_columns(pl.col("component_id").cast(pl.Utf8))
+    )
+
+    _component_order = (
+        _heatmap_long.group_by("component_id")
+        .agg(pl.col("median_jaccard").median().alias("overall_median"))
+        .sort("overall_median", descending=True)["component_id"]
+        .to_list()
+    )
+
+    _pivot = (
+        _heatmap_long.pivot(on="component_id", index="city", values="median_jaccard")
+        .fill_null(0)
+        .sort("city")
+    )
+
+    _city_labels = _pivot["city"].to_list()
+    _component_labels = [col for col in _component_order if col in _pivot.columns]
+    _matrix = _pivot.select(_component_labels).to_numpy()
+
+    _fig = px.imshow(
+        _matrix,
+        x=_component_labels,
+        y=_city_labels,
+        color_continuous_scale="Blues",
+        zmin=tau,
+        zmax=1.0,
+        title="Component × City — Jaccard (components spanning all cities, ordered by median Jaccard)",
+        labels={"color": "Jaccard", "x": "Component ID", "y": "City"},
+        text_auto=".2f",
+    )
+    _fig.update_layout(height=500, xaxis_title="Component ID", yaxis_title="City")
+    _fig
     return
 
 
@@ -1117,6 +1177,136 @@ def _(component_code_presence, component_per_city, mo):
                 }
             ),
         ]
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Paper Outputs
+    """)
+    return
+
+
+@app.cell
+def _(DATA_DIR, consistency, mo, n_total, pl, px, selected_cities, tau):
+    _k_values = list(range(1, len(selected_cities) + 1))
+    _sensitivity_rows = []
+    for _k in _k_values:
+        _n_consistent_k = consistency.filter(pl.col("n_cities_passing") >= _k - 1).height
+        _sensitivity_rows.append(
+            {
+                "k": _k,
+                "n_consistent": _n_consistent_k,
+                "pct_consistent": _n_consistent_k / n_total * 100 if n_total > 0 else 0.0,
+            }
+        )
+    _sensitivity_df = pl.DataFrame(_sensitivity_rows)
+
+    (DATA_DIR / "paper").mkdir(parents=True, exist_ok=True)
+    _sensitivity_df.write_csv(DATA_DIR / "paper" / "sensitivity_k.csv")
+
+    _fig = px.line(
+        _sensitivity_df,
+        x="k",
+        y="pct_consistent",
+        markers=True,
+        title=f"Sensitivity of cluster consistency to K (τ = {tau:.3f})",
+        labels={
+            "k": "K (total cities covered)",
+            "pct_consistent": "% consistent clusters",
+        },
+    )
+    _fig.add_vline(
+        x=len(selected_cities),
+        line_dash="dot",
+        line_color="red",
+        annotation_text=f"K = {len(selected_cities)}",
+    )
+    _fig.update_layout(height=400)
+    _fig.write_html(str(DATA_DIR / "paper" / "sensitivity_k.html"))
+    _fig
+    return
+
+
+@app.cell
+def _(DATA_DIR, all_assignments, pl):
+    _cluster_sizes = all_assignments.group_by(["city", "cluster_id"]).agg(
+        pl.len().alias("cluster_size")
+    )
+
+    _partition_overview = (
+        _cluster_sizes.group_by("city")
+        .agg(
+            (pl.col("cluster_size") == 1).sum().alias("singletons"),
+            pl.col("cluster_size")
+            .quantile(0.25, interpolation="nearest")
+            .cast(pl.Int64)
+            .alias("q25"),
+            pl.col("cluster_size")
+            .quantile(0.50, interpolation="nearest")
+            .cast(pl.Int64)
+            .alias("q50"),
+            pl.col("cluster_size")
+            .quantile(0.75, interpolation="nearest")
+            .cast(pl.Int64)
+            .alias("q75"),
+            pl.col("cluster_size").max().alias("residual"),
+        )
+        .sort("city")
+    )
+
+    (DATA_DIR / "paper").mkdir(parents=True, exist_ok=True)
+    _partition_overview.write_csv(DATA_DIR / "paper" / "partition_overview.csv")
+    _partition_overview
+    return
+
+
+@app.cell
+def _(
+    DATA_DIR,
+    component_membership,
+    json,
+    mo,
+    n_consistent,
+    n_total,
+    pl,
+    selected_cities,
+    tau,
+):
+    _n_full_span_components = (
+        component_membership.group_by("component_id")
+        .agg(pl.col("city").n_unique().alias("n_cities"))
+        .filter(pl.col("n_cities") == len(selected_cities))
+        .height
+    )
+
+    _paper_numbers = {
+        "n_total": n_total,
+        "n_consistent": n_consistent,
+        "pct_consistent": round(n_consistent / n_total * 100, 1) if n_total > 0 else 0.0,
+        "n_cities": len(selected_cities),
+        "k": len(selected_cities) - 1,
+        "tau": round(tau, 3),
+        "n_full_span_components": _n_full_span_components,
+    }
+
+    (DATA_DIR / "paper").mkdir(parents=True, exist_ok=True)
+    (DATA_DIR / "paper" / "paper_numbers.json").write_text(json.dumps(_paper_numbers, indent=2))
+
+    mo.callout(
+        mo.md(f"""
+        **Paper numbers saved** → `data/paper/paper_numbers.json`
+
+        | Metric | Value |
+        |--------|-------|
+        | Total clusters | {n_total} |
+        | Consistent (K = {len(selected_cities) - 1}, τ = {tau:.3f}) | {n_consistent} |
+        | % consistent | {_paper_numbers["pct_consistent"]}% |
+        | Components spanning all {len(selected_cities)} cities | {_n_full_span_components} |
+        """),
+        kind="success",
     )
     return
 
