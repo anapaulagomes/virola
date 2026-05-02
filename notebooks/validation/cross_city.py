@@ -741,6 +741,26 @@ def _(all_assignments, jaccard_df, k_slider, mo, pl, tau):
 
 
 @app.cell
+def _(px):
+    def plot_heatmap(df, from_pov, index, values, labels=None):
+        _z = (
+            df.select([index, from_pov, values])
+            .pivot(from_pov, index=index, values=values)
+            .fill_null(0)
+        )
+        _fig = px.imshow(_z, text_auto=True, labels=labels or {})
+        return _fig
+
+    return (plot_heatmap,)
+
+
+@app.cell
+def _(consistent_clusters, plot_heatmap):
+    plot_heatmap(consistent_clusters, "cluster_a", "city_a", "median_jaccard")
+    return
+
+
+@app.cell
 def _(jaccard_df, mo, pl, tau):
     # Mutual best-match: aresta existe só se A→B e B→A ambos têm Jaccard ≥ τ
     _forward = jaccard_df.filter(pl.col("jaccard") >= tau).select(
