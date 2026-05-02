@@ -11,7 +11,8 @@ def _():
     import polars as pl
 
     from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
-    from vir.config import INTERIM_DATA_DIR
+    from vir.config import INTERIM_DATA_DIR, PROCESSED_DATA_DIR
+    from vir.data_filters import filter_min_temporal_coverage
     from vir.db import fetch_cluster_profiles_for_runs, fetch_runs
     from vir.features import CITY_NAMES
     from vir.viz import TABLEAU_COLORS
@@ -20,10 +21,12 @@ def _():
         CITY_NAMES,
         INTERIM_DATA_DIR,
         POPULATION_RANGE_TRANSLATIONS,
+        PROCESSED_DATA_DIR,
         REGION_TRANSLATIONS,
         TABLEAU_COLORS,
         fetch_cluster_profiles_for_runs,
         fetch_runs,
+        filter_min_temporal_coverage,
         mo,
         pl,
         px,
@@ -116,27 +119,65 @@ def _(mo):
 
 
 @app.cell
-def _(CITY_NAMES, INTERIM_DATA_DIR, cluster_sizes, fetch_runs, pl):
+def _(mo):
+    mo.md(r"""
+    - **raw**: unique (code, code_type) pairs in the cleaned interim file restricted to 2022–2024, before any further filtering
+    - **prepared**: unique terminology IDs after data preparation (aggregation, terminology join, indicative code removal, ICD-10 Z-chapter removal)
+    - **post\_temporal\_filtering**: unique terminology IDs after requiring at least 12 weeks of observations per year in 2022–2024 — the codes that enter SNF
+    - **n\_code\_clusters**: sum of codes across all 200 clusters; should match **post\_temporal\_filtering**
+    """)
+    return
+
+
+@app.cell
+def _(
+    CITY_NAMES,
+    INTERIM_DATA_DIR,
+    PROCESSED_DATA_DIR,
+    cluster_sizes,
+    filter_min_temporal_coverage,
+    pl,
+):
+    _year_min = 2022
+    _year_max = 2024
     _raw_codes = (
         pl.read_parquet(
             INTERIM_DATA_DIR / "cleaned_base_aesop_raw_extracao_01042026_all_cities.parquet"
         )
+        .filter(pl.col("city").is_in(CITY_NAMES))
+        .filter(pl.col("year").is_between(_year_min, _year_max))
         .group_by("city")
         .agg(pl.struct("code", "code_type").n_unique().alias("raw"))
     )
-    _processed_codes = (
-        fetch_runs()
-        .filter(pl.col("city").is_in(CITY_NAMES))
-        .group_by("city")
-        .first()
-        .select(["city", "n_codes_common"])
-        .rename({"n_codes_common": "processed"})
+    _all_prepared_df = pl.read_parquet(
+        PROCESSED_DATA_DIR
+        / "prepared_base_aesop_raw_extracao_01042026_all_cities_multiple_cities.parquet"
     )
+    _prepared_counts = []
+    _post_temporal_counts = []
+    for _city in CITY_NAMES:
+        _city_df = _all_prepared_df.filter(pl.col("city") == _city)
+        _prepared_counts.append(
+            {
+                "city": _city,
+                "prepared": _city_df["terminology_id"].n_unique(),
+            }
+        )
+        _city_temporal_filtered_df = filter_min_temporal_coverage(
+            _city_df.filter(pl.col("year").is_between(_year_min, _year_max))
+        )
+        _post_temporal_counts.append(
+            {
+                "city": _city,
+                "post_temporal_filtering": _city_temporal_filtered_df["terminology_id"].n_unique(),
+            }
+        )
     _codes_in_clusters = cluster_sizes.group_by("city").agg(
         pl.col("n_codes").sum().alias("n_code_clusters")
     )
     code_counts_overview = (
-        _raw_codes.join(_processed_codes, on="city")
+        _raw_codes.join(pl.DataFrame(_prepared_counts), on="city")
+        .join(pl.DataFrame(_post_temporal_counts), on="city")
         .join(_codes_in_clusters, on="city")
         .sort("city")
     )
