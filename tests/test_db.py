@@ -73,3 +73,65 @@ class TestGetConnection:
         con2 = db_module.get_connection()
         assert con2 is not con1
         assert isinstance(con2, duckdb.DuckDBPyConnection)
+
+
+class TestFetchClusterProfilesForRuns:
+    @pytest.fixture
+    def seeded_db(self, tmp_db):
+        db_module.create_embeddings_table_if_not_exists()
+        run_id_1 = db_module.insert_run(
+            dataset_name="test_a",
+            city="City A",
+            region="North",
+            population_range="> 500 mil",
+            year_min=2022,
+            year_max=2024,
+            snf_k=10,
+            n_clusters=3,
+        )
+        run_id_2 = db_module.insert_run(
+            dataset_name="test_b",
+            city="City B",
+            region="South",
+            population_range="250 - 500 mil",
+            year_min=2022,
+            year_max=2024,
+            snf_k=10,
+            n_clusters=2,
+        )
+        db_module.get_connection(write=True).executemany(
+            "INSERT INTO cluster_profiles (run_id, cluster_id, n_codes) VALUES (?, ?, ?)",
+            [
+                (run_id_1, 0, 10),
+                (run_id_1, 1, 20),
+                (run_id_1, 2, 5),
+                (run_id_2, 0, 15),
+                (run_id_2, 1, 25),
+            ],
+        )
+        return run_id_1, run_id_2
+
+    def test_empty_input_returns_empty_dataframe(self, tmp_db):
+        result = db_module.fetch_cluster_profiles_for_runs([])
+        assert result.is_empty()
+
+    def test_returns_profiles_for_single_run(self, seeded_db):
+        run_id_1, _ = seeded_db
+        result = db_module.fetch_cluster_profiles_for_runs([run_id_1])
+        assert len(result) == 3
+        assert result["run_id"].unique().to_list() == [run_id_1]
+
+    def test_returns_profiles_for_multiple_runs(self, seeded_db):
+        run_id_1, run_id_2 = seeded_db
+        result = db_module.fetch_cluster_profiles_for_runs([run_id_1, run_id_2])
+        assert len(result) == 5
+
+    def test_ordered_by_run_id_then_cluster_id(self, seeded_db):
+        run_id_1, run_id_2 = seeded_db
+        result = db_module.fetch_cluster_profiles_for_runs([run_id_1, run_id_2])
+        assert result["run_id"].to_list() == [run_id_1, run_id_1, run_id_1, run_id_2, run_id_2]
+        assert result["cluster_id"].to_list() == [0, 1, 2, 0, 1]
+
+    def test_unknown_run_id_returns_empty(self, seeded_db):
+        result = db_module.fetch_cluster_profiles_for_runs([99999])
+        assert result.is_empty()
