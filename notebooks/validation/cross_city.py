@@ -8,22 +8,24 @@ app = marimo.App(width="medium", auto_download=["html"])
 def _():
     import json
 
+    import igraph as ig
     import marimo as mo
     import plotly.express as px
     import polars as pl
 
-    return json, mo, pl, px
+    return ig, json, mo, pl, px
 
 
 @app.cell
 def _():
     from vir.config import DATA_DIR, REFERENCES_DIR
     from vir.db import fetch_cluster_assignments, fetch_runs
-    from vir.features import CODE_TYPES_MAPPING
+    from vir.features import CITY_NAMES, CODE_TYPES_MAPPING
     from vir.viz import AGE_GROUP_COLOR, SEX_COLOR
 
     return (
         AGE_GROUP_COLOR,
+        CITY_NAMES,
         CODE_TYPES_MAPPING,
         DATA_DIR,
         REFERENCES_DIR,
@@ -41,18 +43,15 @@ def _(mo):
     For each cluster in city A, find the most similar cluster in city B using
     Jaccard similarity on `terminology_id` sets.
 
-    **Goal**: identify clusters that are reproducible across cities — these are
-    the strongest candidates for genuine syndromic signals, independent of
-    local data quirks.
+    **Goal**: identify clusters that are reproducible across cities. They are the strongest candidates for genuine syndromic signals, independent of local data quirks.
 
-    **Calibration**: arboviroses (dengue/chikungunya) serves as the anchor
-    syndrome — its cross-city Jaccard sets the threshold τ for "consistent."
+    **Calibration**: arboviroses (dengue/chikungunya) serves as the anchor syndrome given its cross-city Jaccard sets the threshold τ for "consistent."
     """)
     return
 
 
 @app.cell
-def _(fetch_runs, mo, pl):
+def _(CITY_NAMES, fetch_runs, mo):
     runs_df = fetch_runs()
 
     mo.stop(
@@ -60,6 +59,17 @@ def _(fetch_runs, mo, pl):
         mo.callout(mo.md("No runs found. Run `vir model snf` first."), kind="warn"),
     )
 
+    city_selector = mo.ui.multiselect(
+        options=CITY_NAMES,
+        value=CITY_NAMES,
+        label="Cities to compare (select 2 or more)",
+    )
+    city_selector
+    return city_selector, runs_df
+
+
+@app.cell
+def _(pl, runs_df):
     latest_per_city = (
         runs_df.filter(pl.col("city").is_not_null())
         .sort("created_at", descending=True)
@@ -67,16 +77,7 @@ def _(fetch_runs, mo, pl):
         .first()
         .sort("city")
     )
-
-    city_options = latest_per_city["city"].to_list()
-
-    city_selector = mo.ui.multiselect(
-        options=city_options,
-        value=city_options,
-        label="Cities to compare (select 2 or more)",
-    )
-    city_selector
-    return city_selector, latest_per_city
+    return (latest_per_city,)
 
 
 @app.cell
@@ -167,7 +168,7 @@ def _(mo):
 
 
 @app.cell
-def _(all_assignments, pl, selected_cities):
+def _(pl):
     def compute_jaccard_best_matches(
         assignments: pl.DataFrame,
         city_a: str,
@@ -216,17 +217,25 @@ def _(all_assignments, pl, selected_cities):
             .sort("cluster_a")
         )
 
+    return (compute_jaccard_best_matches,)
+
+
+@app.cell
+def _(all_assignments, compute_jaccard_best_matches, pl, selected_cities):
     pair_results = []
-    cities = selected_cities
-    for i in range(len(cities)):
-        for j in range(i + 1, len(cities)):
-            ab = compute_jaccard_best_matches(all_assignments, cities[i], cities[j])
-            ba = compute_jaccard_best_matches(all_assignments, cities[j], cities[i])
+    for i in range(len(selected_cities)):
+        for j in range(i + 1, len(selected_cities)):
+            ab = compute_jaccard_best_matches(
+                all_assignments, selected_cities[i], selected_cities[j]
+            )
+            ba = compute_jaccard_best_matches(
+                all_assignments, selected_cities[j], selected_cities[i]
+            )
             pair_results.extend([ab, ba])
 
     jaccard_df = pl.concat(pair_results)
     jaccard_df
-    return compute_jaccard_best_matches, jaccard_df
+    return (jaccard_df,)
 
 
 @app.cell
@@ -235,8 +244,9 @@ def _(mo):
     ## Arbovirus Calibration
 
     Arboviroses (dengue/chikungunya) is the anchor syndrome.
-    Its cross-city Jaccard sets τ: *"consistent in the same sense that
-    dengue/chikungunya is consistent across cities."*
+    Its cross-city Jaccard sets τ:
+
+    > consistent in the same sense that dengue/chikungunya is consistent across cities.
     """)
     return
 
@@ -316,24 +326,42 @@ def _(
 
 
 @app.cell
-def _(arbo_jaccard_df, mo):
-    if arbo_jaccard_df.is_empty():
-        tau = 0.2
-        mo.callout(mo.md(f"No arbovirus matches found. Using default τ = {tau}"), kind="warn")
-    else:
-        tau = float(arbo_jaccard_df["jaccard"].median())
-        mo.callout(
-            mo.md(f"""
-            **Arbovirus anchor Jaccard**
+def _(arbo_cluster_per_city, arbo_jaccard_df, pl):
+    _min_ref_codes = 3
 
-            Median across city pairs: **τ = {tau:.3f}**
-            Range: {arbo_jaccard_df["jaccard"].min():.3f} – {arbo_jaccard_df["jaccard"].max():.3f}
+    _anchor_cities = arbo_cluster_per_city.filter(pl.col("ref_codes") >= _min_ref_codes)[
+        "city"
+    ].to_list()
 
-            Clusters with best-match Jaccard ≥ τ are *consistent in the same sense
-            that arboviroses is consistent across cities.*
-            """),
-            kind="success",
-        )
+    arbo_jaccard_df_filtered = arbo_jaccard_df.filter(
+        pl.col("city_a").is_in(_anchor_cities) & pl.col("city_b").is_in(_anchor_cities)
+    )
+    return (arbo_jaccard_df_filtered,)
+
+
+@app.cell
+def _(arbo_jaccard_df_filtered, mo):
+    tau = 0.2
+    _callout_content = mo.md(f"No arbovirus matches found. Using default τ = {tau}")
+    _callout_kind = "warn"
+
+    if not arbo_jaccard_df_filtered.is_empty():
+        tau = float(arbo_jaccard_df_filtered["jaccard"].median())
+        _callout_content = mo.md(f"""
+        **Arbovirus anchor Jaccard**
+
+        Median across city pairs: **τ = {tau:.3f}**
+        Range: {arbo_jaccard_df_filtered["jaccard"].min():.3f} – {arbo_jaccard_df_filtered["jaccard"].max():.3f}
+
+        Clusters with best-match Jaccard ≥ τ are *consistent in the same sense
+        that arboviroses is consistent across cities.*
+        """)
+        _callout_kind = "success"
+
+    mo.callout(
+        _callout_content,
+        kind=_callout_kind,
+    )
     return (tau,)
 
 
@@ -352,17 +380,19 @@ def _(jaccard_df, mo, px, tau):
         x="jaccard",
         facet_col="city_a",
         nbins=40,
-        title="Best-match Jaccard distribution per city",
-        labels={"jaccard": "Jaccard (best match in paired city)"},
     )
     _fig.add_vline(
         x=tau,
         line_dash="dash",
         line_color="red",
-        annotation_text=f"τ = {tau:.3f} (arbovirus anchor)",
+        annotation_text=f"τ = {tau:.3f}",  # arbovirus anchor
     )
     _fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
-    _fig.update_layout(height=350)
+    _fig.update_layout(
+        height=350,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+    )
 
     _pct_above = jaccard_df.filter(jaccard_df["jaccard"] >= tau).height / jaccard_df.height * 100
 
@@ -385,6 +415,21 @@ def _(mo):
     ## Consistent Clusters
 
     Clusters where the best match in **every** paired city exceeds τ.
+    """)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    A cluster from city *A* is **consistent** when it has a recognisable counterpart in other cities — formally, when its best-match Jaccard with at least **K** other cities is ≥ τ.
+
+    The strictness is governed by **K**:
+
+    - **K = 1** — the cluster need only resemble *one* counterpart elsewhere (loose — high coverage, low specificity).
+    - **K = N** (all selected cities) — the cluster must resemble a counterpart in *every* other city (strict — low coverage, high specificity).
+
+    The default uses the strictest criterion (K = N), which can yield **zero consistent clusters**: real-world coding noise means even well-behaved syndromes — including arboviroses — can fail to find a match in one or two cities. **Use the K slider further down** to relax the criterion and inspect how the count of consistent clusters trades off against breadth of cross-city evidence.
     """)
     return
 
@@ -654,27 +699,42 @@ def _(
 
 
 @app.cell
+def _(selected_cities):
+    len(selected_cities)
+    return
+
+
+@app.cell
 def _(mo, selected_cities):
     k_slider = mo.ui.slider(
         start=1,
-        stop=len(selected_cities) - 1,
-        value=len(selected_cities) - 1,
+        stop=len(selected_cities),
+        value=len(selected_cities),
         label="Minimum cities with Jaccard ≥ τ (K)",
         show_value=True,
     )
+
     mo.vstack(
         [
             mo.md(r"""
         ## Consistent Clusters
 
-        A cluster is *consistent* if its best match in at least **K** other cities
-        has Jaccard ≥ τ. K = max (total cities − 1) means "appears everywhere";
-        K = 1 means "appears in at least one other city."
+        A cluster is *consistent* if its best match in at least **K** other cities has Jaccard ≥ τ.
+
+        K = max (total cities) means *appears everywhere*;
+        K = 1 means *appears in at least one other city*
+
         """),
             k_slider,
         ]
     )
     return (k_slider,)
+
+
+@app.cell
+def _(arbo_cluster_per_city):
+    arbo_cluster_per_city.select(["city", "arbo_cluster", "ref_codes"]).sort("ref_codes")
+    return
 
 
 @app.cell
@@ -688,7 +748,10 @@ def _(all_assignments, jaccard_df, k_slider, mo, pl, tau):
             pl.col("jaccard").min().alias("min_jaccard"),
             pl.len().alias("n_pairs"),
         )
-        .with_columns((pl.col("n_cities_passing") >= k_slider.value).alias("consistent"))
+        .with_columns(
+            # +1 to include the own city
+            ((pl.col("n_cities_passing") + 1) >= k_slider.value).alias("consistent")
+        )
         .sort("n_cities_passing", descending=True)
     )
 
@@ -739,7 +802,7 @@ def _(all_assignments, jaccard_df, k_slider, mo, pl, tau):
             ),
         ]
     )
-    return consistent_clusters, n_consistent, n_total
+    return consistency, consistent_clusters, n_consistent, n_total
 
 
 @app.cell
@@ -753,7 +816,7 @@ def _(px):
         _fig = px.imshow(_z, text_auto=True, labels=labels or {})
         return _fig
 
-    return (plot_heatmap,)
+    return
 
 
 @app.cell
@@ -850,8 +913,6 @@ def _(jaccard_df, mo, pl, tau):
 
 @app.cell
 def _(mutual_edges, pl):
-    import igraph as ig
-
     # Build node index: (city, cluster_id) → int
     all_nodes = (
         mutual_edges.select(
@@ -880,7 +941,7 @@ def _(mutual_edges, pl):
         )
         for row in mutual_edges.iter_rows(named=True)
     ]
-    return all_nodes, edges_indexed, ig
+    return all_nodes, edges_indexed
 
 
 @app.cell
@@ -895,10 +956,9 @@ def _(mo):
     mo.md(r"""
     ## Component Anatomy
 
-    For each component, derive its *core* (codes present in every city's
-    cluster), its *union* (codes present in any), and a per-city profile.
-    The summary table below is the unit of expert validation; details are
-    in the drill-down tabs at the end.
+    For each component, derive its *core* (codes present in every city's cluster), its *union* (codes present in any), and a per-city profile.
+
+    The summary table below is the unit of expert validation; details arein the drill-down tabs at the end.
     """)
     return
 
@@ -1184,13 +1244,13 @@ def _(component_code_presence, component_per_city, mo):
 @app.cell
 def _(mo):
     mo.md(r"""
-    ## Paper Outputs
+    ## Export results
     """)
     return
 
 
 @app.cell
-def _(DATA_DIR, consistency, mo, n_total, pl, px, selected_cities, tau):
+def _(DATA_DIR, consistency, n_total, pl, px, selected_cities, tau):
     _k_values = list(range(1, len(selected_cities) + 1))
     _sensitivity_rows = []
     for _k in _k_values:
