@@ -493,6 +493,20 @@ def fetch_cluster_profiles(run_id: int) -> pl.DataFrame:
     )
 
 
+def fetch_cluster_profiles_for_runs(run_ids: list[int]) -> pl.DataFrame:
+    """Return cluster profiles for multiple runs, ordered by run_id and cluster_id."""
+    if not run_ids:
+        return pl.DataFrame()
+    return (
+        get_connection()
+        .execute(
+            "SELECT * FROM cluster_profiles WHERE run_id IN (SELECT unnest(?::INTEGER[])) ORDER BY run_id, cluster_id",
+            [run_ids],
+        )
+        .pl()
+    )
+
+
 def insert_run_multi_k(run_id: int, results: list[dict]) -> None:
     """Bulk insert multi-K comparison results for a run.
 
