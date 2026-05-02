@@ -655,8 +655,8 @@ def _(
 def _(mo, selected_cities):
     k_slider = mo.ui.slider(
         start=1,
-        stop=len(selected_cities),
-        value=len(selected_cities),
+        stop=len(selected_cities) - 1,
+        value=len(selected_cities) - 1,
         label="Minimum cities with Jaccard ≥ τ (K)",
         show_value=True,
     )
@@ -666,8 +666,8 @@ def _(mo, selected_cities):
         ## Consistent Clusters
 
         A cluster is *consistent* if its best match in at least **K** other cities
-        has Jaccard ≥ τ. K = total cities means "appears everywhere"; K = 1 means
-        "appears in at least one other city."
+        has Jaccard ≥ τ. K = max (total cities − 1) means "appears everywhere";
+        K = 1 means "appears in at least one other city."
         """),
             k_slider,
         ]
