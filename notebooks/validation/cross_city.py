@@ -820,7 +820,7 @@ def _(px):
 
 
 @app.cell
-def _(component_membership, jaccard_df, mo, pl, px, selected_cities, tau):
+def _(component_membership, mo, mutual_edges, pl, px, selected_cities, tau):
     _full_component_ids = (
         component_membership.group_by("component_id")
         .agg(pl.col("city").n_unique().alias("n_cities"))
@@ -834,19 +834,24 @@ def _(component_membership, jaccard_df, mo, pl, px, selected_cities, tau):
         mo.callout(mo.md("No components span all cities — nothing to plot."), kind="warn"),
     )
 
-    _city_jaccard_per_cluster = (
-        jaccard_df.group_by(["city_a", "cluster_a"])
-        .agg(pl.col("jaccard").median().alias("median_jaccard"))
-        .rename({"city_a": "city", "cluster_a": "cluster_id"})
-        .with_columns(pl.col("cluster_id").cast(pl.Int64))
+    _component_edges = (
+        component_membership.join(
+            component_membership.rename({"city": "city_b", "cluster_id": "cluster_b"}),
+            on="component_id",
+        )
+        .filter(pl.col("city") != pl.col("city_b"))
+        .join(
+            mutual_edges.select(["city_a", "cluster_a", "city_b", "cluster_b", "min_jaccard"]),
+            left_on=["city", "cluster_id", "city_b", "cluster_b"],
+            right_on=["city_a", "cluster_a", "city_b", "cluster_b"],
+            how="inner",
+        )
     )
 
     _heatmap_long = (
-        component_membership.filter(pl.col("component_id").is_in(_full_component_ids))
-        .join(_city_jaccard_per_cluster, on=["city", "cluster_id"], how="left")
-        .with_columns(pl.col("median_jaccard").fill_null(0))
+        _component_edges.filter(pl.col("component_id").is_in(_full_component_ids))
         .group_by(["component_id", "city"])
-        .agg(pl.col("median_jaccard").max())
+        .agg(pl.col("min_jaccard").min().alias("median_jaccard"))
         .with_columns(pl.col("component_id").cast(pl.Utf8))
     )
 
