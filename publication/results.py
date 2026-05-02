@@ -120,8 +120,11 @@ def _(POPULATION_ORDER, REGION_COLORS, cluster_sizes, mo, pl, px):
             plot_bgcolor="white",
             height=400,
         )
+        _fig.write_image(f"ecdf_cluster_size_{_population_range_label}.pdf")
         _ecdf_figures.append(mo.ui.plotly(_fig))
+
     mo.hstack(_ecdf_figures)
+    return
 
 
 @app.cell
