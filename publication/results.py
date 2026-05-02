@@ -80,6 +80,24 @@ def _(mo):
 
 
 @app.cell
+def _(cluster_sizes, pl):
+    partition_overview = (
+        cluster_sizes.group_by("city")
+        .agg(
+            (pl.col("n_codes") == 1).sum().alias("singletons"),
+            pl.col("n_codes").quantile(0.25, interpolation="nearest").cast(pl.Int64).alias("q25"),
+            pl.col("n_codes").quantile(0.50, interpolation="nearest").cast(pl.Int64).alias("q50"),
+            pl.col("n_codes").quantile(0.75, interpolation="nearest").cast(pl.Int64).alias("q75"),
+            pl.col("n_codes").max().alias("residual"),
+        )
+        .sort("city")
+        .with_columns(pl.col("city").cast(pl.String))
+    )
+    partition_overview
+    return
+
+
+@app.cell
 def _(POPULATION_ORDER, REGION_COLORS, REGION_ORDER, cluster_sizes, mo, px):
     _fig = px.ecdf(
         cluster_sizes,
