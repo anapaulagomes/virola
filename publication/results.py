@@ -98,6 +98,33 @@ def _(cluster_sizes, pl):
 
 
 @app.cell
+def _(POPULATION_ORDER, REGION_COLORS, cluster_sizes, mo, pl, px):
+    _city_region_mapping = dict(cluster_sizes.select(["city", "region"]).unique().iter_rows())
+    _city_color_mapping = {
+        city: REGION_COLORS[region] for city, region in _city_region_mapping.items()
+    }
+    _ecdf_figures = []
+    for _population_range_label in POPULATION_ORDER:
+        _subset = cluster_sizes.filter(pl.col("population_range") == _population_range_label)
+        _fig = px.ecdf(
+            _subset,
+            x="n_codes",
+            log_x=True,
+            color="city",
+            color_discrete_map=_city_color_mapping,
+            labels={"n_codes": "Cluster size (number of codes)", "city": "City"},
+            title=_population_range_label,
+        )
+        _fig.update_layout(
+            paper_bgcolor="white",
+            plot_bgcolor="white",
+            height=400,
+        )
+        _ecdf_figures.append(mo.ui.plotly(_fig))
+    mo.hstack(_ecdf_figures)
+
+
+@app.cell
 def _(POPULATION_ORDER, REGION_COLORS, REGION_ORDER, cluster_sizes, mo, px):
     _fig = px.ecdf(
         cluster_sizes,
