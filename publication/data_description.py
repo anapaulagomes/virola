@@ -14,6 +14,7 @@ def _():
     import plotly.graph_objects as go
     import polars as pl
 
+    from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
     from vir.config import INDICATIVE_CODES_FILE, INTERIM_DATA_DIR
     from vir.features import IBGE_CITY_MAP
     from vir.viz import CODE_TYPE_COLOR, TABLEAU_COLORS
@@ -23,6 +24,8 @@ def _():
         IBGE_CITY_MAP,
         INDICATIVE_CODES_FILE,
         INTERIM_DATA_DIR,
+        POPULATION_RANGE_TRANSLATIONS,
+        REGION_TRANSLATIONS,
         TABLEAU_COLORS,
         defaultdict,
         go,
@@ -57,18 +60,7 @@ def _(INTERIM_DATA_DIR, pl):
 
 
 @app.cell
-def _(IBGE_CITY_MAP, TABLEAU_COLORS, pl):
-    REGION_TRANSLATIONS = {
-        "Norte": "North",
-        "Nordeste": "Northeast",
-        "Centro-Oeste": "Central-West",
-        "Sudeste": "Southeast",
-        "Sul": "South",
-    }
-    POPULATION_RANGE_TRANSLATIONS = {
-        "250 - 500 mil": "250K-500K",
-        "> 500 mil": "> 500K",
-    }
+def _(IBGE_CITY_MAP, POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS, TABLEAU_COLORS, pl):
     REGION_COLORS = dict(zip(REGION_TRANSLATIONS.values(), TABLEAU_COLORS[:5]))
     POPULATION_SIZES = {"250K-500K": 11, "> 500K": 22}
 
