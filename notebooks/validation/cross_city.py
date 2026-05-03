@@ -866,10 +866,25 @@ def _(component_membership, mo, mutual_edges, pl, px, selected_cities, tau):
         zmin=tau,
         zmax=1.0,
         labels={"color": "Jaccard", "x": "Component ID", "y": "City"},
-        text_auto=".2f",
+        # text_auto=".2f",
     )
-    _fig.update_layout(height=500, xaxis_title="Component ID", yaxis_title="City")
-    _fig.write_image("cross_city_components_heatmap.pdf")
+    _fig.update_layout(
+        xaxis_title="Component ID",
+        yaxis_title="City",
+        height=400,
+        width=1400,
+        margin=dict(l=120, r=120, t=60, b=80),
+    )
+    _fig.update_coloraxes(
+        colorbar=dict(
+            lenmode="fraction",
+            len=1.0,
+            thickness=20,
+        ),
+        cmin=0.2,
+        cmax=1,
+    )
+    _fig.write_image("cross_city_heatmap.pdf", format="pdf", scale=2)
     _fig
     return
 
@@ -1241,7 +1256,7 @@ def _(mo):
 
 
 @app.cell
-def _(DATA_DIR, consistency, n_total, pl, px, selected_cities, tau):
+def _(DATA_DIR, consistency, n_total, pl, px, selected_cities):
     _k_values = list(range(1, len(selected_cities) + 1))
     _sensitivity_rows = []
     for _k in _k_values:
@@ -1263,20 +1278,25 @@ def _(DATA_DIR, consistency, n_total, pl, px, selected_cities, tau):
         x="k",
         y="pct_consistent",
         markers=True,
-        title=f"Sensitivity of cluster consistency to K (τ = {tau:.3f})",
         labels={
-            "k": "K (total cities covered)",
-            "pct_consistent": "% consistent clusters",
+            "k": "Minimum cities required (K)",
+            "pct_consistent": "Consistent clusters (%)",
         },
     )
     _fig.add_vline(
         x=len(selected_cities),
         line_dash="dot",
-        line_color="red",
+        line_color="gray",
         annotation_text=f"K = {len(selected_cities)}",
     )
-    _fig.update_layout(height=400)
-    _fig.write_html(str(DATA_DIR / "paper" / "sensitivity_k.html"))
+    _fig.update_layout(
+        plot_bgcolor="white",
+        yaxis=dict(showgrid=True, gridcolor="rgb(235, 235, 235)"),
+        xaxis=dict(showgrid=False),
+    )
+    _fig.update_xaxes(showline=True, linecolor="black", linewidth=1)
+    _fig.update_yaxes(showline=True, linecolor="black", linewidth=1)
+    _fig.write_image("sensitivity_k.pdf", scale=2)
     _fig
     return
 
