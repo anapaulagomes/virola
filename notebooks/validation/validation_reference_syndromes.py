@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.0"
+__generated_with = "0.23.4"
 app = marimo.App(width="medium")
 
 
@@ -16,18 +16,23 @@ def _():
     import plotly.express as px
     import polars as pl
     from dotenv import load_dotenv
-    from sklearn.metrics import normalized_mutual_info_score
 
-    return load_dotenv, normalized_mutual_info_score, pl, px
+    return load_dotenv, pl, px
 
 
 @app.cell
 def _():
     from vir.config import REFERENCES_DIR
     from vir.db import fetch_cluster_assignments, fetch_runs
-    from vir.features import CODE_TYPES_MAPPING
+    from vir.features import CITY_NAMES, CODE_TYPES_MAPPING
 
-    return REFERENCES_DIR, fetch_cluster_assignments, fetch_runs, CODE_TYPES_MAPPING
+    return (
+        CITY_NAMES,
+        CODE_TYPES_MAPPING,
+        REFERENCES_DIR,
+        fetch_cluster_assignments,
+        fetch_runs,
+    )
 
 
 @app.cell
@@ -56,13 +61,12 @@ def _(mo):
     - *Best-cluster recall*: fraction of reference codes in the single most concentrated cluster (Manning et al. 2008)
     - *Aggregated recall*: fraction of reference codes in any cluster above the precision threshold — accounts for valid sub-syndrome fragmentation (proposed; inspired by BCubed completeness, Amigó et al. 2009)
     - *Cluster precision*: fraction of a cluster that belongs to the reference definition (Manning et al. 2008)
-    - *NMI*: normalised mutual information between reference membership and cluster labels (Strehl & Ghosh 2002)
     """)
     return
 
 
 @app.cell
-def _(REFERENCES_DIR, CODE_TYPES_MAPPING, pl):
+def _(CODE_TYPES_MAPPING, REFERENCES_DIR, pl):
     _AESOP_DIR = REFERENCES_DIR / "aesop"
 
     def _load_anchor(filename: str) -> pl.DataFrame:
@@ -181,15 +185,7 @@ def _(mo):
 
 
 @app.cell
-def _(
-    anchor_arbovirus,
-    arbovirus_hits,
-    assignments,
-    mo,
-    normalized_mutual_info_score,
-    pl,
-    px,
-):
+def _(anchor_arbovirus, arbovirus_hits, assignments, mo, pl, px):
     mo.stop(
         len(arbovirus_hits) == 0,
         mo.callout(mo.md("⚠️ No arbovirus codes found in this run."), kind="warn"),
@@ -207,15 +203,6 @@ def _(
 
     arbo_purity = _n_in_dominant / _n_anchor_found
     _arbo_precision = _n_in_dominant / _n_cluster_size
-    _is_reference = (
-        assignments["terminology_id"]
-        .is_in(arbovirus_hits["terminology_id"])
-        .cast(pl.Int8)
-        .to_numpy()
-    )
-    arbo_nmi = float(
-        normalized_mutual_info_score(_is_reference, assignments["cluster_id"].to_numpy())
-    )
 
     _pass = arbo_purity >= 0.5
     _fig = px.bar(
@@ -236,13 +223,13 @@ def _(
 
             Reference codes found in run: `{_n_anchor_found}` / {len(anchor_arbovirus)} defined
             Dominant cluster: **{arbo_dominant_cluster}** ({_n_cluster_size} codes total)
-            Best-cluster recall: `{arbo_purity:.2%}` | Cluster precision: `{_arbo_precision:.2%}` | NMI: `{arbo_nmi:.4f}`
+            Best-cluster recall: `{arbo_purity:.2%}` | Cluster precision: `{_arbo_precision:.2%}`
             """),
                 kind="success" if _pass else "danger",
             ),
         ]
     )
-    return arbo_nmi, arbo_purity
+    return (arbo_purity,)
 
 
 @app.cell
@@ -322,15 +309,7 @@ def _(mo):
 
 
 @app.cell
-def _(
-    anchor_uri,
-    assignments,
-    mo,
-    normalized_mutual_info_score,
-    pl,
-    px,
-    uri_hits,
-):
+def _(anchor_uri, assignments, mo, pl, px, uri_hits):
     mo.stop(
         len(uri_hits) == 0,
         mo.callout(mo.md("⚠️ No URI codes found in this run."), kind="warn"),
@@ -348,12 +327,6 @@ def _(
 
     uri_purity = _n_in_dominant / _n_anchor_found
     _uri_precision = _n_in_dominant / _n_cluster_size
-    _is_reference = (
-        assignments["terminology_id"].is_in(uri_hits["terminology_id"]).cast(pl.Int8).to_numpy()
-    )
-    uri_nmi = float(
-        normalized_mutual_info_score(_is_reference, assignments["cluster_id"].to_numpy())
-    )
 
     _pass = uri_purity >= 0.5
     _fig = px.bar(
@@ -374,13 +347,13 @@ def _(
 
             Reference codes found in run: `{_n_anchor_found}` / {len(anchor_uri)} defined
             Dominant cluster: **{uri_dominant_cluster}** ({_n_cluster_size} codes total)
-            Best-cluster recall: `{uri_purity:.2%}` | Cluster precision: `{_uri_precision:.2%}` | NMI: `{uri_nmi:.4f}`
+            Best-cluster recall: `{uri_purity:.2%}` | Cluster precision: `{_uri_precision:.2%}`
             """),
                 kind="success" if _pass else "danger",
             ),
         ]
     )
-    return uri_nmi, uri_purity
+    return (uri_purity,)
 
 
 @app.cell
@@ -520,11 +493,9 @@ def _(mo):
 
 @app.cell
 def _(
-    arbo_nmi,
     arbo_purity,
     arbo_recovered_purity,
     mo,
-    uri_nmi,
     uri_purity,
     uri_recovered_purity,
 ):
@@ -533,9 +504,9 @@ def _(
     _both_pass = _arbo_pass and _uri_pass
 
     _lines = (
-        f"**Arboviroses**: best-cluster recall `{arbo_purity:.2%}` → aggregated recall `{arbo_recovered_purity:.2%}` | NMI `{arbo_nmi:.4f}` — "
+        f"**Arboviroses**: best-cluster recall `{arbo_purity:.2%}` → aggregated recall `{arbo_recovered_purity:.2%}` — "
         f"{'✅ PASS' if _arbo_pass else '❌ FAIL'}  \n"
-        f"**URI / Respiratory**: best-cluster recall `{uri_purity:.2%}` → aggregated recall `{uri_recovered_purity:.2%}` | NMI `{uri_nmi:.4f}` — "
+        f"**URI / Respiratory**: best-cluster recall `{uri_purity:.2%}` → aggregated recall `{uri_recovered_purity:.2%}` — "
         f"{'✅ PASS' if _uri_pass else '❌ FAIL'}"
     )
 
@@ -560,6 +531,162 @@ def _(
         """
 
     mo.callout(mo.md(_message), kind="success" if _both_pass else "warn")
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Cross-city summary
+    """)
+    return
+
+
+@app.cell
+def _(CITY_NAMES, fetch_runs, mo, pl):
+    _all_runs = fetch_runs().filter(pl.col("city").is_in(CITY_NAMES))
+    _run_options = {
+        f"{row['city']} (#{row['run_id']})": row["run_id"]
+        for row in (
+            _all_runs.sort("created_at", descending=True)
+            .group_by("city")
+            .first()
+            .sort("city")
+            .iter_rows(named=True)
+        )
+    }
+    cross_city_run_select = mo.ui.multiselect(
+        options=_run_options,
+        value=list(_run_options.keys()),
+        label="Runs para summary cross-city",
+    )
+    cross_city_run_select
+    return (cross_city_run_select,)
+
+
+@app.cell
+def _(
+    anchor_arbovirus,
+    anchor_uri,
+    cross_city_run_select,
+    fetch_cluster_assignments,
+    fetch_runs,
+    mo,
+    pl,
+):
+    mo.stop(
+        not cross_city_run_select.value,
+        mo.callout(mo.md("Select at least one run."), kind="warn"),
+    )
+
+    def _compute_syndrome_metrics(
+        anchor: pl.DataFrame,
+        hits: pl.DataFrame,
+        all_assignments: pl.DataFrame,
+        precision_threshold: float = 0.20,
+    ):
+        if len(hits) == 0:
+            return None
+        _coverage = len(hits) / len(anchor)
+        _cluster_counts = (
+            hits.group_by("cluster_id")
+            .agg(pl.len().alias("reference_codes"))
+            .sort("reference_codes", descending=True)
+        )
+        _dominant_cluster_id = int(_cluster_counts["cluster_id"][0])
+        _n_in_dominant = int(_cluster_counts["reference_codes"][0])
+        _n_anchor_found = len(hits)
+        _n_cluster_size = int(
+            all_assignments.filter(pl.col("cluster_id") == _dominant_cluster_id).height
+        )
+        _cluster_sizes = all_assignments.group_by("cluster_id").agg(pl.len().alias("cluster_size"))
+        _frag = (
+            hits.group_by("cluster_id")
+            .agg(pl.len().alias("reference_codes"))
+            .join(_cluster_sizes, on="cluster_id")
+            .with_columns(
+                (pl.col("reference_codes") / pl.col("cluster_size") >= precision_threshold).alias(
+                    "coherent"
+                )
+            )
+        )
+        _coherent_clusters = _frag.filter(pl.col("coherent"))
+        _n_coherent_clusters = _coherent_clusters.height
+        _n_recovered = int(_coherent_clusters["reference_codes"].sum())
+        return {
+            "coverage": _coverage,
+            "best_cluster_recall": _n_in_dominant / _n_anchor_found,
+            "n_coherent_clusters": _n_coherent_clusters,
+            "aggregated_recall": _n_recovered / _n_anchor_found,
+            "cluster_precision": _n_in_dominant / _n_cluster_size,
+        }
+
+    _run_id_to_city = {
+        row["run_id"]: row["city"]
+        for row in fetch_runs()
+        .filter(pl.col("run_id").is_in(cross_city_run_select.value))
+        .select(["run_id", "city"])
+        .iter_rows(named=True)
+    }
+
+    _rows = []
+    for _run_id in cross_city_run_select.value:
+        _city_name = _run_id_to_city.get(_run_id, f"run_{_run_id}")
+        _run_assignments = fetch_cluster_assignments(_run_id).select(
+            ["terminology_id", "code", "code_type", "cluster_id"]
+        )
+        if _run_assignments.is_empty():
+            continue
+        for _syndrome_name, _anchor in [
+            ("arboviroses", anchor_arbovirus),
+            ("uri", anchor_uri),
+        ]:
+            _hits = _anchor.join(_run_assignments, on=["code", "code_type"], how="inner")
+            _metrics = _compute_syndrome_metrics(_anchor, _hits, _run_assignments)
+            if _metrics is None:
+                continue
+            _rows.append({"city": _city_name, "syndrome": _syndrome_name, **_metrics})
+
+    validation_summary = pl.DataFrame(_rows)
+    validation_summary.write_csv("validation_summary.csv")
+    validation_summary
+    return (validation_summary,)
+
+
+@app.cell
+def _(mo, pl, validation_summary):
+    mo.stop(
+        validation_summary.is_empty(),
+        mo.callout(mo.md("No validation data to pivot."), kind="warn"),
+    )
+    _metric_order = [
+        "coverage",
+        "best_cluster_recall",
+        "n_coherent_clusters",
+        "aggregated_recall",
+        "cluster_precision",
+    ]
+    _syndrome_order = ["arboviroses", "uri"]
+    _column_order = ["city"] + [
+        f"{_syndrome}_{_metric}" for _syndrome in _syndrome_order for _metric in _metric_order
+    ]
+    _coherent_count_columns = [f"{_syndrome}_n_coherent_clusters" for _syndrome in _syndrome_order]
+    _pivot = (
+        validation_summary.unpivot(
+            index=["city", "syndrome"],
+            on=_metric_order,
+            variable_name="metric",
+            value_name="value",
+        )
+        .with_columns(pl.concat_str(["syndrome", "metric"], separator="_").alias("column_name"))
+        .pivot(index="city", on="column_name", values="value")
+        .select(_column_order)
+        .with_columns(pl.all().exclude("city").round(2))
+        .with_columns([pl.col(_column).cast(pl.Int64) for _column in _coherent_count_columns])
+        .sort("city")
+    )
+    _pivot.write_csv("validation_summary_pivot.csv")
+    mo.ui.table(_pivot, selection=None)
     return
 
 
