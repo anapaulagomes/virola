@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.0"
+__generated_with = "0.23.4"
 app = marimo.App(width="medium")
 
 
@@ -17,10 +17,9 @@ def _():
     from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
     from vir.config import INDICATIVE_CODES_FILE, INTERIM_DATA_DIR
     from vir.features import IBGE_CITY_MAP
-    from vir.viz import CODE_TYPE_COLOR, TABLEAU_COLORS
+    from vir.viz import TABLEAU_COLORS
 
     return (
-        CODE_TYPE_COLOR,
         IBGE_CITY_MAP,
         INDICATIVE_CODES_FILE,
         INTERIM_DATA_DIR,
@@ -60,9 +59,15 @@ def _(INTERIM_DATA_DIR, pl):
 
 
 @app.cell
-def _(IBGE_CITY_MAP, POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS, TABLEAU_COLORS, pl):
+def _(
+    IBGE_CITY_MAP,
+    POPULATION_RANGE_TRANSLATIONS,
+    REGION_TRANSLATIONS,
+    TABLEAU_COLORS,
+    pl,
+):
     REGION_COLORS = dict(zip(REGION_TRANSLATIONS.values(), TABLEAU_COLORS[:5]))
-    POPULATION_SIZES = {"250K-500K": 11, "> 500K": 22}
+    POPULATION_SIZES = {"250K-500K": 25, "> 500K": 40}
 
     cities = pl.DataFrame(
         [
@@ -199,7 +204,7 @@ def _(
                 mode="markers",
                 name=_region,
                 legendgroup="region",
-                legendgrouptitle_text="Region",
+                legendgrouptitle_text="Region name",
                 marker=dict(
                     color=REGION_COLORS[_region],
                     size=[
@@ -222,7 +227,7 @@ def _(
                 mode="markers",
                 name=_population_label,
                 legendgroup="population",
-                legendgrouptitle_text="Population",
+                legendgrouptitle_text="Population range",
                 marker=dict(color="#888888", size=_size, line=dict(color="white", width=0.8)),
             )
         )
@@ -290,106 +295,7 @@ def _(mo):
 
 
 @app.cell
-def _(CODE_TYPE_COLOR, INDICATIVE_CODES_FILE, all_cities_df, go, mo, pl):
-    _unique_codes = all_cities_df.select(["code", "code_type"]).unique()
-
-    _indicative_lookup = pl.read_csv(INDICATIVE_CODES_FILE).select(
-        ["code", "code_type", "indicative"]
-    )
-
-    _counts = (
-        _unique_codes.join(_indicative_lookup, on=["code", "code_type"], how="left")
-        .with_columns(pl.col("indicative").fill_null("unlabeled"))
-        .with_columns(pl.col("code_type").str.to_uppercase().alias("code_type_label"))
-        .group_by(["code_type_label", "indicative"])
-        .len("count")
-        .sort(["code_type_label", "indicative"], descending=[False, True])
-    )
-
-    _fig = go.Figure()
-
-    # (status, pattern_shape, opacity)
-    _indicative_styles = [("yes", "", 1.0), ("no", "/", 1.0), ("unlabeled", "", 0.35)]
-
-    # Data traces — hidden from legend, both dimensions encoded visually
-    for _code_type, _color in CODE_TYPE_COLOR.items():
-        for _indicative_status, _pattern_shape, _opacity in _indicative_styles:
-            _subset = _counts.filter(
-                (pl.col("code_type_label") == _code_type)
-                & (pl.col("indicative") == _indicative_status)
-            )
-            if len(_subset) == 0:
-                continue
-            _fig.add_trace(
-                go.Bar(
-                    x=[_code_type],
-                    y=_subset["count"].to_list(),
-                    opacity=_opacity,
-                    marker=dict(
-                        color=_color,
-                        pattern=dict(shape=_pattern_shape, fgcolor="white", size=6),
-                    ),
-                    showlegend=False,
-                )
-            )
-
-    # Legend box 1: Terminology (colors)
-    for _code_type, _color in CODE_TYPE_COLOR.items():
-        _fig.add_trace(
-            go.Bar(
-                x=[None],
-                y=[None],
-                name=_code_type,
-                marker=dict(color=_color),
-                legendgroup="terminology",
-                legendgrouptitle_text="Terminology",
-            )
-        )
-
-    # Legend box 2: Indicative status (textures/opacity)
-    for _label, _pattern_shape, _opacity in [
-        ("Indicative", "", 1.0),
-        ("Non-indicative", "/", 1.0),
-        ("Unlabeled", "", 0.35),
-    ]:
-        _fig.add_trace(
-            go.Bar(
-                x=[None],
-                y=[None],
-                name=_label,
-                opacity=_opacity,
-                marker=dict(
-                    color="#888888",
-                    pattern=dict(shape=_pattern_shape, fgcolor="white", size=6),
-                ),
-                legendgroup="indicative_status",
-                legendgrouptitle_text="Indicative status",
-            )
-        )
-
-    _fig.update_layout(
-        barmode="stack",
-        barnorm="percent",
-        # title="Unique codes by type and indicative status",
-        xaxis_title="Code type",
-        yaxis_title="% of unique codes",
-        yaxis_ticksuffix="%",
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        legend=dict(
-            bgcolor="white",
-            bordercolor="#DDDDDD",
-            borderwidth=1,
-            tracegroupgap=10,
-        ),
-    )
-
-    mo.ui.plotly(_fig)
-    return
-
-
-@app.cell
-def _(CODE_TYPE_COLOR, INDICATIVE_CODES_FILE, all_cities_df, go, mo, pl):
+def _(INDICATIVE_CODES_FILE, TABLEAU_COLORS, all_cities_df, go, mo, pl):
     _record_counts = all_cities_df.group_by(["code", "code_type"]).len("quantity")
 
     _indicative_lookup_freq = pl.read_csv(INDICATIVE_CODES_FILE).select(
@@ -407,58 +313,27 @@ def _(CODE_TYPE_COLOR, INDICATIVE_CODES_FILE, all_cities_df, go, mo, pl):
 
     _fig_freq = go.Figure()
 
-    _freq_indicative_styles = [("yes", "", 1.0), ("no", "/", 1.0), ("unlabeled", "", 0.35)]
+    _indicative_color_map = [
+        ("yes", "Indicative", TABLEAU_COLORS[0]),
+        ("no", "Non-indicative", TABLEAU_COLORS[1]),
+        ("unlabeled", "Unlabeled", TABLEAU_COLORS[9]),
+    ]
 
-    for _code_type, _color in CODE_TYPE_COLOR.items():
-        for _indicative_status, _pattern_shape, _opacity in _freq_indicative_styles:
-            _subset = _freq_counts.filter(
-                (pl.col("code_type_label") == _code_type)
-                & (pl.col("indicative") == _indicative_status)
-            )
-            if len(_subset) == 0:
-                continue
-            _fig_freq.add_trace(
-                go.Bar(
-                    x=[_code_type],
-                    y=_subset["quantity"].to_list(),
-                    opacity=_opacity,
-                    marker=dict(
-                        color=_color,
-                        pattern=dict(shape=_pattern_shape, fgcolor="white", size=6),
-                    ),
-                    showlegend=False,
-                )
-            )
+    _code_types = sorted(_freq_counts["code_type_label"].unique().to_list())
 
-    for _code_type, _color in CODE_TYPE_COLOR.items():
+    for _indicative_status, _label, _color in _indicative_color_map:
+        _subset = _freq_counts.filter(pl.col("indicative") == _indicative_status)
+        if len(_subset) == 0:
+            continue
+        _values_by_code_type = {
+            row["code_type_label"]: row["quantity"] for row in _subset.iter_rows(named=True)
+        }
         _fig_freq.add_trace(
             go.Bar(
-                x=[None],
-                y=[None],
-                name=_code_type,
-                marker=dict(color=_color),
-                legendgroup="terminology",
-                legendgrouptitle_text="Terminology",
-            )
-        )
-
-    for _label, _pattern_shape, _opacity in [
-        ("Indicative", "", 1.0),
-        ("Non-indicative", "/", 1.0),
-        ("Unlabeled", "", 0.35),
-    ]:
-        _fig_freq.add_trace(
-            go.Bar(
-                x=[None],
-                y=[None],
+                x=_code_types,
+                y=[_values_by_code_type.get(_code_type, 0) for _code_type in _code_types],
                 name=_label,
-                opacity=_opacity,
-                marker=dict(
-                    color="#888888",
-                    pattern=dict(shape=_pattern_shape, fgcolor="white", size=6),
-                ),
-                legendgroup="indicative_status",
-                legendgrouptitle_text="Indicative status",
+                marker=dict(color=_color),
             )
         )
 
