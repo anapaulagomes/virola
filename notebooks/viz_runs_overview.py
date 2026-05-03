@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.0"
+__generated_with = "0.23.4"
 app = marimo.App(width="medium")
 
 
@@ -16,8 +16,9 @@ def _():
 @app.cell
 def _():
     from vir.db import fetch_run_leiden, fetch_run_multi_k, fetch_runs
+    from vir.features import CITY_NAMES
 
-    return fetch_run_leiden, fetch_run_multi_k, fetch_runs
+    return CITY_NAMES, fetch_run_leiden, fetch_run_multi_k, fetch_runs
 
 
 @app.cell
@@ -31,8 +32,8 @@ def _(mo):
 
 
 @app.cell
-def _(fetch_runs, mo):
-    all_runs = fetch_runs()
+def _(CITY_NAMES, fetch_runs, mo, pl):
+    all_runs = fetch_runs().filter(pl.col("city").is_in(CITY_NAMES))
 
     mo.stop(
         all_runs.is_empty(),
@@ -85,10 +86,18 @@ def _(mo, runs_df):
     return
 
 
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Per city analysis
+    """)
+    return
+
+
 @app.cell
 def _(mo):
     mo.md("""
-    ## Silhouette score by city
+    ### Silhouette score by city
     """)
     return
 
@@ -112,7 +121,7 @@ def _(px, runs_df):
 @app.cell
 def _(mo):
     mo.md("""
-    ## Corpus size by city
+    ### Corpus size
     """)
     return
 
@@ -137,7 +146,9 @@ def _(mo, px, runs_df):
 @app.cell
 def _(mo):
     mo.md("""
-    ## Cluster quality by city
+    ### Cluster stats
+
+    Biggest cluster, number/percentage of singletons and silhouette score.
     """)
     return
 
@@ -153,7 +164,7 @@ def _(mo, px, runs_df):
         size="n_clusters",
         color="city",
         hover_data=["run_id", "n_singletons", "pct_singletons", "silhouette_score"],
-        title="Cluster Distribution Quality by City",
+        title="Cluster Stats",
         labels={"cluster_median": "Median Cluster Size", "cluster_largest": "Largest Cluster"},
     )
     _fig
@@ -163,7 +174,7 @@ def _(mo, px, runs_df):
 @app.cell
 def _(mo):
     mo.md("""
-    ## Multi-K comparison
+    ### Multi-K comparison
     """)
     return
 
@@ -284,7 +295,7 @@ def _(all_runs, fetch_run_multi_k, mo, multi_k_city, pl, px):
 @app.cell
 def _(mo):
     mo.md("""
-    ## Leiden community detection sweep
+    ### Leiden community detection sweep
     """)
     return
 
@@ -336,6 +347,152 @@ def _(all_runs, fetch_run_leiden, mo, multi_k_city, pl, px):
         },
     )
     _fig
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## Multi-city comparison
+    """)
+    return
+
+
+@app.cell
+def _(latest_per_city, mo):
+    _run_options = {
+        f"{row['city']} (#{row['run_id']})": row["run_id"]
+        for row in latest_per_city.iter_rows(named=True)
+    }
+    run_id_to_city = {row["run_id"]: row["city"] for row in latest_per_city.iter_rows(named=True)}
+
+    cross_city_runs = mo.ui.multiselect(
+        options=_run_options,
+        value=list(_run_options.keys()),
+        label="Cities",
+    )
+    cross_city_runs
+    return cross_city_runs, run_id_to_city
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### Affinity Z-score vs K
+    """)
+    return
+
+
+@app.cell
+def _(cross_city_runs, fetch_run_multi_k, mo, pl, px, run_id_to_city):
+    mo.stop(not cross_city_runs.value)
+
+    _frames = []
+    for _run_id in cross_city_runs.value:
+        _mk = fetch_run_multi_k(_run_id)
+        if _mk.is_empty() or "affinity_zscore" not in _mk.columns:
+            continue
+        if _mk["affinity_zscore"].is_null().all():
+            continue
+        _city = run_id_to_city[_run_id]
+        _frames.append(_mk.with_columns(pl.lit(_city).alias("city")))
+
+    mo.stop(
+        not _frames,
+        mo.callout(
+            mo.md("No affinity Z-score data for the selected runs."),
+            kind="warn",
+        ),
+    )
+
+    zscore_combined = pl.concat(_frames)
+
+    _fig = px.line(
+        zscore_combined,
+        x="k",
+        y="affinity_zscore",
+        color="city",
+        markers=True,
+        title="Affinity Z-score vs K",
+        labels={"k": "K", "affinity_zscore": "Affinity Z-score", "city": "City"},
+    )
+    _fig.add_vline(x=200, line_dash="dash", line_color="gray", annotation_text="K=200")
+    _fig
+    return (zscore_combined,)
+
+
+@app.cell
+def _(zscore_combined):
+    zscore_combined
+    return
+
+
+@app.cell
+def _(pl, zscore_combined):
+    zscore_combined.group_by("k").agg(pl.col("affinity_zscore").median()).sort("k")
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### Leiden vs K
+    """)
+    return
+
+
+@app.cell
+def _(cross_city_runs, fetch_run_leiden, mo, pl, px, run_id_to_city):
+    mo.stop(not cross_city_runs.value)
+
+    _frames = []
+    for _run_id in cross_city_runs.value:
+        _ld = fetch_run_leiden(_run_id)
+        if _ld.is_empty():
+            continue
+        _city = run_id_to_city[_run_id]
+        _frames.append(_ld.with_columns(pl.lit(_city).alias("city")))
+
+    mo.stop(
+        not _frames,
+        mo.callout(
+            mo.md("No Leiden data for the selected runs."),
+            kind="warn",
+        ),
+    )
+
+    leiden_combined = pl.concat(_frames)
+
+    _fig = px.line(
+        leiden_combined,
+        x="resolution",
+        y="n_communities",
+        color="city",
+        markers=True,
+        log_x=True,
+        title="Leiden: communities vs resolution",
+        labels={
+            "resolution": "Resolution (γ, log scale)",
+            "n_communities": "Number of communities",
+            "city": "City",
+        },
+    )
+    _fig.add_hline(y=200, line_dash="dash", line_color="gray", annotation_text="K=200")
+    _fig
+    return (leiden_combined,)
+
+
+@app.cell
+def _(leiden_combined):
+    leiden_combined
+    return
+
+
+@app.cell
+def _(leiden_combined, pl):
+    leiden_combined.filter(pl.col("resolution").eq(0.5000000000000000000)).with_columns(
+        pl.col("n_communities").median()
+    )
     return
 
 
