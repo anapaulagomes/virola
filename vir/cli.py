@@ -468,14 +468,23 @@ def pipeline_run(
 
 
 @results_app.command("list")
-def results_list():
+def results_list(
+    limit: Optional[int] = typer.Option(
+        None, "--limit", "-n", help="Maximum rows to show (default: all)"
+    ),
+):
     """List all saved runs."""
 
     runs = fetch_runs()
     if runs.is_empty():
         typer.secho("No runs found.", fg=typer.colors.YELLOW)
         return
-    typer.echo(runs)
+
+    if limit is not None:
+        runs = runs.head(limit)
+
+    with pl.Config(tbl_rows=len(runs)):
+        typer.echo(runs)
 
 
 @results_app.command("build-profiles")
