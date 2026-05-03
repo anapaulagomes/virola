@@ -18,18 +18,22 @@ def _():
 
 @app.cell
 def _():
+    from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
     from vir.config import DATA_DIR, REFERENCES_DIR
     from vir.db import fetch_cluster_assignments, fetch_runs
     from vir.features import CITY_NAMES, CODE_TYPES_MAPPING
-    from vir.viz import AGE_GROUP_COLOR, SEX_COLOR
+    from vir.viz import AGE_GROUP_COLOR, SEX_COLOR, TABLEAU_COLORS
 
     return (
         AGE_GROUP_COLOR,
         CITY_NAMES,
         CODE_TYPES_MAPPING,
         DATA_DIR,
+        POPULATION_RANGE_TRANSLATIONS,
         REFERENCES_DIR,
+        REGION_TRANSLATIONS,
         SEX_COLOR,
+        TABLEAU_COLORS,
         fetch_cluster_assignments,
         fetch_runs,
     )
@@ -406,6 +410,67 @@ def _(jaccard_df, mo, px, tau):
             ),
         ]
     )
+    return
+
+
+@app.cell
+def _(
+    POPULATION_RANGE_TRANSLATIONS,
+    REGION_TRANSLATIONS,
+    TABLEAU_COLORS,
+    jaccard_df,
+    pl,
+    px,
+    runs_df,
+    tau,
+):
+    _region_order = ["North", "Northeast", "Central-West", "South", "Southeast"]
+    _population_order = ["250K-500K", "> 500K"]
+    _region_colors = dict(zip(_region_order, TABLEAU_COLORS[:5]))
+
+    _city_metadata = (
+        runs_df.select(["city", "region", "population_range"])
+        .unique()
+        .with_columns(
+            pl.col("region").replace(REGION_TRANSLATIONS),
+            pl.col("population_range").replace(POPULATION_RANGE_TRANSLATIONS),
+        )
+    )
+
+    _jaccard_with_metadata = jaccard_df.join(
+        _city_metadata, left_on="city_a", right_on="city", how="left"
+    )
+
+    _fig_faceted = px.histogram(
+        _jaccard_with_metadata,
+        x="jaccard",
+        color="region",
+        color_discrete_map=_region_colors,
+        facet_row="population_range",
+        facet_col="region",
+        facet_row_spacing=0.1,
+        category_orders={
+            "region": _region_order,
+            "population_range": _population_order,
+        },
+        nbins=40,
+        hover_name="city_a",
+    )
+    _fig_faceted.add_vline(
+        x=tau,
+        line_dash="dash",
+        line_color="red",
+        annotation_text=f"τ = {tau:.3f}",
+    )
+    _fig_faceted.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+    _fig_faceted.update_layout(
+        showlegend=False,
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        height=500,
+    )
+    _fig_faceted.write_image("jaccard_distribution.pdf")
+    _fig_faceted
     return
 
 
