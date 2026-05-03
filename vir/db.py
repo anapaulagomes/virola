@@ -334,6 +334,30 @@ def update_run_finished_at(run_id: int) -> None:
         con.execute("UPDATE runs SET finished_at = now() WHERE run_id = ?", [run_id])
 
 
+def delete_run(run_id: int) -> bool:
+    """Remove a run, every dependent row, and its parquet sidecar.
+
+    Returns True if the run existed.
+    """
+    with _write_context() as con:
+        # DuckDB's FK checker doesn't see prior deletes within the same
+        # transaction, so each statement runs under autocommit. The deletes
+        # are idempotent — re-running finishes any partial cleanup.
+        con.execute("DELETE FROM cluster_profiles WHERE run_id = ?", [run_id])
+        con.execute("DELETE FROM cluster_assignments WHERE run_id = ?", [run_id])
+        con.execute("DELETE FROM run_multi_k WHERE run_id = ?", [run_id])
+        con.execute("DELETE FROM run_leiden WHERE run_id = ?", [run_id])
+        row = con.execute(
+            "DELETE FROM runs WHERE run_id = ? RETURNING run_id", [run_id]
+        ).fetchone()
+
+    if row is None:
+        return False
+
+    (DATA_DIR / "runs" / f"{run_id}.parquet").unlink(missing_ok=True)
+    return True
+
+
 def find_run(
     run_id: int | None = None,
     dataset_path: str | None = None,

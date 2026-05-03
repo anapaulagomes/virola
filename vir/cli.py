@@ -5,11 +5,13 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+import polars as pl
 import typer
 
 from vir.config import CLUSTERING_DIR, DEFAULT_MODEL, INTERIM_DATA_DIR, PROJ_ROOT
 from vir.dataset import app as helper_app
 from vir.db import (
+    delete_run,
     fetch_cluster_assignments,
     fetch_runs,
 )
@@ -572,6 +574,56 @@ def results_explain(
         temporal_distance=temporal_aligned,
     )
     typer.secho(f"✓ Explanations computed for run {run_id}.", fg=typer.colors.GREEN)
+
+
+@results_app.command("delete")
+def results_delete(
+    run_id: Optional[int] = typer.Option(None, "--id", help="run_id to delete"),
+    city: Optional[str] = typer.Option(
+        None, "--city", help=f"Delete all runs for a city: {', '.join(CITY_NAMES)}"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+):
+    """Delete a run by id, or all runs for a city.
+
+    Removes cluster assignments, profiles, multi-K and Leiden sweep rows,
+    plus the parquet sidecar in data/runs/.
+    """
+    if run_id is None and city is None:
+        typer.secho("✗ Provide --id or --city.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if run_id is not None and city is not None:
+        typer.secho("✗ --id and --city are mutually exclusive.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if city is not None and city not in CITY_NAMES:
+        typer.secho(f"✗ Invalid city. Available: {', '.join(CITY_NAMES)}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    if city is not None:
+        target_run_ids = fetch_runs().filter(pl.col("city") == city).get_column("run_id").to_list()
+    else:
+        target_run_ids = [run_id]
+
+    if not target_run_ids:
+        typer.secho("No runs to delete.", fg=typer.colors.YELLOW)
+        return
+
+    typer.echo(f"Will delete {len(target_run_ids)} run(s): {target_run_ids}")
+    if not yes and not typer.confirm("Proceed?", default=False):
+        typer.secho("Aborted.", fg=typer.colors.YELLOW)
+        return
+
+    deleted_count = 0
+    not_found = []
+    for target_id in target_run_ids:
+        if delete_run(target_id):
+            deleted_count += 1
+        else:
+            not_found.append(target_id)
+
+    if not_found:
+        typer.secho(f"Run(s) not found: {not_found}", fg=typer.colors.YELLOW)
+    typer.secho(f"✓ Deleted {deleted_count} run(s).", fg=typer.colors.GREEN)
 
 
 if __name__ == "__main__":
