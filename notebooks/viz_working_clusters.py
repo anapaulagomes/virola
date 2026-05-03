@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.0"
+__generated_with = "0.23.4"
 app = marimo.App(width="medium")
 
 
@@ -84,7 +84,7 @@ def _(fetch_runs, mo):
         value=list(run_options.keys())[0] if run_options else None,
     )
     mo.right(run_dropdown)
-    return run_dropdown, run_options
+    return run_dropdown, run_options, runs_dataframe
 
 
 @app.cell
