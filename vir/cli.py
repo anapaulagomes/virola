@@ -8,7 +8,14 @@ from typing import Optional
 import polars as pl
 import typer
 
-from vir.config import CLUSTERING_DIR, DEFAULT_MODEL, INTERIM_DATA_DIR, PROJ_ROOT
+from vir.config import (
+    AFFINITY_ZSCORE_PERMS,
+    CLUSTERING_DIR,
+    DEFAULT_MODEL,
+    INTERIM_DATA_DIR,
+    PROJ_ROOT,
+    VALIDATION_DIR,
+)
 from vir.dataset import app as helper_app
 from vir.db import (
     delete_run,
@@ -33,6 +40,7 @@ view_app = typer.Typer(help="Analysis views (clinical, demographic, temporal)")
 model_app = typer.Typer(help="Modeling commands")
 pipeline_app = typer.Typer(help="End-to-end pipeline commands")
 results_app = typer.Typer(help="Query and enrich saved runs")
+validate_app = typer.Typer(help="Validation commands")
 
 app.add_typer(setup_app, name="setup")
 app.add_typer(prepare_app, name="prepare")
@@ -40,6 +48,7 @@ app.add_typer(view_app, name="view")
 app.add_typer(model_app, name="model")
 app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(results_app, name="results")
+app.add_typer(validate_app, name="validate")
 app.add_typer(helper_app, name="helpers")
 
 
@@ -633,6 +642,38 @@ def results_delete(
     if not_found:
         typer.secho(f"Run(s) not found: {not_found}", fg=typer.colors.YELLOW)
     typer.secho(f"✓ Deleted {deleted_count} run(s).", fg=typer.colors.GREEN)
+
+
+@validate_app.command("ablation")
+def validate_ablation(
+    city: Optional[str] = typer.Option(
+        None, "--city", help=f"City name to run ablation for: {', '.join(CITY_NAMES)}"
+    ),
+    permutations: int = typer.Option(
+        AFFINITY_ZSCORE_PERMS,
+        "--permutations",
+        help=f"Permutations for affinity Z-score (default: {AFFINITY_ZSCORE_PERMS})",
+    ),
+    output_directory: Optional[Path] = typer.Option(
+        VALIDATION_DIR / "ablation",
+        "--output",
+        help=f"Output directory (default: {VALIDATION_DIR / 'ablation'})",
+    ),
+):
+    """Run ablation study across selected cities."""
+    notebook = PROJ_ROOT / "notebooks/validation/validation_ablation.py"
+    args = []
+    if city:
+        args.extend(["--city", city])
+    if permutations:
+        args.extend(["--permutations", str(permutations)])
+    if output_directory:
+        args.extend(["--output", str(output_directory)])
+
+    exit_code = run_marimo_notebook(notebook, args)
+    if exit_code == 0:
+        typer.secho("✓ Ablation study complete.", fg=typer.colors.GREEN)
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
