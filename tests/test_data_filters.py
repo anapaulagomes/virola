@@ -236,12 +236,17 @@ class TestFilterTemporalQuantiles:
         assert sorted(result["terminology_id"].unique().to_list()) == [2, 3, 4, 5]
 
 
-class TestFilterMinTemporalCoverageByYear:
-    """filter_min_temporal_coverage with by_year=True computes week counts per year."""
-
+class TestFilterMinTemporalCoverage:
     @pytest.fixture
     def multi_year_df(self) -> pl.DataFrame:
         """Two years where code coverage differs across years.
+
+        Each (terminology_id, year, week) is split into three demographic rows
+        (sex × age_group), mirroring the prepared parquet aggregation level.
+        This lets the tests catch implementations that count rows instead of
+        distinct weeks.
+
+        Distinct-week profile (per (terminology_id, year)):
 
         Year 2024:
           code 1: 2 weeks  (below min_weeks=3)
@@ -253,46 +258,85 @@ class TestFilterMinTemporalCoverageByYear:
           code 2: 1 week   (below min_weeks=3)
           code 3: 3 weeks
 
-        With by_year=True and min_weeks=3:
-          2024 keeps codes 2, 3 (code 1 has only 2 weeks)
-          2025 keeps codes 1, 3 (code 2 has only 1 week)
+        With min_weeks=3 (default by_year=True):
+          2024 keeps codes 2, 3
+          2025 keeps codes 1, 3
         """
-        return pl.DataFrame(
+        profiles = [
+            (1, 2024, [1, 2]),
+            (2, 2024, [1, 2, 3, 4, 5]),
+            (3, 2024, [1, 2, 3, 4]),
+            (1, 2025, [1, 2, 3, 4]),
+            (2, 2025, [1]),
+            (3, 2025, [1, 2, 3]),
+        ]
+        demographics = [("M", "0-19"), ("F", "0-19"), ("M", "20-59")]
+        records = [
             {
-                "terminology_id": ([1] * 2 + [2] * 5 + [3] * 4 + [1] * 4 + [2] * 1 + [3] * 3),
-                "year": [2024] * 11 + [2025] * 8,
-                "week": (
-                    [1, 2]
-                    + list(range(1, 6))
-                    + list(range(1, 5))
-                    + list(range(1, 5))
-                    + [1]
-                    + list(range(1, 4))
-                ),
-                "quantity": [10] * 19,
+                "terminology_id": terminology_id,
+                "year": year,
+                "week": week,
+                "sex": sex,
+                "age_group": age_group,
+                "quantity": 10,
             }
-        )
+            for terminology_id, year, weeks in profiles
+            for week in weeks
+            for sex, age_group in demographics
+        ]
+        return pl.DataFrame(records)
 
-    def test_by_year_drops_code_below_threshold_in_its_year(self, multi_year_df):
-        result = filter_min_temporal_coverage(multi_year_df, min_weeks=3, by_year=True)
+    def test_drops_code_below_threshold_in_its_year(self, multi_year_df):
+        result = filter_min_temporal_coverage(multi_year_df, min_weeks=3)
         year_2024 = result.filter(pl.col("year") == 2024)
         assert 1 not in year_2024["terminology_id"].unique().to_list()
 
-    def test_by_year_keeps_codes_above_threshold(self, multi_year_df):
-        result = filter_min_temporal_coverage(multi_year_df, min_weeks=3, by_year=True)
+    def test_keeps_codes_above_threshold(self, multi_year_df):
+        result = filter_min_temporal_coverage(multi_year_df, min_weeks=3)
         year_2024 = result.filter(pl.col("year") == 2024)
         assert sorted(year_2024["terminology_id"].unique().to_list()) == [2, 3]
 
-    def test_by_year_second_year_independent(self, multi_year_df):
-        result = filter_min_temporal_coverage(multi_year_df, min_weeks=3, by_year=True)
+    def test_second_year_evaluated_independently(self, multi_year_df):
+        result = filter_min_temporal_coverage(multi_year_df, min_weeks=3)
         year_2025 = result.filter(pl.col("year") == 2025)
         assert sorted(year_2025["terminology_id"].unique().to_list()) == [1, 3]
 
-    def test_by_year_preserves_all_columns(self, multi_year_df):
-        result = filter_min_temporal_coverage(multi_year_df, min_weeks=3, by_year=True)
+    def test_preserves_all_columns(self, multi_year_df):
+        result = filter_min_temporal_coverage(multi_year_df, min_weeks=3)
         assert set(result.columns) == set(multi_year_df.columns)
 
-    def test_by_year_false_matches_original_behaviour(self, multi_year_df):
-        original = filter_min_temporal_coverage(multi_year_df, min_weeks=3)
-        with_flag = filter_min_temporal_coverage(multi_year_df, min_weeks=3, by_year=False)
-        assert original.equals(with_flag)
+    def test_by_year_false_evaluates_across_full_period(self, multi_year_df):
+        """With by_year=False, codes are evaluated once across the entire period.
+
+        Distinct-week totals: code 1 has 6, code 2 has 6, code 3 has 7 — all
+        ≥ 3, so every row is kept. By contrast the default per-year mode drops
+        code 1's 2024 rows and code 2's 2025 row.
+        """
+        result = filter_min_temporal_coverage(multi_year_df, min_weeks=3, by_year=False)
+        assert sorted(result["terminology_id"].unique().to_list()) == [1, 2, 3]
+        assert result.shape == multi_year_df.shape
+
+    def test_by_year_false_counts_distinct_weeks_not_rows(self):
+        """A code with one week of demographic-split rows must not satisfy
+        min_weeks. Without distinct-week counting the four sex/age_group rows
+        for week 1 would be counted as four "weeks"."""
+        df = pl.DataFrame(
+            {
+                "terminology_id": [1] * 4 + [2] * 3,
+                "year": [2024] * 7,
+                "week": [1, 1, 1, 1, 1, 2, 3],
+                "sex": ["M", "F", "M", "F", "M", "M", "M"],
+                "age_group": ["0-19", "0-19", "20-59", "20-59", "0-19", "0-19", "0-19"],
+                "quantity": [10] * 7,
+            }
+        )
+        result = filter_min_temporal_coverage(df, min_weeks=3, by_year=False)
+        assert result.filter(pl.col("terminology_id") == 1).is_empty()
+        assert sorted(result["terminology_id"].unique().to_list()) == [2]
+
+    def test_min_weeks_zero_keeps_all_rows(self, multi_year_df):
+        """min_weeks=0 means no temporal cutoff — every code should survive.
+        A falsy check on min_weeks would silently fall back to MIN_WEEKS."""
+        result = filter_min_temporal_coverage(multi_year_df, min_weeks=0)
+        assert result.shape == multi_year_df.shape
+        assert sorted(result["terminology_id"].unique().to_list()) == [1, 2, 3]
