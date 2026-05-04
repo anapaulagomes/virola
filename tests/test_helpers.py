@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from vir.helpers import extract_dataset_name, suffix_from
+from vir.helpers import extract_dataset_name, slugify, suffix_from
 
 
 class TestSuffixFrom:
@@ -72,3 +72,18 @@ class TestExtractDatasetName:
 
     def test_works_on_plain_filename(self):
         assert extract_dataset_name("prepared_my_dataset.parquet") == "my_dataset"
+
+
+class TestSlugify:
+    @pytest.mark.parametrize(
+        "input_text,expected_slug",
+        [
+            ("Salvador", "salvador"),
+            ("Anápolis", "anapolis"),
+            ("Rio Branco", "rio_branco"),
+            ("Distrito Federal", "distrito_federal"),
+            ("salvador", "salvador"),
+        ],
+    )
+    def test_slugify(self, input_text, expected_slug):
+        assert slugify(input_text) == expected_slug

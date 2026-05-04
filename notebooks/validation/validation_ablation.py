@@ -6,7 +6,6 @@ app = marimo.App(width="medium")
 
 @app.cell
 def _():
-    import unicodedata
     from pathlib import Path
 
     import marimo as mo
@@ -31,6 +30,7 @@ def _():
     )
     from vir.db import fetch_cluster_assignments, fetch_runs
     from vir.features import CITY_NAMES
+    from vir.helpers import get_n_jobs, slugify
     from vir.notebook_widgets import (
         distance_to_affinity,
         load_and_prepare_dataframe,
@@ -53,6 +53,7 @@ def _():
         distance_to_affinity,
         fetch_cluster_assignments,
         fetch_runs,
+        get_n_jobs,
         go,
         load_and_prepare_dataframe,
         load_dotenv,
@@ -62,7 +63,7 @@ def _():
         normalized_mutual_info_score,
         np,
         pl,
-        unicodedata,
+        slugify,
         AFFINITY_ZSCORE_SEED,
     )
 
@@ -268,6 +269,7 @@ def _(
     cosine_similarity,
     distance_to_affinity,
     fetch_cluster_assignments,
+    get_n_jobs,
     load_and_prepare_dataframe,
     logger,
     metrics,
@@ -412,17 +414,12 @@ def _(
 
 
 @app.cell
-def _(logger, mo, output_dir, results_long_df, unicodedata):
+def _(logger, mo, output_dir, results_long_df, slugify):
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    def _slugify(text):
-        text = unicodedata.normalize("NFKD", text)
-        text = text.encode("ascii", "ignore").decode("ascii")
-        return text.lower().replace(" ", "_")
 
     if mo.app_meta().mode == "script":
         for _city, _city_df in results_long_df.group_by("city"):
-            _slug = _slugify(_city[0])
+            _slug = slugify(_city[0])
             _path = output_dir / f"ablation_{_slug}.csv"
             _city_df.write_csv(_path)
             logger.info(f"Saved {_path}")
