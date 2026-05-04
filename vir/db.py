@@ -10,8 +10,9 @@ from typing import Iterator
 import duckdb
 import polars as pl
 
-from vir.config import DATA_DIR, DEFAULT_MODEL, MODEL_DIMENSIONS
+from vir.config import DATA_DIR, DEFAULT_MODEL, MODEL_DIMENSIONS, logger
 from vir.helpers import extract_dataset_name, get_n_jobs
+from vir.terminology_mapping import load_mapping
 
 PROJECT_DB = DATA_DIR / "virola.db"
 
@@ -55,7 +56,6 @@ def _release_orphaned_lock(pid: int) -> bool:
     """
     try:
         os.kill(pid, signal.SIGTERM)
-        from vir.config import logger
 
         logger.warning(f"Released orphaned DuckDB lock held by PID {pid}.")
         time.sleep(0.5)
@@ -718,8 +718,6 @@ def get_cross_terminology_pairs() -> list[tuple[str, str, str, str, str]]:
     equivalent by definition (same AB programme, different coding system).
     One CID10 is picked per (ab_code, ciap2_code) to avoid duplicates.
     """
-    from vir.terminology_mapping import load_mapping
-
     mapping = load_mapping()
 
     in_db = set(
