@@ -1,4 +1,5 @@
 import os
+import unicodedata
 from pathlib import Path
 
 import numba
@@ -66,3 +67,8 @@ def get_n_jobs():
     if slurm_cpus := os.getenv("SLURM_CPUS_PER_TASK"):
         return int(slurm_cpus)
     return numba.get_num_threads()
+
+
+def slugify(text: str) -> str:
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    return ascii_text.lower().replace(" ", "_")
