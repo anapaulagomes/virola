@@ -26,14 +26,27 @@ def filter_most_representative_rows(df, threshold=0.95, group_by=None, frequency
 
 
 def filter_min_temporal_coverage(df, min_weeks=None, *, by_year: bool = True):
-    """Filter by minimal temporal coverage per year."""
-    if not min_weeks:
+    """Filter terminology codes by minimal temporal coverage.
+
+    Counts distinct weeks. The prepared parquet is aggregated to
+    one row per (year, week, sex, age_group, code_type, code), so a single
+    (terminology_id, year, week) typically spans multiple demographic rows.
+
+    Args:
+        df: DataFrame with columns ``terminology_id``, ``year``, ``week``.
+        min_weeks: Minimum distinct weeks required. ``None`` falls back to
+            ``MIN_WEEKS``; ``0`` is honoured as "no cutoff".
+        by_year: When ``True`` (default), the threshold is applied per
+            ``(terminology_id, year)``. When ``False``, it is applied once
+            across the full period per ``terminology_id``.
+    """
+    if min_weeks is None:
         min_weeks = MIN_WEEKS
 
     if not by_year:
         more_than_min_weeks = (
             df.group_by("terminology_id")
-            .agg(pl.col("week").count().alias("week_count"))
+            .agg(pl.col("week").n_unique().alias("week_count"))
             .filter(pl.col("week_count").ge(min_weeks))
         )
         return df.filter(
@@ -42,7 +55,7 @@ def filter_min_temporal_coverage(df, min_weeks=None, *, by_year: bool = True):
 
     passing = (
         df.group_by(["year", "terminology_id"])
-        .agg(pl.col("week").count().alias("week_count"))
+        .agg(pl.col("week").n_unique().alias("week_count"))
         .filter(pl.col("week_count").ge(min_weeks))
         .select("year", "terminology_id")
     )
