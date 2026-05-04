@@ -1,16 +1,20 @@
 import marimo
 
-__generated_with = "0.19.0"
+__generated_with = "0.23.4"
 app = marimo.App(width="medium")
 
 
 @app.cell
 def _():
+    import unicodedata
+    from pathlib import Path
+
     import marimo as mo
     import numpy as np
     import plotly.graph_objects as go
     import polars as pl
     from dotenv import load_dotenv
+    from loguru import logger
     from sklearn import cluster
     from sklearn.metrics import (
         adjusted_rand_score,
@@ -19,8 +23,14 @@ def _():
     from sklearn.metrics.pairwise import cosine_similarity
     from snf import compute, metrics
 
-    from vir.config import PROCESSED_DATA_DIR
+    from vir.config import (
+        AFFINITY_ZSCORE_PERMS,
+        AFFINITY_ZSCORE_SEED,
+        PROCESSED_DATA_DIR,
+        VALIDATION_DIR,
+    )
     from vir.db import fetch_cluster_assignments, fetch_runs
+    from vir.features import CITY_NAMES
     from vir.notebook_widgets import (
         distance_to_affinity,
         load_and_prepare_dataframe,
@@ -28,10 +38,14 @@ def _():
     from vir.views import ClinicalView, DemographicView, TemporalView
 
     return (
+        CITY_NAMES,
         ClinicalView,
         DemographicView,
+        Path,
         PROCESSED_DATA_DIR,
         TemporalView,
+        VALIDATION_DIR,
+        AFFINITY_ZSCORE_PERMS,
         adjusted_rand_score,
         cluster,
         compute,
@@ -42,11 +56,14 @@ def _():
         go,
         load_and_prepare_dataframe,
         load_dotenv,
+        logger,
         metrics,
         mo,
         normalized_mutual_info_score,
         np,
         pl,
+        unicodedata,
+        AFFINITY_ZSCORE_SEED,
     )
 
 
@@ -107,14 +124,29 @@ def _(fetch_runs, mo):
 
 
 @app.cell
-def _(mo, runs_by_city):
+def _(CITY_NAMES, Path, VALIDATION_DIR, AFFINITY_ZSCORE_PERMS, mo, runs_by_city):
+    if mo.app_meta().mode == "script":
+        _cli_args = mo.cli_args()
+        _city_arg = _cli_args.get("city", "")
+        _selected_cities = (
+            [_city_arg]
+            if _city_arg and _city_arg in runs_by_city
+            else sorted(k for k in runs_by_city if k in CITY_NAMES)
+        )
+        n_permutations = int(_cli_args.get("permutations", AFFINITY_ZSCORE_PERMS))
+        output_dir = Path(_cli_args["output"]) if _cli_args.get("output") else VALIDATION_DIR
+    else:
+        n_permutations = AFFINITY_ZSCORE_PERMS
+        _selected_cities = sorted(k for k in runs_by_city if k in CITY_NAMES)
+        output_dir = VALIDATION_DIR
+
     city_selector = mo.ui.multiselect(
-        options=sorted(runs_by_city.keys()),
-        value=sorted(runs_by_city.keys()),
-        label="Cities to include in the ablation (defaults to all)",
+        options=_selected_cities,
+        value=_selected_cities,
+        label="Cities to include in the ablation",
     )
     city_selector
-    return (city_selector,)
+    return city_selector, n_permutations, output_dir
 
 
 @app.cell
@@ -161,28 +193,67 @@ def _(PROCESSED_DATA_DIR, city_selector, mo, runs_by_city):
 
 
 @app.cell
-def _(mo):
-    mo.md(r"""
-    ## View Matrices
+def _(
+    ClinicalView,
+    DemographicView,
+    TemporalView,
+    adjusted_rand_score,
+    cluster,
+    compute,
+    distance_to_affinity,
+    fetch_cluster_assignments,
+    load_and_prepare_dataframe,
+    logger,
+    mo,
+    np,
+    selected_runs,
+):
+    _scan_run = selected_runs[0]
+    _scan_assignments = fetch_cluster_assignments(_scan_run["run_id"]).sort("terminology_id")
+    _scan_stored_labels = _scan_assignments["cluster_id"].to_numpy()
+    _scan_common_ids = _scan_assignments["terminology_id"].to_list()
 
-    For each selected city, the same three distance matrices — one per view — are
-    aligned to that city's reference run code list. Distance matrices are normalised
-    to $[0, 1]$ before conversion to affinity using SNF's adaptive Gaussian kernel
-    with $\mu = 0.5$ and $K = 20$. Each affinity matrix is normalised to $[0, 1]$
-    so all views enter SNF on equal footing.
+    logger.info(f"=== Assumption scan: {_scan_run['city']} ===")
+    logger.info(
+        f"[1] n_clusters stored vs unique labels: "
+        f"{_scan_run['n_clusters']} vs {len(set(_scan_stored_labels))}"
+    )
+    logger.info(f"[2] SNF K used in ablation: {_scan_run['snf_k']}")
 
-    ## Running the Eight Conditions
+    _scan_df = load_and_prepare_dataframe(
+        file_path=_scan_run["file_path"],
+        year_min=_scan_run["year_min"],
+        year_max=_scan_run["year_max"],
+    )
+    _scan_clinical = ClinicalView(df=_scan_df, dataset_name=_scan_run["dataset_name"])
+    _scan_demographic = DemographicView(df=_scan_df, dataset_name=_scan_run["dataset_name"])
+    _scan_temporal = TemporalView(df=_scan_df, dataset_name=_scan_run["dataset_name"])
 
-    For conditions 1–7, the selected affinity matrices are passed to SNF's iterative
-    non-linear diffusion; spectral clustering on the fused matrix yields the final
-    partition. For condition 8 (naive concatenation), affinity matrix rows are
-    concatenated horizontally and pairwise cosine similarity replaces the fused
-    matrix — no iterative diffusion is applied. All spectral clustering calls use
-    `random_state=42` for reproducibility.
-
-    The cell below loops over the selected cities, computes the eight conditions
-    for each, and collects a long-format result row per (city, condition) pair.
-    """)
+    _scan_affinities = [
+        distance_to_affinity(_scan_clinical.align_to_common_ids(_scan_common_ids)),
+        distance_to_affinity(_scan_demographic.align_to_common_ids(_scan_common_ids)),
+        distance_to_affinity(_scan_temporal.align_to_common_ids(_scan_common_ids)),
+    ]
+    _scan_fused = compute.snf(_scan_affinities, K=_scan_run["snf_k"])
+    _scan_fused = np.nan_to_num(_scan_fused, nan=0.0, posinf=1.0, neginf=0.0)
+    _scan_rerun_labels = cluster.spectral_clustering(
+        _scan_fused, n_clusters=_scan_run["n_clusters"], random_state=42
+    )
+    _scan_ari = adjusted_rand_score(_scan_stored_labels, _scan_rerun_labels)
+    logger.info(
+        f"[3] ARI Full model re-run vs stored labels: {_scan_ari:.4f} "
+        f"(measures pipeline determinism; ablation uses re-run as reference, not stored)"
+    )
+    logger.info(
+        "[4] Cache source: matrices loaded from disk, not recomputed, "
+        "if you see 'Loading from cache' above"
+    )
+    mo.md(
+        f"**Assumption scan ({_scan_run['city']}):** "
+        f"n_clusters {_scan_run['n_clusters']} = {len(set(_scan_stored_labels))} unique labels · "
+        f"SNF K={_scan_run['snf_k']} · "
+        f"ARI full re-run vs stored = **{_scan_ari:.4f}** (should be ≈ 1.0)"
+    )
     return
 
 
@@ -198,15 +269,16 @@ def _(
     distance_to_affinity,
     fetch_cluster_assignments,
     load_and_prepare_dataframe,
+    logger,
     metrics,
     mo,
+    n_permutations,
     normalized_mutual_info_score,
     np,
     pl,
     selected_runs,
+    AFFINITY_ZSCORE_SEED,
 ):
-    AFFINITY_ZSCORE_PERMUTATIONS = 200
-
     _CONDITIONS = [
         {
             "name": "Full model",
@@ -258,78 +330,77 @@ def _(
         },
     ]
 
+    assert _CONDITIONS[0]["name"] == "Full model", "Full model must be first in _CONDITIONS"
+
+    def _build_view_affinities(run, dataframe, common_ids):
+        clinical = ClinicalView(df=dataframe, dataset_name=run["dataset_name"])
+        demographic = DemographicView(df=dataframe, dataset_name=run["dataset_name"])
+        temporal = TemporalView(df=dataframe, dataset_name=run["dataset_name"])
+        return {
+            "clinical": distance_to_affinity(clinical.align_to_common_ids(common_ids)),
+            "demographic": distance_to_affinity(demographic.align_to_common_ids(common_ids)),
+            "temporal": distance_to_affinity(temporal.align_to_common_ids(common_ids)),
+        }
+
     def _run_condition(condition, view_affinities, n_clusters, snf_k):
         if condition["naive"]:
-            _concatenated = np.hstack([view_affinities[view] for view in condition["views"]])
-            _fused = cosine_similarity(_concatenated)
-            np.fill_diagonal(_fused, 0.0)
+            concatenated = np.hstack([view_affinities[view] for view in condition["views"]])
+            fused = cosine_similarity(concatenated)
+            np.fill_diagonal(fused, 0.0)
         elif len(condition["views"]) == 1:
-            _fused = view_affinities[condition["views"][0]].copy()
+            fused = view_affinities[condition["views"][0]].copy()
         else:
-            _affinities = [view_affinities[view] for view in condition["views"]]
-            _fused = compute.snf(_affinities, K=snf_k)
-            _fused = np.nan_to_num(_fused, nan=0.0, posinf=1.0, neginf=0.0)
-        _labels = cluster.spectral_clustering(_fused, n_clusters=n_clusters, random_state=42)
-        return _fused, _labels
+            affinities = [view_affinities[view] for view in condition["views"]]
+            fused = compute.snf(affinities, K=snf_k)
+            fused = np.nan_to_num(fused, nan=0.0, posinf=1.0, neginf=0.0)
+        labels = cluster.spectral_clustering(fused, n_clusters=n_clusters, random_state=42)
+        return fused, labels
+
+    def _run_ablation_for_city(run, conditions, permutation_count):
+        dataframe = load_and_prepare_dataframe(
+            file_path=run["file_path"],
+            year_min=run["year_min"],
+            year_max=run["year_max"],
+        )
+        assignments = fetch_cluster_assignments(run["run_id"]).sort("terminology_id")
+        common_ids = assignments["terminology_id"].to_list()
+        view_affinities = _build_view_affinities(run, dataframe, common_ids)
+
+        rows = []
+        full_model_labels = None
+        for condition in conditions:
+            fused_matrix, labels = _run_condition(
+                condition, view_affinities, run["n_clusters"], run["snf_k"]
+            )
+            if condition["name"] == "Full model":
+                full_model_labels = labels
+            reference_labels = full_model_labels if full_model_labels is not None else labels
+            rows.append(
+                {
+                    "city": run["city"],
+                    "run_id": run["run_id"],
+                    "n_codes": len(common_ids),
+                    "condition": condition["name"],
+                    "group": condition["group"],
+                    "ari": float(adjusted_rand_score(reference_labels, labels)),
+                    "nmi": float(normalized_mutual_info_score(reference_labels, labels)),
+                    "affinity_zscore": float(
+                        metrics.affinity_zscore(
+                            fused_matrix,
+                            labels,
+                            n_perms=permutation_count,
+                            seed=AFFINITY_ZSCORE_SEED,
+                        )
+                    ),
+                    "silhouette": float(metrics.silhouette_score(fused_matrix, labels)),
+                }
+            )
+        return rows
 
     _result_rows = []
     for _run in selected_runs:
-        _city = _run["city"]
-        _dataset_name = _run["dataset_name"]
-
-        _dataframe = load_and_prepare_dataframe(
-            file_path=_run["file_path"],
-            year_min=_run["year_min"],
-            year_max=_run["year_max"],
-        )
-
-        _assignments = fetch_cluster_assignments(_run["run_id"]).sort("terminology_id")
-        _common_ids = _assignments["terminology_id"].to_list()
-        _reference_labels = _assignments["cluster_id"].to_numpy()
-
-        _clinical_view = ClinicalView(df=_dataframe, dataset_name=_dataset_name)
-        _demographic_view = DemographicView(df=_dataframe, dataset_name=_dataset_name)
-        _temporal_view = TemporalView(df=_dataframe, dataset_name=_dataset_name)
-
-        _view_affinities = {
-            "clinical": distance_to_affinity(_clinical_view.align_to_common_ids(_common_ids)),
-            "demographic": distance_to_affinity(
-                _demographic_view.align_to_common_ids(_common_ids)
-            ),
-            "temporal": distance_to_affinity(_temporal_view.align_to_common_ids(_common_ids)),
-        }
-
-        for _condition in _CONDITIONS:
-            _fused_matrix, _labels = _run_condition(
-                _condition,
-                _view_affinities,
-                n_clusters=_run["n_clusters"],
-                snf_k=_run["snf_k"],
-            )
-            _result_rows.append(
-                {
-                    "city": _city,
-                    "run_id": _run["run_id"],
-                    "n_codes": len(_common_ids),
-                    "condition": _condition["name"],
-                    "group": _condition["group"],
-                    "ari": round(adjusted_rand_score(_reference_labels, _labels), 4),
-                    "nmi": round(normalized_mutual_info_score(_reference_labels, _labels), 4),
-                    "affinity_zscore": round(
-                        float(
-                            metrics.affinity_zscore(
-                                _fused_matrix,
-                                _labels,
-                                n_perms=AFFINITY_ZSCORE_PERMUTATIONS,
-                            )
-                        ),
-                        4,
-                    ),
-                    "silhouette": round(
-                        float(metrics.silhouette_score(_fused_matrix, _labels)), 4
-                    ),
-                }
-            )
+        logger.info(f"Running ablation for {_run['city']}...")
+        _result_rows.extend(_run_ablation_for_city(_run, _CONDITIONS, n_permutations))
 
     results_long_df = pl.DataFrame(_result_rows)
 
@@ -338,6 +409,34 @@ def _(
         f"{len(selected_runs)} cities = **{len(_result_rows)} clusterings** evaluated."
     )
     return (results_long_df,)
+
+
+@app.cell
+def _(logger, mo, output_dir, results_long_df, unicodedata):
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    def _slugify(text):
+        text = unicodedata.normalize("NFKD", text)
+        text = text.encode("ascii", "ignore").decode("ascii")
+        return text.lower().replace(" ", "_")
+
+    if mo.app_meta().mode == "script":
+        for _city, _city_df in results_long_df.group_by("city"):
+            _slug = _slugify(_city[0])
+            _path = output_dir / f"ablation_{_slug}.csv"
+            _city_df.write_csv(_path)
+            logger.info(f"Saved {_path}")
+    else:
+        _path = output_dir / "ablation_results.csv"
+        results_long_df.write_csv(_path)
+        mo.md(f"Results saved to `{_path}`")
+    return
+
+
+@app.cell
+def _(mo):
+    mo.stop(mo.app_meta().mode == "script")
+    return
 
 
 @app.cell
@@ -359,8 +458,8 @@ def _(mo):
       partitions. Complements ARI for distributions with very uneven cluster sizes.
     - **Affinity Z-score**: SNF-native internal validity (Wang et al. 2014). Compares
       observed intra-cluster affinity in the fused matrix against a permutation null
-      distribution over cluster labels (200 permutations). This is the canonical
-      quality metric for SNF clusterings — the same metric stored in the `runs` table
+      distribution over cluster labels (a configurable number of permutations, default: 1000).
+      This is the canonical quality metric for SNF clusterings — the same metric stored in the `runs` table
       for the reference runs. Higher is better; values around 0 indicate clusters no
       better than random label assignment.
     - **Silhouette** ($[-1, 1]$): kept as a secondary sanity check using `snfpy`'s
@@ -436,7 +535,7 @@ def _(mo, results_long_df):
 
 
 @app.cell
-def _(go, mo, results_summary_df):
+def _(go, mo, n_permutations, results_summary_df):
     _CONDITION_ORDER = [
         "Full model",
         "Drop Clinical",
@@ -459,7 +558,7 @@ def _(go, mo, results_summary_df):
         (
             "affinity_zscore",
             "Affinity Z-score (mean ± std across cities)",
-            "Affinity Z-score (200 permutations)",
+            f"Affinity Z-score ({n_permutations:,} permutations)",
         ),
         ("silhouette", "Silhouette (mean ± std across cities)", "Silhouette (sanity check)"),
     ]

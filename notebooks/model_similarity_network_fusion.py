@@ -57,7 +57,12 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import CLUSTERING_DIR, get_indicative_label
+    from vir.config import (
+        AFFINITY_ZSCORE_PERMS,
+        AFFINITY_ZSCORE_SEED,
+        CLUSTERING_DIR,
+        get_indicative_label,
+    )
     from vir.db import insert_run_leiden, insert_run_multi_k, update_run_finished_at
     from vir.helpers import extract_dataset_name
     from vir.notebook_widgets import (
@@ -73,6 +78,8 @@ def _():
     return (
         CLUSTERING_DIR,
         ClinicalView,
+        AFFINITY_ZSCORE_PERMS,
+        AFFINITY_ZSCORE_SEED,
         DemographicView,
         TemporalView,
         create_file_dropdown,
@@ -102,7 +109,7 @@ def _(mo):
 
 
 @app.cell
-def _(CLUSTERING_DIR, Path, args, datetime):
+def _(CLUSTERING_DIR, Path, args, datetime, AFFINITY_ZSCORE_PERMS):
     year_min = args.get("year-min", 2022)
     year_max = args.get("year-max", 2024)
     snf_k = args.get("snf-k", 10)
@@ -110,7 +117,8 @@ def _(CLUSTERING_DIR, Path, args, datetime):
     output_dir = Path(args.get("output") or str(CLUSTERING_DIR))
     notes = args.get("notes") or None
     run_start = datetime.now().isoformat()
-    return n_clusters, notes, output_dir, run_start, snf_k, year_max, year_min
+    n_permutations = int(args.get("permutations", AFFINITY_ZSCORE_PERMS))
+    return n_clusters, notes, output_dir, run_start, snf_k, year_max, year_min, n_permutations
 
 
 @app.cell
@@ -571,15 +579,15 @@ def _(df_clusters, mo, pl, terminology_labels):
 
 
 @app.cell
-def _(fused, fused_labels, metrics):
+def _(fused, fused_labels, metrics, n_permutations, AFFINITY_ZSCORE_SEED):
     # Compute comprehensive evaluation metrics
     silhouette = metrics.silhouette_score(fused, fused_labels)
-    # nmi_score = metrics.nmi([fused_labels])  # TODO compare with mappings?
-    zaff = metrics.affinity_zscore(fused, fused_labels, n_perms=1000, seed=42)
+    zaff = metrics.affinity_zscore(
+        fused, fused_labels, n_perms=n_permutations, seed=AFFINITY_ZSCORE_SEED
+    )
 
     print("Clustering Evaluation Metrics:")
     print(f"  Silhouette Score: {silhouette:.4f}")
-    # print(f"  NMI Score: {nmi_score}")
     print(f"  Affinity Z-Score: {zaff:.4f}")
     print("\nInterpretation:")
     print("  - Silhouette > 0.5: Good clustering")
@@ -624,13 +632,15 @@ def _(cluster_sizes, n_clusters, px):
 
 
 @app.cell
-def _(cluster, common_ids, fused, metrics, np, pl):
+def _(cluster, common_ids, fused, metrics, np, pl, n_permutations, AFFINITY_ZSCORE_SEED):
     multi_k_results = []
 
     for _nr_cluster in [50, 100, 150, 200, 250, 300]:
         _labels = cluster.spectral_clustering(fused, n_clusters=_nr_cluster)
         _silhouette = metrics.silhouette_score(fused, _labels)
-        _zaff = metrics.affinity_zscore(fused, _labels, n_perms=100, seed=42)
+        _zaff = metrics.affinity_zscore(
+            fused, _labels, n_perms=n_permutations, seed=AFFINITY_ZSCORE_SEED
+        )
 
         _sizes = (
             pl.DataFrame({"cluster": _labels, "id": common_ids})
