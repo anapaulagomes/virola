@@ -27,11 +27,21 @@ VIEWS_CACHE_DIR = DATA_DIR / "views"
 VALIDATION_DIR = DATA_DIR / "validation"
 
 # FIXME create dirs if not exist
-
+# views
+TEMPORAL_MODE = "chronological"  # "chronological" (full year_week series) | "annual" (52-point week_of_year profile)
+TEMPORAL_NORMALIZATION = "minmax"  # "minmax" (row min→0, max→1) | "zscore" (mean=0, std=1)
 DEFAULT_MODEL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
 MODEL_DIMENSIONS = 768
 
+# Memory recommendations by RAM:
+# 8GB RAM: CHUNK_SIZE = 50_000
+# 16GB RAM: CHUNK_SIZE = 100_000
+# 32GB RAM: CHUNK_SIZE = 200_000
+# 64GB RAM: CHUNK_SIZE = 500_000
 CHUNK_SIZE = 100_000  # Records per chunk - adjust based on available RAM
+
+
+# filtering
 INDICATIVE_CODES_FILE = REFERENCES_DIR / "indicative_codes_yes_no__2022_2025__90perc.csv"
 INDICATIVE_ENABLED = True
 MIN_WEEKS = 12
@@ -60,8 +70,6 @@ _raw_skip = os.getenv("VIROLA_SKIP_PATTERNS")
 SKIP_PATTERNS: list[tuple] = (
     _parse_skip_patterns(_raw_skip) if _raw_skip else DEFAULT_SKIP_PATTERNS
 )
-TEMPORAL_MODE = "chronological"  # "chronological" (full year_week series) | "annual" (52-point week_of_year profile)
-TEMPORAL_NORMALIZATION = "minmax"  # "minmax" (row min→0, max→1) | "zscore" (mean=0, std=1)
 
 
 def get_indicative_label(enabled: bool = INDICATIVE_ENABLED) -> str:
@@ -69,8 +77,6 @@ def get_indicative_label(enabled: bool = INDICATIVE_ENABLED) -> str:
     return "indic" if enabled else "not-indic"
 
 
-# Memory recommendations by RAM:
-# 8GB RAM: CHUNK_SIZE = 50_000
-# 16GB RAM: CHUNK_SIZE = 100_000
-# 32GB RAM: CHUNK_SIZE = 200_000
-# 64GB RAM: CHUNK_SIZE = 500_000
+# snf config
+AFFINITY_ZSCORE_PERMS = 1000
+AFFINITY_ZSCORE_SEED = 42
