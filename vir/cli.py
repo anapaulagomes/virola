@@ -8,6 +8,11 @@ from typing import Optional
 import polars as pl
 import typer
 
+from vir.clusters import (
+    build_cluster_profiles,
+    explain_clusters,
+    populate_llm_descriptions,
+)
 from vir.config import (
     AFFINITY_ZSCORE_PERMS,
     CLUSTERING_DIR,
@@ -16,7 +21,6 @@ from vir.config import (
     PROJ_ROOT,
     VALIDATION_DIR,
 )
-from vir.dataset import app as helper_app
 from vir.db import (
     delete_run,
     fetch_cluster_assignments,
@@ -25,6 +29,7 @@ from vir.db import (
 from vir.features import CITY_NAMES
 from vir.helpers import extract_dataset_name, get_n_jobs
 from vir.notebook_widgets import load_and_prepare_dataframe
+from vir.terminologies.terminologies import main as run_terminologies
 from vir.views import ClinicalView, DemographicView, TemporalView
 
 app = typer.Typer(
@@ -49,7 +54,9 @@ app.add_typer(model_app, name="model")
 app.add_typer(pipeline_app, name="pipeline")
 app.add_typer(results_app, name="results")
 app.add_typer(validate_app, name="validate")
-app.add_typer(helper_app, name="helpers")
+
+SOURCE_MODULE = PROJ_ROOT / "vir"
+CLEANING_MODULE = SOURCE_MODULE / "cleaning"
 
 
 def run_marimo_notebook(notebook_path: Path, args: list[str]) -> int:
@@ -82,8 +89,6 @@ def run_marimo_notebook(notebook_path: Path, args: list[str]) -> int:
 @setup_app.command("terminologies")
 def setup_terminologies():
     """Create terminology files from source data."""
-    from vir.terminologies.terminologies import main as run_terminologies
-
     run_terminologies()
     typer.secho("✓ Terminology files created successfully", fg=typer.colors.GREEN)
 
@@ -95,7 +100,7 @@ def setup_embeddings(
     ),
 ):
     """Generate medical code embeddings database."""
-    notebook = PROJ_ROOT / "vir/terminologies/embeddings_model.py"
+    notebook = SOURCE_MODULE / "terminologies/embeddings_model.py"
     args = []
     if model:
         args.extend(["--model", model])
@@ -123,7 +128,7 @@ def prepare_clean(
     ),
 ):
     """Clean and standardize raw data."""
-    notebook = PROJ_ROOT / "vir/modeling/data_cleaning.py"
+    notebook = CLEANING_MODULE / "data_cleaning.py"
     args = []
     if city:
         args.extend(["--city", city])
@@ -147,7 +152,7 @@ def prepare_process(
     ),
 ):
     """Prepare a cleaned interim dataset: aggregate, join terminology, filter codes."""
-    notebook = PROJ_ROOT / "vir/modeling/data_preparation.py"
+    notebook = CLEANING_MODULE / "data_preparation.py"
     args = ["--dataset", dataset]
 
     exit_code = run_marimo_notebook(notebook, args)
@@ -349,7 +354,7 @@ def pipeline_run(
     # Step 1: Clean data
     if not skip_clean:
         typer.secho("Step 1/6: Cleaning data...", fg=typer.colors.BLUE, bold=True)
-        notebook = PROJ_ROOT / "vir/modeling/data_cleaning.py"
+        notebook = CLEANING_MODULE / "data_cleaning.py"
         args = ["--city", city]
         exit_code = run_marimo_notebook(notebook, args)
         if exit_code != 0:
@@ -370,7 +375,7 @@ def pipeline_run(
     interim_file = matching_interim[-1]
 
     typer.secho("Step 2/6: Processing data...", fg=typer.colors.BLUE, bold=True)
-    notebook = PROJ_ROOT / "vir/modeling/data_preparation.py"
+    notebook = CLEANING_MODULE / "data_preparation.py"
     args = ["--dataset", str(interim_file)]
     exit_code = run_marimo_notebook(notebook, args)
     if exit_code != 0:
@@ -504,8 +509,6 @@ def results_build_profiles(
     year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
 ):
     """Build cluster profiles (stats + temporal + demographic) for a run."""
-    from vir.results import build_cluster_profiles
-
     df = load_and_prepare_dataframe(
         file_path=dataset,
         year_min=year_min,
@@ -525,8 +528,6 @@ def results_llm_descriptions(
     run_id: int = typer.Argument(..., help="run_id to generate LLM descriptions for"),
 ):
     """Generate LLM descriptions for all clusters in a run (skips already-described)."""
-    from vir.results import populate_llm_descriptions
-
     populate_llm_descriptions(run_id)
     typer.secho(f"✓ LLM descriptions populated for run {run_id}.", fg=typer.colors.GREEN)
 
@@ -548,9 +549,6 @@ def results_explain(
 
     Requires build-profiles to have been run first.
     """
-
-    from vir.results import explain_clusters
-
     typer.secho(f"Loading data for run {run_id}...", fg=typer.colors.BLUE)
 
     df = load_and_prepare_dataframe(
