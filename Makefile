@@ -20,6 +20,7 @@ requirements:
 clean:
 	find . -type f -name "*.py[co]" -delete
 	find . -type d -name "__pycache__" -delete
+	find . -type d -name "__marimo__" -prune -exec rm -rf {} +
 
 ## Lint using ruff (use `make format` to do formatting)
 .PHONY: lint
