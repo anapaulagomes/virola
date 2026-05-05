@@ -1,7 +1,7 @@
 import polars as pl
 import pytest
 
-from vir.modeling.prepare import prepare_dataframe
+from vir.cleaning.prepare import prepare_dataframe
 
 
 @pytest.fixture

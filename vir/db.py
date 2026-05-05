@@ -8,11 +8,13 @@ from datetime import datetime
 from typing import Iterator
 
 import duckdb
+import numpy as np
 import polars as pl
 
 from vir.config import DATA_DIR, DEFAULT_MODEL, MODEL_DIMENSIONS, logger
+from vir.features import IBGE_CITY_MAP
 from vir.helpers import extract_dataset_name, get_n_jobs
-from vir.terminology_mapping import load_mapping
+from vir.terminologies.terminology_mapping import load_mapping
 
 PROJECT_DB = DATA_DIR / "virola.db"
 
@@ -118,26 +120,6 @@ def get_connection(
             _read_only_connection = _open_connection(write=False, retries=retries, delay=delay)
             atexit.register(_close_read_only_connection)
         return _read_only_connection
-
-
-def _close_write_connection() -> None:
-    global _write_connection
-    if _write_connection is not None:
-        _write_connection.close()
-        _write_connection = None
-
-
-def _close_read_only_connection() -> None:
-    global _read_only_connection
-    if _read_only_connection is not None:
-        _read_only_connection.close()
-        _read_only_connection = None
-
-
-@contextmanager
-def _write_context() -> Iterator[duckdb.DuckDBPyConnection]:
-    """Yields the shared write connection for a write block (semantic sugar only)."""
-    yield get_connection(write=True)
 
 
 def create_results_schema():
@@ -739,3 +721,126 @@ def get_cross_terminology_pairs() -> list[tuple[str, str, str, str, str]]:
         for row in candidates.iter_rows(named=True)
         if f"{row['cid10_code']}:cid10" in in_db and f"{row['ciap2_code']}:ciap2" in in_db
     ]
+
+
+def _city_metadata(dataset_name: str) -> dict:
+    """Extract city, region and population_range from dataset_name.
+
+    Matches by normalizing the city name from IBGE_CITY_MAP against the
+    dataset_name string (lowercase, underscored). Returns None values
+    when no match is found so the run is still recorded.
+    """
+    for entry in IBGE_CITY_MAP.values():
+        normalised = entry["city"].lower().replace(" ", "_")
+        if normalised in dataset_name.lower():
+            return {
+                "city": entry["city"],
+                "region": entry["region"],
+                "population_range": entry["population_range"],
+            }
+    logger.warning(f"Could not resolve city metadata for dataset '{dataset_name}'")
+    return {"city": None, "region": None, "population_range": None}
+
+
+def save_run(
+    *,
+    dataset_name: str,
+    year_min: int,
+    year_max: int,
+    snf_k: int,
+    n_clusters: int,
+    fused_labels: np.ndarray,
+    common_ids: list[int],
+    indicative_enabled: bool = True,
+    silhouette_score: float | None = None,
+    affinity_zscore: float | None = None,
+    notes: str | None = None,
+    created_at: str | None = None,
+    df: pl.DataFrame | None = None,
+    n_codes_clinical: int | None = None,
+    n_codes_temporal: int | None = None,
+    n_codes_demographic: int | None = None,
+    n_missing_temporal: int | None = None,
+    n_missing_demographic: int | None = None,
+    cluster_largest: int | None = None,
+    cluster_median: float | None = None,
+    n_singletons: int | None = None,
+    pct_singletons: float | None = None,
+    multi_k_results: list[dict] | None = None,
+) -> int:
+    """Persist a complete SNF run to the database.
+
+    Inserts one row in `runs` and one row per code in `cluster_assignments`.
+    Optionally persists view coverage stats, cluster distribution stats, and
+    multi-K comparison results.
+
+    Returns:
+        The run_id of the inserted run.
+    """
+    meta = _city_metadata(dataset_name)
+    n_codes_common = len(common_ids)
+
+    run_id = insert_run(
+        dataset_name=dataset_name,
+        city=meta["city"],
+        region=meta["region"],
+        population_range=meta["population_range"],
+        year_min=year_min,
+        year_max=year_max,
+        snf_k=snf_k,
+        n_clusters=n_clusters,
+        indicative_enabled=indicative_enabled,
+        silhouette_score=silhouette_score,
+        affinity_zscore=affinity_zscore,
+        notes=notes,
+        created_at=created_at,
+        n_codes_clinical=n_codes_clinical,
+        n_codes_temporal=n_codes_temporal,
+        n_codes_demographic=n_codes_demographic,
+        n_codes_common=n_codes_common,
+        n_missing_temporal=n_missing_temporal,
+        n_missing_demographic=n_missing_demographic,
+        cluster_largest=cluster_largest,
+        cluster_median=cluster_median,
+        n_singletons=n_singletons,
+        pct_singletons=pct_singletons,
+    )
+
+    assignments = [
+        {"terminology_id": int(tid), "cluster_id": int(label)}
+        for tid, label in zip(common_ids, fused_labels)
+    ]
+    insert_cluster_assignments(run_id, assignments)
+
+    if multi_k_results:
+        insert_run_multi_k(run_id, multi_k_results)
+
+    if df is not None:
+        runs_dir = DATA_DIR / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        dataset_path = runs_dir / f"{run_id}.parquet"
+        df.write_parquet(dataset_path)
+        logger.info(f"Dataset saved to {dataset_path}")
+
+    logger.info(f"Run {run_id} saved — {len(assignments)} codes across {n_clusters} clusters.")
+    return run_id
+
+
+def _close_write_connection() -> None:
+    global _write_connection
+    if _write_connection is not None:
+        _write_connection.close()
+        _write_connection = None
+
+
+def _close_read_only_connection() -> None:
+    global _read_only_connection
+    if _read_only_connection is not None:
+        _read_only_connection.close()
+        _read_only_connection = None
+
+
+@contextmanager
+def _write_context() -> Iterator[duckdb.DuckDBPyConnection]:
+    """Yields the shared write connection for a write block (semantic sugar only)."""
+    yield get_connection(write=True)

@@ -1,12 +1,12 @@
 import json
 from unittest.mock import patch
 
-from vir.modeling.clustering.describe import describe_cluster
+from vir.clusters import describe_cluster
 
 
 class TestDescribeCluster:
-    @patch("vir.modeling.clustering.describe.descriptions_cache")
-    @patch("vir.modeling.clustering.describe.llm")
+    @patch("vir.clusters.descriptions_cache")
+    @patch("vir.clusters.llm")
     def test_describe(self, mock_llm, mock_cache):
         mock_cache.get.return_value = None
         mock_llm.get_model.return_value.prompt.return_value.text.return_value = json.dumps(
@@ -29,8 +29,8 @@ class TestDescribeCluster:
         assert len(mock_llm.mock_calls) == 3
         assert len(mock_cache.mock_calls) == 2
 
-    @patch("vir.modeling.clustering.describe.descriptions_cache")
-    @patch("vir.modeling.clustering.describe.llm")
+    @patch("vir.clusters.descriptions_cache")
+    @patch("vir.clusters.llm")
     def test_cache_describe_cluster(self, mock_llm, mock_cache):
         cluster_description = json.dumps(
             {
