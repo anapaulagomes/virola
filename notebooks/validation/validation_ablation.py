@@ -30,7 +30,7 @@ def _():
     )
     from vir.db import fetch_cluster_assignments, fetch_runs
     from vir.features import CITY_NAMES
-    from vir.helpers import get_n_jobs, slugify
+    from vir.helpers import slugify
     from vir.notebook_widgets import (
         distance_to_affinity,
         load_and_prepare_dataframe,
@@ -53,7 +53,6 @@ def _():
         distance_to_affinity,
         fetch_cluster_assignments,
         fetch_runs,
-        get_n_jobs,
         go,
         load_and_prepare_dataframe,
         load_dotenv,
@@ -125,13 +124,29 @@ def _(fetch_runs, mo):
 
 
 @app.cell
-def _(CITY_NAMES, Path, VALIDATION_DIR, AFFINITY_ZSCORE_PERMS, mo, runs_by_city):
+def _(
+    CITY_NAMES,
+    Path,
+    VALIDATION_DIR,
+    AFFINITY_ZSCORE_PERMS,
+    logger,
+    mo,
+    runs_by_city,
+    slugify,
+):
     if mo.app_meta().mode == "script":
         _cli_args = mo.cli_args()
         _city_arg = _cli_args.get("city", "")
+        _slug_to_canonical = {slugify(key): key for key in runs_by_city}
+        _matched_city = _slug_to_canonical.get(slugify(_city_arg)) if _city_arg else None
+        if _city_arg and _matched_city is None:
+            logger.warning(
+                f"--city {_city_arg!r} did not match any saved run; running all cities. "
+                f"Available: {sorted(runs_by_city)}"
+            )
         _selected_cities = (
-            [_city_arg]
-            if _city_arg and _city_arg in runs_by_city
+            [_matched_city]
+            if _matched_city
             else sorted(k for k in runs_by_city if k in CITY_NAMES)
         )
         n_permutations = int(_cli_args.get("permutations", AFFINITY_ZSCORE_PERMS))
@@ -269,7 +284,6 @@ def _(
     cosine_similarity,
     distance_to_affinity,
     fetch_cluster_assignments,
-    get_n_jobs,
     load_and_prepare_dataframe,
     logger,
     metrics,
