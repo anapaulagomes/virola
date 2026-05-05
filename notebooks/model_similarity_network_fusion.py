@@ -63,7 +63,12 @@ def _():
         CLUSTERING_DIR,
         get_indicative_label,
     )
-    from vir.db import insert_run_leiden, insert_run_multi_k, update_run_finished_at
+    from vir.db import (
+        insert_run_leiden,
+        insert_run_multi_k,
+        save_run,
+        update_run_finished_at,
+    )
     from vir.helpers import extract_dataset_name
     from vir.notebook_widgets import (
         create_file_dropdown,
@@ -72,7 +77,6 @@ def _():
         load_terminology_labels,
         normalize_distance,
     )
-    from vir.results import save_run
     from vir.views import ClinicalView, DemographicView, TemporalView
 
     return (

@@ -5,9 +5,7 @@ from pathlib import Path
 import numba
 from huggingface_hub import snapshot_download
 
-from vir.config import logger
-
-HF_DEFAULT_HOME = Path(os.getenv("HF_HOME", "~/.cache/huggingface"))
+from vir.config import HF_DEFAULT_HOME, logger
 
 
 def get_or_download_model(
