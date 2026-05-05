@@ -4,9 +4,8 @@ import llm
 from diskcache import Cache
 from pydantic import BaseModel
 
-from vir.config import logger
+from vir.config import logger, LLM_MODEL, CLUSTERING_DIR
 
-LLM_MODEL = "llama3.2:1b"
 PROMPT = """
 Give me a short descriptive name for a potential syndrome for a syndromic surveillance system
 composed by the following diagnoses:
@@ -15,7 +14,7 @@ DIAGNOSIS (CENTRALITY SCORE — higher means more representative of the cluster)
 
 {labels_in_human_format}
 """
-descriptions_cache = Cache("clusters-description")
+descriptions_cache = Cache(CLUSTERING_DIR / "clusters-description")
 
 
 class ClusterDescription(BaseModel):
