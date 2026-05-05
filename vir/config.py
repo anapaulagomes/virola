@@ -16,17 +16,25 @@ DATA_DIR = PROJ_ROOT / "data"
 if os.getenv("DATA_DIR"):
     DATA_DIR = Path(os.getenv("DATA_DIR"))
 RAW_DATA_DIR = DATA_DIR / "raw"
+if os.getenv("RAW_DATA_DIR"):
+    RAW_DATA_DIR = Path(os.getenv("RAW_DATA_DIR"))
+
 INTERIM_DATA_DIR = DATA_DIR / "interim"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 CLUSTERING_DIR = DATA_DIR / "clustering"
 REFERENCES_DIR = PROJ_ROOT / "references"
-
-RAW_DATA_FILE = RAW_DATA_DIR / "base_aesop_raw_extracao_01042026.parquet/*.parquet"
-
 VIEWS_CACHE_DIR = DATA_DIR / "views"
 VALIDATION_DIR = DATA_DIR / "validation"
 
-# FIXME create dirs if not exist
+RAW_DATA_FILE = RAW_DATA_DIR / "base_aesop_raw_extracao_01042026.parquet/*.parquet"
+
+dirs = DATA_DIR, RAW_DATA_DIR, INTERIM_DATA_DIR, PROCESSED_DATA_DIR, CLUSTERING_DIR, VIEWS_CACHE_DIR, VALIDATION_DIR
+for _directory in dirs:
+     _directory.mkdir(parents=True, exist_ok=True)
+
+LLM_MODEL = os.getenv("LLM_MODEL", "llama3.2:1b")
+HF_DEFAULT_HOME = Path(os.getenv("HF_HOME", "~/.cache/huggingface"))
+
 # views
 TEMPORAL_MODE = "chronological"  # "chronological" (full year_week series) | "annual" (52-point week_of_year profile)
 TEMPORAL_NORMALIZATION = "minmax"  # "minmax" (row min→0, max→1) | "zscore" (mean=0, std=1)
