@@ -924,51 +924,6 @@ def _(
 @app.cell
 def _(mo):
     mo.md(r"""
-    ## 7. LLM Cluster Descriptions (Optional)
-    This section generates descriptive names for each cluster using an LLM. It is commented out by default as it can be slow to run.
-    """)
-    return
-
-
-@app.cell
-def _(mo):
-    # This cell is commented out to prevent long run times.
-    # To run, uncomment the lines and ensure you have an Anthropic API key set up.
-
-    # from vir.modeling.clustering.describe import describe_cluster
-
-    # Get clusters from one of the views (e.g., feature_view)
-    # matrix = feature_view.get_matrix()
-    # ids = feature_view.get_terminology_ids().to_list()
-    # _, _, cluster_df = run_clustering(matrix, k_slider.value, ids)
-
-    # if not cluster_df.is_empty():
-    #     top_diagnoses = get_top_diagnoses(df, cluster_df, terminology_descriptions)
-    #     cluster_descriptions = {}
-    #     for _cluster_id in sorted(top_diagnoses["cluster"].unique().to_list()):
-    #         _cluster_terms = top_diagnoses.filter(pl.col("cluster") == _cluster_id)
-    #         _term_dict = {
-    #             row["terminology_label"]: row["count"]
-    #             for row in _cluster_terms.iter_rows(named=True)
-    #         }
-    #
-    #         # _description = describe_cluster(_term_dict)
-    #         # cluster_descriptions[_cluster_id] = _description
-    #
-    #     mo.ui.table(pl.from_dicts([
-    #        {"cluster": k, "description": v.get("short_description", "")}
-    #        for k, v in cluster_descriptions.items()
-    #     ]))
-
-    mo.md("""
-    *Uncomment the code above to generate LLM cluster descriptions.*
-    """)
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(r"""
     ## Cache
     """)
     return
