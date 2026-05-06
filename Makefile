@@ -33,32 +33,6 @@ lint:
 test:
 	uv run pytest
 
-#################################################################################
-# PROJECT RULES                                                                 #
-#################################################################################
-
-## Make dataset
-.PHONY: data
-data: requirements
-	$(PYTHON_INTERPRETER) vir/dataset.py
-
-## Process city data pipeline (cleaning, processing, feature engineering)
-## Usage: make city-pipeline CITY=<city_name> [LEVEL=records|diagnosis]
-.PHONY: city-pipeline
-city-pipeline: requirements
-ifndef CITY
-	$(error CITY is not set. Usage: make city-pipeline CITY=<city_name> [LEVEL=records|diagnosis])
-endif
-ifndef LEVEL
-	$(eval LEVEL = records)
-endif
-	$(eval CITY_CLEAN := $(shell echo '$(CITY)' | tr '[:upper:]' '[:lower:]' | tr ' ' '_'))
-	@echo "Running data pipeline for city: $(CITY) (filename: $(CITY_CLEAN)) at level: $(LEVEL)"
-	@echo "Step 1: Running data cleaning..."
-	uv run notebooks/02_data_cleaning.py -- --city $(CITY)
-	@echo "Step 2: Running feature engineering ($(LEVEL) level)..."
-	uv run $(PYTHON_INTERPRETER) -m vir.modeling.feature_engineering data/interim/cleaned_aesop_raw_dados_2017_20250223_20municipios_$(CITY_CLEAN).parquet --level=$(LEVEL)
-	@echo "Pipeline completed for city: $(CITY)"
 
 #################################################################################
 # Self Documenting Commands                                                     #
