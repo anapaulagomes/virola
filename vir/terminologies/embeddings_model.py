@@ -120,7 +120,7 @@ def _(
         out = []
         for i in range(0, len(sentences), batch_size):
             chunk = sentences[i : i + batch_size].to_list()
-            toks = tokenizer.batch_encode_plus(
+            toks = tokenizer(
                 chunk, padding="max_length", max_length=25, truncation=True, return_tensors="pt"
             )
             toks = {k: v.to(device) for k, v in toks.items()}
