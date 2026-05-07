@@ -17,7 +17,7 @@ def _():
     from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
     from vir.config import INDICATIVE_CODES_FILE
     from vir.features import IBGE_CITY_MAP
-    from vir.helpers import load_cleaned_all_cities
+    from vir.helpers import load_all_cities
     from vir.viz import TABLEAU_COLORS
 
     return (
@@ -29,7 +29,7 @@ def _():
         defaultdict,
         go,
         json,
-        load_cleaned_all_cities,
+        load_all_cities,
         mo,
         pathlib,
         pl,
@@ -52,8 +52,8 @@ def _(mo):
 
 
 @app.cell
-def _(load_cleaned_all_cities):
-    all_cities_df = load_cleaned_all_cities()
+def _(load_all_cities):
+    all_cities_df = load_all_cities(from_="cleaned")
     return (all_cities_df,)
 
 

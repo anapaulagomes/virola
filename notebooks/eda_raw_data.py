@@ -10,19 +10,20 @@ def _():
     import plotly.express as px
     import polars as pl
 
-    from vir.config import PROCESSED_DATA_DIR, RAW_DATA_FILE
+    from vir.config import RAW_DATA_FILE
     from vir.data_filters import filter_min_temporal_coverage, filter_temporal_quantiles
     from vir.features import IBGE_CITY_MAP, ORIGINAL_AGE_GROUP, POPULATION_RANGE
+    from vir.helpers import load_all_cities
     from vir.viz import plot_categories, scatter_plot_year_per_week
 
     return (
         IBGE_CITY_MAP,
         ORIGINAL_AGE_GROUP,
         POPULATION_RANGE,
-        PROCESSED_DATA_DIR,
         RAW_DATA_FILE,
         filter_min_temporal_coverage,
         filter_temporal_quantiles,
+        load_all_cities,
         mo,
         pl,
         plot_categories,
@@ -439,11 +440,8 @@ def _():
 
 
 @app.cell
-def _(PROCESSED_DATA_DIR, pl):
-    processed_df = pl.read_parquet(
-        PROCESSED_DATA_DIR
-        / "prepared_base_aesop_raw_extracao_01042026_all_cities_multiple_cities.parquet"
-    )
+def _(load_all_cities):
+    processed_df = load_all_cities(from_="prepared")
     processed_df.shape
     return (processed_df,)
 

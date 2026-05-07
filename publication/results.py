@@ -11,23 +11,21 @@ def _():
     import polars as pl
 
     from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
-    from vir.config import PROCESSED_DATA_DIR
     from vir.data_filters import filter_min_temporal_coverage
     from vir.db import fetch_cluster_profiles_for_runs, fetch_runs
     from vir.features import CITY_NAMES
-    from vir.helpers import load_cleaned_all_cities
+    from vir.helpers import load_all_cities
     from vir.viz import TABLEAU_COLORS
 
     return (
         CITY_NAMES,
         POPULATION_RANGE_TRANSLATIONS,
-        PROCESSED_DATA_DIR,
         REGION_TRANSLATIONS,
         TABLEAU_COLORS,
         fetch_cluster_profiles_for_runs,
         fetch_runs,
         filter_min_temporal_coverage,
-        load_cleaned_all_cities,
+        load_all_cities,
         mo,
         pl,
         px,
@@ -133,25 +131,21 @@ def _(mo):
 @app.cell
 def _(
     CITY_NAMES,
-    PROCESSED_DATA_DIR,
     cluster_sizes,
     filter_min_temporal_coverage,
-    load_cleaned_all_cities,
+    load_all_cities,
     pl,
 ):
     _year_min = 2022
     _year_max = 2024
     _raw_codes = (
-        load_cleaned_all_cities()
+        load_all_cities(from_="cleaned")
         .filter(pl.col("city").is_in(CITY_NAMES))
         .filter(pl.col("year").is_between(_year_min, _year_max))
         .group_by("city")
         .agg(pl.struct("code", "code_type").n_unique().alias("raw"))
     )
-    _all_prepared_df = pl.read_parquet(
-        PROCESSED_DATA_DIR
-        / "prepared_base_aesop_raw_extracao_01042026_all_cities_multiple_cities.parquet"
-    )
+    _all_prepared_df = load_all_cities(from_="prepared")
     _prepared_counts = []
     _post_temporal_counts = []
     for _city in CITY_NAMES:

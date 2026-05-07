@@ -1,12 +1,19 @@
 import os
 import unicodedata
 from pathlib import Path
+from typing import Literal
 
 import numba
 import polars as pl
 from huggingface_hub import snapshot_download
 
-from vir.config import HF_DEFAULT_HOME, INTERIM_DATA_DIR, RAW_DATA_FILE, logger
+from vir.config import (
+    HF_DEFAULT_HOME,
+    INTERIM_DATA_DIR,
+    PROCESSED_DATA_DIR,
+    RAW_DATA_FILE,
+    logger,
+)
 from vir.features import CITY_NAMES
 
 
@@ -74,24 +81,43 @@ def slugify(text: str) -> str:
     return ascii_text.lower().replace(" ", "_")
 
 
-def load_cleaned_all_cities() -> pl.DataFrame:
-    """Concatenate per-city cleaned parquet files into a single DataFrame.
+def load_all_cities(from_: Literal["cleaned", "prepared"]) -> pl.DataFrame:
+    """Concatenate per-city parquet files from a pipeline stage into one DataFrame.
 
-    Reads ``cleaned_<raw_stem>_<city_slug>.parquet`` from
-    :data:`vir.config.INTERIM_DATA_DIR` for each city in
+    Reads ``<from_>_<raw_stem>_<city_slug>.parquet`` for each city in
     :data:`vir.features.CITY_NAMES` and concatenates them vertically.
 
-    ``<raw_stem>`` is the directory name of :data:`vir.config.RAW_DATA_FILE`
-    without the ``.parquet`` suffix; ``<city_slug>`` is
-    ``city.lower().replace(' ', '_')`` (matching the convention used when the
-    cleaning notebook writes per-city outputs).
+    Stage layout:
 
-    Replaces the materialized
-    ``cleaned_<raw_stem>_all_cities.parquet`` cache file.
+    - ``from_="cleaned"`` reads from :data:`vir.config.INTERIM_DATA_DIR`
+    - ``from_="prepared"`` reads from :data:`vir.config.PROCESSED_DATA_DIR`
+
+    ``<raw_stem>`` is ``RAW_DATA_FILE.parent.stem`` (e.g.
+    ``base_aesop_raw_extracao_01042026``); ``<city_slug>`` is
+    ``city.lower().replace(' ', '_')`` — accents are preserved (so
+    ``Anápolis`` becomes ``anápolis``), matching the convention used by the
+    cleaning and preparation notebooks when they write per-city outputs.
+
+    The ``city`` column is injected when missing (the per-city ``prepared``
+    files drop it during aggregation), so the result is equivalent to the
+    materialized ``..._all_cities.parquet`` (cleaned) and
+    ``..._all_cities_multiple_cities.parquet`` (prepared) cache files.
     """
+    match from_:
+        case "cleaned":
+            directory = INTERIM_DATA_DIR
+        case "prepared":
+            directory = PROCESSED_DATA_DIR
+        case _:
+            raise ValueError(f"Unknown source {from_!r}; expected 'cleaned' or 'prepared'.")
+
     raw_stem = RAW_DATA_FILE.parent.stem
-    paths = [
-        INTERIM_DATA_DIR / f"cleaned_{raw_stem}_{city.lower().replace(' ', '_')}.parquet"
-        for city in CITY_NAMES
-    ]
-    return pl.concat(pl.read_parquet(path) for path in paths)
+    frames = []
+    for city in CITY_NAMES:
+        city_slug = city.lower().replace(" ", "_")
+        path = directory / f"{from_}_{raw_stem}_{city_slug}.parquet"
+        frame = pl.read_parquet(path)
+        if "city" not in frame.columns:
+            frame = frame.with_columns(city=pl.lit(city))
+        frames.append(frame)
+    return pl.concat(frames)
