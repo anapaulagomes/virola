@@ -11,15 +11,15 @@ def _():
     import polars as pl
 
     from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
-    from vir.config import INTERIM_DATA_DIR, PROCESSED_DATA_DIR
+    from vir.config import PROCESSED_DATA_DIR
     from vir.data_filters import filter_min_temporal_coverage
     from vir.db import fetch_cluster_profiles_for_runs, fetch_runs
     from vir.features import CITY_NAMES
+    from vir.helpers import load_cleaned_all_cities
     from vir.viz import TABLEAU_COLORS
 
     return (
         CITY_NAMES,
-        INTERIM_DATA_DIR,
         POPULATION_RANGE_TRANSLATIONS,
         PROCESSED_DATA_DIR,
         REGION_TRANSLATIONS,
@@ -27,6 +27,7 @@ def _():
         fetch_cluster_profiles_for_runs,
         fetch_runs,
         filter_min_temporal_coverage,
+        load_cleaned_all_cities,
         mo,
         pl,
         px,
@@ -132,18 +133,16 @@ def _(mo):
 @app.cell
 def _(
     CITY_NAMES,
-    INTERIM_DATA_DIR,
     PROCESSED_DATA_DIR,
     cluster_sizes,
     filter_min_temporal_coverage,
+    load_cleaned_all_cities,
     pl,
 ):
     _year_min = 2022
     _year_max = 2024
     _raw_codes = (
-        pl.read_parquet(
-            INTERIM_DATA_DIR / "cleaned_base_aesop_raw_extracao_01042026_all_cities.parquet"
-        )
+        load_cleaned_all_cities()
         .filter(pl.col("city").is_in(CITY_NAMES))
         .filter(pl.col("year").is_between(_year_min, _year_max))
         .group_by("city")
