@@ -3,9 +3,11 @@ import unicodedata
 from pathlib import Path
 
 import numba
+import polars as pl
 from huggingface_hub import snapshot_download
 
-from vir.config import HF_DEFAULT_HOME, logger
+from vir.config import HF_DEFAULT_HOME, INTERIM_DATA_DIR, RAW_DATA_FILE, logger
+from vir.features import CITY_NAMES
 
 
 def get_or_download_model(
@@ -70,3 +72,26 @@ def get_n_jobs():
 def slugify(text: str) -> str:
     ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
     return ascii_text.lower().replace(" ", "_")
+
+
+def load_cleaned_all_cities() -> pl.DataFrame:
+    """Concatenate per-city cleaned parquet files into a single DataFrame.
+
+    Reads ``cleaned_<raw_stem>_<city_slug>.parquet`` from
+    :data:`vir.config.INTERIM_DATA_DIR` for each city in
+    :data:`vir.features.CITY_NAMES` and concatenates them vertically.
+
+    ``<raw_stem>`` is the directory name of :data:`vir.config.RAW_DATA_FILE`
+    without the ``.parquet`` suffix; ``<city_slug>`` is
+    ``city.lower().replace(' ', '_')`` (matching the convention used when the
+    cleaning notebook writes per-city outputs).
+
+    Replaces the materialized
+    ``cleaned_<raw_stem>_all_cities.parquet`` cache file.
+    """
+    raw_stem = RAW_DATA_FILE.parent.stem
+    paths = [
+        INTERIM_DATA_DIR / f"cleaned_{raw_stem}_{city.lower().replace(' ', '_')}.parquet"
+        for city in CITY_NAMES
+    ]
+    return pl.concat(pl.read_parquet(path) for path in paths)

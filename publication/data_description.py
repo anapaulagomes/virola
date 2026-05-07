@@ -15,20 +15,21 @@ def _():
     import polars as pl
 
     from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
-    from vir.config import INDICATIVE_CODES_FILE, INTERIM_DATA_DIR
+    from vir.config import INDICATIVE_CODES_FILE
     from vir.features import IBGE_CITY_MAP
+    from vir.helpers import load_cleaned_all_cities
     from vir.viz import TABLEAU_COLORS
 
     return (
         IBGE_CITY_MAP,
         INDICATIVE_CODES_FILE,
-        INTERIM_DATA_DIR,
         POPULATION_RANGE_TRANSLATIONS,
         REGION_TRANSLATIONS,
         TABLEAU_COLORS,
         defaultdict,
         go,
         json,
+        load_cleaned_all_cities,
         mo,
         pathlib,
         pl,
@@ -51,10 +52,8 @@ def _(mo):
 
 
 @app.cell
-def _(INTERIM_DATA_DIR, pl):
-    all_cities_df = pl.read_parquet(
-        INTERIM_DATA_DIR / "cleaned_base_aesop_raw_extracao_01042026_all_cities.parquet"
-    )
+def _(load_cleaned_all_cities):
+    all_cities_df = load_cleaned_all_cities()
     return (all_cities_df,)
 
 
