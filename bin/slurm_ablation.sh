@@ -1,10 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=virola_ablation
+#SBATCH --partition=main
 #SBATCH --array=0-9
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=YOUR_EMAIL@example.com
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
+#SBATCH --time=24:00:00
 #SBATCH --output=logs/ablation_%A_%a.out
 #SBATCH --error=logs/ablation_%A_%a.err
 
@@ -46,7 +48,7 @@ echo "Node:    ${SLURMD_NODENAME:-local}"
 echo "Started: $(date)"
 echo "========================================================"
 
-if uv run --active marimo run notebooks/validation/validation_ablation.py -- \
+if uv run --active vir validate ablation \
     --city "$CITY" \
     --permutations "$PERMUTATIONS" \
     --output "$OUTPUT_DIR" \
