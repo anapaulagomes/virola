@@ -34,6 +34,13 @@ echo "========================================================"
 
 cd "$PROJ_ROOT"
 
+if [[ -f "$PROJ_ROOT/.env" ]]; then
+    set -a
+    source "$PROJ_ROOT/.env"
+    set +a
+fi
+source "${UV_PROJECT_ENVIRONMENT:-$PROJ_ROOT/.venv}/bin/activate"
+
 FAILED=()
 
 while IFS= read -r city || [[ -n "$city" ]]; do

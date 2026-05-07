@@ -29,6 +29,13 @@ mkdir -p "$PROJ_ROOT/data/validation/ablation"
 
 cd "$PROJ_ROOT"
 
+if [[ -f "$PROJ_ROOT/.env" ]]; then
+    set -a
+    source "$PROJ_ROOT/.env"
+    set +a
+fi
+source "${UV_PROJECT_ENVIRONMENT:-$PROJ_ROOT/.venv}/bin/activate"
+
 mapfile -t CITIES < "$CITIES_FILE"
 
 if [[ "$SLURM_ARRAY_TASK_ID" -ge "${#CITIES[@]}" ]]; then
