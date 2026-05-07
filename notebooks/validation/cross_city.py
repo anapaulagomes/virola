@@ -200,8 +200,12 @@ def _(pl):
         size_b = b.group_by("cluster_b").agg(pl.len().alias("size_b"))
 
         result = (
-            intersection.join(size_a, on="cluster_a")
-            .join(size_b, on="cluster_b")
+            size_a.join(intersection, on="cluster_a", how="left")
+            .join(size_b, on="cluster_b", how="left")
+            .with_columns(
+                pl.col("intersection").fill_null(0),
+                pl.col("size_b").fill_null(0),
+            )
             .with_columns(
                 (
                     pl.col("intersection")
