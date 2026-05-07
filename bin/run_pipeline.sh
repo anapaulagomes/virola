@@ -10,7 +10,15 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJ_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CITIES_FILE="$SCRIPT_DIR/cities.txt"
+
+if [[ -f "$PROJ_ROOT/.env" ]]; then
+    set -a
+    source "$PROJ_ROOT/.env"
+    set +a
+fi
+source "${UV_PROJECT_ENVIRONMENT:-$PROJ_ROOT/.venv}/bin/activate"
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <city|all> [extra flags...]" >&2
