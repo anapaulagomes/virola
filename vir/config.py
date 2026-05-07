@@ -28,9 +28,17 @@ VALIDATION_DIR = DATA_DIR / "validation"
 
 RAW_DATA_FILE = RAW_DATA_DIR / "base_aesop_raw_extracao_01042026.parquet/*.parquet"
 
-dirs = DATA_DIR, RAW_DATA_DIR, INTERIM_DATA_DIR, PROCESSED_DATA_DIR, CLUSTERING_DIR, VIEWS_CACHE_DIR, VALIDATION_DIR
+dirs = (
+    DATA_DIR,
+    RAW_DATA_DIR,
+    INTERIM_DATA_DIR,
+    PROCESSED_DATA_DIR,
+    CLUSTERING_DIR,
+    VIEWS_CACHE_DIR,
+    VALIDATION_DIR,
+)
 for _directory in dirs:
-     _directory.mkdir(parents=True, exist_ok=True)
+    _directory.mkdir(parents=True, exist_ok=True)
 
 LLM_MODEL = os.getenv("LLM_MODEL", "llama3.2:1b")
 HF_DEFAULT_HOME = Path(os.getenv("HF_HOME", "~/.cache/huggingface"))
@@ -40,14 +48,6 @@ TEMPORAL_MODE = "chronological"  # "chronological" (full year_week series) | "an
 TEMPORAL_NORMALIZATION = "minmax"  # "minmax" (row min→0, max→1) | "zscore" (mean=0, std=1)
 DEFAULT_MODEL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
 MODEL_DIMENSIONS = 768
-
-# Memory recommendations by RAM:
-# 8GB RAM: CHUNK_SIZE = 50_000
-# 16GB RAM: CHUNK_SIZE = 100_000
-# 32GB RAM: CHUNK_SIZE = 200_000
-# 64GB RAM: CHUNK_SIZE = 500_000
-CHUNK_SIZE = 100_000  # Records per chunk - adjust based on available RAM
-
 
 # filtering
 INDICATIVE_CODES_FILE = REFERENCES_DIR / "indicative_codes_yes_no__2022_2025__90perc.csv"
