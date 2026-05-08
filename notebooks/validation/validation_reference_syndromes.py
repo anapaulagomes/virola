@@ -590,27 +590,25 @@ def _(
         if len(hits) == 0:
             return None
         _coverage = len(hits) / len(anchor)
-        _cluster_counts = (
-            hits.group_by("cluster_id")
-            .agg(pl.len().alias("reference_codes"))
-            .sort("reference_codes", descending=True)
-        )
-        _dominant_cluster_id = int(_cluster_counts["cluster_id"][0])
-        _n_in_dominant = int(_cluster_counts["reference_codes"][0])
-        _n_anchor_found = len(hits)
-        _n_cluster_size = int(
-            all_assignments.filter(pl.col("cluster_id") == _dominant_cluster_id).height
-        )
         _cluster_sizes = all_assignments.group_by("cluster_id").agg(pl.len().alias("cluster_size"))
-        _frag = (
+        _cluster_counts = (
             hits.group_by("cluster_id")
             .agg(pl.len().alias("reference_codes"))
             .join(_cluster_sizes, on="cluster_id")
             .with_columns(
-                (pl.col("reference_codes") / pl.col("cluster_size") >= precision_threshold).alias(
-                    "coherent"
-                )
+                (pl.col("reference_codes") / pl.col("cluster_size")).alias("precision"),
             )
+            .sort(
+                ["reference_codes", "precision", "cluster_id"],
+                descending=[True, True, False],
+            )
+        )
+        _dominant_cluster_id = int(_cluster_counts["cluster_id"][0])
+        _n_in_dominant = int(_cluster_counts["reference_codes"][0])
+        _n_cluster_size = int(_cluster_counts["cluster_size"][0])
+        _n_anchor_found = len(hits)
+        _frag = _cluster_counts.with_columns(
+            (pl.col("precision") >= precision_threshold).alias("coherent"),
         )
         _coherent_clusters = _frag.filter(pl.col("coherent"))
         _n_coherent_clusters = _coherent_clusters.height
