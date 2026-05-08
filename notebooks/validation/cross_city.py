@@ -904,9 +904,19 @@ def _(all_assignments, jaccard_df, k_slider, mo, pl, tau):
 
 
 @app.cell
-def _(component_membership, mo, mutual_edges, pl, px, selected_cities, tau):
+def _(
+    component_membership,
+    mo,
+    mutual_edges,
+    pl,
+    px,
+    selected_cities,
+    tau,
+    valid_component_ids,
+):
     _full_component_ids = (
-        component_membership.group_by("component_id")
+        component_membership.filter(pl.col("component_id").is_in(valid_component_ids))
+        .group_by("component_id")
         .agg(pl.col("city").n_unique().alias("n_cities"))
         .filter(pl.col("n_cities") == len(selected_cities))
         .sort("component_id")["component_id"]
@@ -1166,6 +1176,18 @@ def _(component_codes, pl):
 
 
 @app.cell
+def _(component_code_presence, pl):
+    valid_component_ids = (
+        component_code_presence.filter(pl.col("is_core"))
+        .select("component_id")
+        .unique()
+        .sort("component_id")["component_id"]
+        .to_list()
+    )
+    return (valid_component_ids,)
+
+
+@app.cell
 def _(component_code_presence, component_codes, pl):
     component_per_city = (
         component_codes.join(
@@ -1223,11 +1245,6 @@ def _(
         if len(_cities_in_component) < k_slider.value:
             continue
 
-        _rep_city = component_per_city.filter(pl.col("component_id") == _component_id).sort(
-            "city_volume", descending=True
-        )["city"][0]
-        _rep_cluster = int(_member_df.filter(pl.col("city") == _rep_city)["cluster_id"][0])
-
         _core_descriptions = (
             component_code_presence.filter(
                 (pl.col("component_id") == _component_id) & pl.col("is_core")
@@ -1235,6 +1252,14 @@ def _(
             .sort("total_records_all_cities", descending=True)["description"]
             .to_list()
         )
+        if not _core_descriptions:
+            continue
+
+        _rep_city = component_per_city.filter(pl.col("component_id") == _component_id).sort(
+            "city_volume", descending=True
+        )["city"][0]
+        _rep_cluster = int(_member_df.filter(pl.col("city") == _rep_city)["cluster_id"][0])
+
         _union_descriptions = (
             component_code_presence.filter(pl.col("component_id") == _component_id)
             .sort(
@@ -1252,9 +1277,7 @@ def _(
                 "cities": ", ".join(_cities_in_component),
                 "rep_city": _rep_city,
                 "rep_cluster": _rep_cluster,
-                "core_codes": " | ".join(_core_descriptions)
-                if _core_descriptions
-                else "(empty core — no code present in every city)",
+                "core_codes": " | ".join(_core_descriptions),
                 "all_codes": " | ".join(_union_descriptions),
             }
         )
@@ -1283,11 +1306,16 @@ def _(
             mo.md(
                 "## Syndrome Graph — Connected Components\n\n"
                 "Each row is a candidate syndrome — clusters that mutually "
-                "recognise each other across cities. Read `core_codes` to "
-                "judge whether the cluster names a coherent syndrome; use "
-                "`n_codes_median` and `code_volume_median` as red flags "
-                "(very small / very rare clusters are unstable). The "
-                "drill-down tabs below expose per-city and per-code detail."
+                "recognise each other across cities **and share at least one "
+                "code present in every member city** (non-empty core). "
+                "Components with empty cores are dropped: connected-component "
+                "linkage is transitive (A↔B↔C can join even if no code spans "
+                "A∩B∩C), and a syndrome without a shared anchor code is not a "
+                "coherent candidate. Read `core_codes` to judge whether the "
+                "cluster names a coherent syndrome; use `n_codes_median` and "
+                "`code_volume_median` as red flags (very small / very rare "
+                "clusters are unstable). The drill-down tabs below expose "
+                "per-city and per-code detail."
             ),
             mo.hstack(
                 [
@@ -1443,9 +1471,11 @@ def _(
     pl,
     selected_cities,
     tau,
+    valid_component_ids,
 ):
     _n_full_span_components = (
-        component_membership.group_by("component_id")
+        component_membership.filter(pl.col("component_id").is_in(valid_component_ids))
+        .group_by("component_id")
         .agg(pl.col("city").n_unique().alias("n_cities"))
         .filter(pl.col("n_cities") == len(selected_cities))
         .height
@@ -1473,7 +1503,7 @@ def _(
         | Total clusters | {n_total} |
         | Consistent (K = {len(selected_cities) - 1}, τ = {tau:.3f}) | {n_consistent} |
         | % consistent | {_paper_numbers["pct_consistent"]}% |
-        | Components spanning all {len(selected_cities)} cities | {_n_full_span_components} |
+        | Components spanning all {len(selected_cities)} cities (non-empty core) | {_n_full_span_components} |
         """),
         kind="success",
     )
