@@ -419,6 +419,7 @@ def _(jaccard_df, mo, px, tau):
 
 @app.cell
 def _(
+    DATA_DIR,
     POPULATION_RANGE_TRANSLATIONS,
     REGION_TRANSLATIONS,
     TABLEAU_COLORS,
@@ -452,7 +453,7 @@ def _(
         color_discrete_map=_region_colors,
         facet_row="population_range",
         facet_col="region",
-        facet_row_spacing=0.1,
+        facet_row_spacing=0.2,
         category_orders={
             "region": _region_order,
             "population_range": _population_order,
@@ -472,8 +473,36 @@ def _(
         paper_bgcolor="white",
         plot_bgcolor="white",
         height=500,
+        margin=dict(b=110),
     )
-    _fig_faceted.write_image("jaccard_distribution.pdf")
+    _fig_faceted.for_each_xaxis(lambda axis: axis.update(title_text=""))
+
+    _cities_per_facet: dict[tuple[str, str], list[str]] = {}
+    for _city_row in _city_metadata.iter_rows(named=True):
+        _facet_key = (_city_row["region"], _city_row["population_range"])
+        _cities_per_facet.setdefault(_facet_key, []).append(_city_row["city"])
+
+    for _population_index, _population in enumerate(_population_order, start=1):
+        for _region_index, _region in enumerate(_region_order, start=1):
+            _cities_in_facet = _cities_per_facet.get((_region, _population))
+            if not _cities_in_facet:
+                continue
+            _fig_faceted.add_annotation(
+                row=_population_index,
+                col=_region_index,
+                xref="x domain",
+                yref="y domain",
+                x=0.5,
+                y=-0.1,
+                text="<br>".join(sorted(_cities_in_facet)),
+                showarrow=False,
+                align="center",
+                xanchor="center",
+                yanchor="top",
+                font=dict(size=12, color="black"),
+            )
+
+    _fig_faceted.write_image(DATA_DIR / "paper" / "jaccard_distribution.pdf")
     _fig_faceted
     return
 
