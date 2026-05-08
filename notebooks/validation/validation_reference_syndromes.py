@@ -22,13 +22,14 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import REFERENCES_DIR
+    from vir.config import DATA_DIR, REFERENCES_DIR
     from vir.db import fetch_cluster_assignments, fetch_runs
     from vir.features import CITY_NAMES, CODE_TYPES_MAPPING
 
     return (
         CITY_NAMES,
         CODE_TYPES_MAPPING,
+        DATA_DIR,
         REFERENCES_DIR,
         fetch_cluster_assignments,
         fetch_runs,
@@ -566,6 +567,7 @@ def _(CITY_NAMES, fetch_runs, mo, pl):
 
 @app.cell
 def _(
+    DATA_DIR,
     anchor_arbovirus,
     anchor_uri,
     cross_city_run_select,
@@ -648,13 +650,13 @@ def _(
             _rows.append({"city": _city_name, "syndrome": _syndrome_name, **_metrics})
 
     validation_summary = pl.DataFrame(_rows)
-    validation_summary.write_csv("validation_summary.csv")
+    validation_summary.write_csv(DATA_DIR / "paper" / "validation_summary.csv")
     validation_summary
     return (validation_summary,)
 
 
 @app.cell
-def _(mo, pl, validation_summary):
+def _(DATA_DIR, mo, pl, validation_summary):
     mo.stop(
         validation_summary.is_empty(),
         mo.callout(mo.md("No validation data to pivot."), kind="warn"),
@@ -685,7 +687,7 @@ def _(mo, pl, validation_summary):
         .with_columns([pl.col(_column).cast(pl.Int64) for _column in _coherent_count_columns])
         .sort("city")
     )
-    _pivot.write_csv("validation_summary_pivot.csv")
+    _pivot.write_csv(DATA_DIR / "paper" / "validation_summary_pivot.csv")
     mo.ui.table(_pivot, selection=None)
     return
 
@@ -697,12 +699,14 @@ def _(mo):
 
     For each reference syndrome, a wide table where:
 
-    - Row 1 is the **reference** definition itself (anchor codes marked `X`).
-    - Following rows are the coherent clusters (cluster precision ≥ threshold)
-      across the selected city runs, dominant cluster first within each city.
-    - Columns are the reference codes in their canonical order, then the other
-      codes that appear in any of the displayed clusters (sorted).
-    - Cell value `X` means the code is present in the cluster.
+    - Rows are the reference codes in their canonical order, followed by the
+      other codes that appear in any of the displayed clusters (sorted).
+    - Column 1 is `code`. Column 2 (`REFERENCE`) marks the reference
+      definition itself (`X` for anchor codes).
+    - Following columns are the coherent clusters (cluster precision ≥
+      threshold) across the selected city runs, dominant cluster first within
+      each city. Column names are `<city> / cluster <id>`.
+    - Cell value `X` means the code is present in that cluster.
 
     One CSV per syndrome is written next to the notebook:
     `arbovirus_clusters_vs_reference.csv` and `uri_clusters_vs_reference.csv`.
@@ -712,6 +716,7 @@ def _(mo):
 
 @app.cell
 def _(
+    DATA_DIR,
     anchor_arbovirus,
     anchor_uri,
     cross_city_run_select,
@@ -738,7 +743,7 @@ def _(
                 seen_anchor_codes.add(code)
                 anchor_codes_ordered.append(code)
 
-        cluster_rows: list[dict] = []
+        cluster_columns: list[tuple[str, set[str]]] = []
         present_other_codes: set[str] = set()
 
         for run_id, city_name in run_id_to_city.items():
@@ -765,38 +770,24 @@ def _(
                     run_assignments.filter(pl.col("cluster_id") == cluster_id)["code"].to_list()
                 )
                 present_other_codes.update(cluster_codes_present - seen_anchor_codes)
-                cluster_rows.append(
-                    {
-                        "city": city_name,
-                        "cluster_id": str(cluster_id),
-                        "_codes_present": cluster_codes_present,
-                    }
-                )
+                column_name = f"{city_name} / cluster {cluster_id}"
+                cluster_columns.append((column_name, cluster_codes_present))
 
         other_codes_ordered = sorted(present_other_codes)
-        all_code_columns = anchor_codes_ordered + other_codes_ordered
+        all_code_rows = anchor_codes_ordered + other_codes_ordered
 
-        rows: list[dict] = [
-            {
-                "city": "REFERENCE",
-                "cluster_id": "REFERENCE",
-                **{code: "X" for code in anchor_codes_ordered},
-                **{code: "" for code in other_codes_ordered},
+        rows: list[dict] = []
+        for code in all_code_rows:
+            row = {
+                "code": code,
+                "REFERENCE": "X" if code in seen_anchor_codes else "",
             }
-        ]
-        for cluster_row in cluster_rows:
-            rows.append(
-                {
-                    "city": cluster_row["city"],
-                    "cluster_id": cluster_row["cluster_id"],
-                    **{
-                        code: ("X" if code in cluster_row["_codes_present"] else "")
-                        for code in all_code_columns
-                    },
-                }
-            )
+            for column_name, codes_present in cluster_columns:
+                row[column_name] = "X" if code in codes_present else ""
+            rows.append(row)
 
-        return pl.DataFrame(rows).select(["city", "cluster_id", *all_code_columns])
+        ordered_columns = ["code", "REFERENCE", *(name for name, _ in cluster_columns)]
+        return pl.DataFrame(rows).select(ordered_columns)
 
     _run_id_to_city = {
         row["run_id"]: row["city"]
@@ -814,8 +805,10 @@ def _(
     )
     _uri_presence_matrix = _build_presence_matrix(anchor_uri, _run_id_to_city, _threshold_fraction)
 
-    _arbovirus_presence_matrix.write_csv("arbovirus_clusters_vs_reference.csv")
-    _uri_presence_matrix.write_csv("uri_clusters_vs_reference.csv")
+    _arbovirus_presence_matrix.write_csv(
+        DATA_DIR / "paper" / "arbovirus_clusters_vs_reference.csv"
+    )
+    _uri_presence_matrix.write_csv(DATA_DIR / "paper" / "uri_clusters_vs_reference.csv")
 
     mo.vstack(
         [
