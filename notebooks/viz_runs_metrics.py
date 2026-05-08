@@ -491,6 +491,16 @@ def _(leiden_combined):
 @app.cell
 def _(leiden_combined, pl):
     leiden_combined.filter(pl.col("resolution").eq(0.5000000000000000000)).with_columns(
+        pl.col("n_communities").min().alias("min"),
+        pl.col("n_communities").median().alias("median"),
+        pl.col("n_communities").max().alias("max"),
+    )
+    return
+
+
+@app.cell
+def _(leiden_combined, pl):
+    leiden_combined.filter(pl.col("resolution").eq(0.5000000000000000000)).with_columns(
         pl.col("n_communities").median()
     )
     return
