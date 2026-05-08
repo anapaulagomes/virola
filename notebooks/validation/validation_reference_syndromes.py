@@ -78,7 +78,7 @@ def _(CODE_TYPES_MAPPING, REFERENCES_DIR, pl):
                 pl.col("code").str.strip_chars(),
             )
             .select("code", "code_type")
-            .unique()
+            .unique(maintain_order=True)
         )
 
     anchor_arbovirus = _load_anchor("code_list_arbovirus_apr2024.csv")
@@ -687,6 +687,144 @@ def _(mo, pl, validation_summary):
     )
     _pivot.write_csv("validation_summary_pivot.csv")
     mo.ui.table(_pivot, selection=None)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Cluster vs reference codes — presence matrix
+
+    For each reference syndrome, a wide table where:
+
+    - Row 1 is the **reference** definition itself (anchor codes marked `X`).
+    - Following rows are the coherent clusters (cluster precision ≥ threshold)
+      across the selected city runs, dominant cluster first within each city.
+    - Columns are the reference codes in their canonical order, then the other
+      codes that appear in any of the displayed clusters (sorted).
+    - Cell value `X` means the code is present in the cluster.
+
+    One CSV per syndrome is written next to the notebook:
+    `arbovirus_clusters_vs_reference.csv` and `uri_clusters_vs_reference.csv`.
+    """)
+    return
+
+
+@app.cell
+def _(
+    anchor_arbovirus,
+    anchor_uri,
+    cross_city_run_select,
+    fetch_cluster_assignments,
+    fetch_runs,
+    mo,
+    pl,
+    precision_threshold,
+):
+    mo.stop(
+        not cross_city_run_select.value,
+        mo.callout(mo.md("Select at least one run."), kind="warn"),
+    )
+
+    def _build_presence_matrix(
+        anchor: pl.DataFrame,
+        run_id_to_city: dict[int, str],
+        threshold_fraction: float,
+    ) -> pl.DataFrame:
+        anchor_codes_ordered: list[str] = []
+        seen_anchor_codes: set[str] = set()
+        for code in anchor["code"].to_list():
+            if code not in seen_anchor_codes:
+                seen_anchor_codes.add(code)
+                anchor_codes_ordered.append(code)
+
+        cluster_rows: list[dict] = []
+        present_other_codes: set[str] = set()
+
+        for run_id, city_name in run_id_to_city.items():
+            run_assignments = fetch_cluster_assignments(run_id).select(
+                ["code", "code_type", "cluster_id"]
+            )
+            if run_assignments.is_empty():
+                continue
+            cluster_sizes = run_assignments.group_by("cluster_id").agg(
+                pl.len().alias("cluster_size")
+            )
+            hits = anchor.join(run_assignments, on=["code", "code_type"], how="inner")
+            if hits.is_empty():
+                continue
+            coherent = (
+                hits.group_by("cluster_id")
+                .agg(pl.len().alias("reference_codes"))
+                .join(cluster_sizes, on="cluster_id")
+                .filter(pl.col("reference_codes") / pl.col("cluster_size") >= threshold_fraction)
+                .sort("reference_codes", descending=True)
+            )
+            for cluster_id in coherent["cluster_id"].to_list():
+                cluster_codes_present = set(
+                    run_assignments.filter(pl.col("cluster_id") == cluster_id)["code"].to_list()
+                )
+                present_other_codes.update(cluster_codes_present - seen_anchor_codes)
+                cluster_rows.append(
+                    {
+                        "city": city_name,
+                        "cluster_id": str(cluster_id),
+                        "_codes_present": cluster_codes_present,
+                    }
+                )
+
+        other_codes_ordered = sorted(present_other_codes)
+        all_code_columns = anchor_codes_ordered + other_codes_ordered
+
+        rows: list[dict] = [
+            {
+                "city": "REFERENCE",
+                "cluster_id": "REFERENCE",
+                **{code: "X" for code in anchor_codes_ordered},
+                **{code: "" for code in other_codes_ordered},
+            }
+        ]
+        for cluster_row in cluster_rows:
+            rows.append(
+                {
+                    "city": cluster_row["city"],
+                    "cluster_id": cluster_row["cluster_id"],
+                    **{
+                        code: ("X" if code in cluster_row["_codes_present"] else "")
+                        for code in all_code_columns
+                    },
+                }
+            )
+
+        return pl.DataFrame(rows).select(["city", "cluster_id", *all_code_columns])
+
+    _run_id_to_city = {
+        row["run_id"]: row["city"]
+        for row in fetch_runs()
+        .filter(pl.col("run_id").is_in(cross_city_run_select.value))
+        .sort("city")
+        .select(["run_id", "city"])
+        .iter_rows(named=True)
+    }
+
+    _threshold_fraction = precision_threshold.value / 100
+
+    _arbovirus_presence_matrix = _build_presence_matrix(
+        anchor_arbovirus, _run_id_to_city, _threshold_fraction
+    )
+    _uri_presence_matrix = _build_presence_matrix(anchor_uri, _run_id_to_city, _threshold_fraction)
+
+    _arbovirus_presence_matrix.write_csv("arbovirus_clusters_vs_reference.csv")
+    _uri_presence_matrix.write_csv("uri_clusters_vs_reference.csv")
+
+    mo.vstack(
+        [
+            mo.md("### Arboviroses — cluster presence vs reference codes"),
+            mo.ui.table(_arbovirus_presence_matrix, selection=None),
+            mo.md("### URI / Respiratory — cluster presence vs reference codes"),
+            mo.ui.table(_uri_presence_matrix, selection=None),
+        ]
+    )
     return
 
 
