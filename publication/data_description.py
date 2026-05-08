@@ -52,8 +52,12 @@ def _(mo):
 
 
 @app.cell
-def _(load_all_cities):
-    all_cities_df = load_all_cities(from_="cleaned")
+def _(load_all_cities, pl):
+    year_min = 2022
+    year_max = 2024
+    all_cities_df = load_all_cities(from_="cleaned").filter(
+        pl.col("year").is_between(year_min, year_max)
+    )
     return (all_cities_df,)
 
 
