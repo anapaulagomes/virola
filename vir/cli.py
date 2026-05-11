@@ -57,6 +57,7 @@ app.add_typer(validate_app, name="validate")
 
 SOURCE_MODULE = PROJ_ROOT / "vir"
 CLEANING_MODULE = SOURCE_MODULE / "cleaning"
+DATASUS_NOTEBOOKS = SOURCE_MODULE / "adapters" / "datasus" / "notebooks"
 
 
 def run_marimo_notebook(notebook_path: Path, args: list[str]) -> int:
@@ -128,7 +129,7 @@ def prepare_clean(
     ),
 ):
     """Clean and standardize raw data."""
-    notebook = CLEANING_MODULE / "data_cleaning.py"
+    notebook = DATASUS_NOTEBOOKS / "data_cleaning.py"
     args = []
     if city:
         args.extend(["--city", city])
@@ -202,7 +203,7 @@ def view_demographic(
     ),
 ):
     """Run demographic view analysis."""
-    notebook = PROJ_ROOT / "notebooks/view_demographic.py"
+    notebook = DATASUS_NOTEBOOKS / "view_demographic.py"
     args = [
         "--dataset",
         dataset,
@@ -354,7 +355,7 @@ def pipeline_run(
     # Step 1: Clean data
     if not skip_clean:
         typer.secho("Step 1/6: Cleaning data...", fg=typer.colors.BLUE, bold=True)
-        notebook = CLEANING_MODULE / "data_cleaning.py"
+        notebook = DATASUS_NOTEBOOKS / "data_cleaning.py"
         args = ["--city", city]
         exit_code = run_marimo_notebook(notebook, args)
         if exit_code != 0:
@@ -408,7 +409,7 @@ def pipeline_run(
 
     # Step 4: Demographic view
     typer.secho("Step 4/6: Running demographic view analysis...", fg=typer.colors.BLUE, bold=True)
-    notebook = PROJ_ROOT / "notebooks/view_demographic.py"
+    notebook = DATASUS_NOTEBOOKS / "view_demographic.py"
     args = [
         "--dataset",
         dataset,
@@ -659,7 +660,7 @@ def validate_ablation(
     ),
 ):
     """Run ablation study across selected cities."""
-    notebook = PROJ_ROOT / "notebooks/validation/validation_ablation.py"
+    notebook = DATASUS_NOTEBOOKS / "validation" / "validation_ablation.py"
     args = []
     if city:
         args.extend(["--city", city])
