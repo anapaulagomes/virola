@@ -13,22 +13,6 @@ TABLEAU_COLORS = [
     "#9C755F",  # Brown
     "#BAB0AC",  # Gray
 ]
-CODE_TYPE_COLOR = {
-    "CID10": px.colors.qualitative.Plotly[0],
-    "CIAP2": px.colors.qualitative.Plotly[1],
-    "AB": px.colors.qualitative.Plotly[2],
-}
-SEX_COLOR = {
-    "Masculino": TABLEAU_COLORS[0],  # Blue
-    "Feminino": TABLEAU_COLORS[2],  # Red
-    "Sem Informação": TABLEAU_COLORS[5],  # Yellow
-}
-AGE_GROUP_COLOR = {
-    "< 1 ano": TABLEAU_COLORS[4],  # Green
-    "1 a 15 anos": TABLEAU_COLORS[3],  # Cyan
-    "16 a 59 anos": TABLEAU_COLORS[1],  # Orange
-    "Maior que 60 anos": TABLEAU_COLORS[6],  # Purple
-}
 
 
 def plot_null_vs_not_null(df, verbose=False):
