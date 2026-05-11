@@ -13,7 +13,7 @@ def _():
 
 @app.cell
 def _():
-    from vir.config import INDICATIVE_CODES_FILE
+    from vir.adapters.datasus import INDICATIVE_CODES_FILE
     from vir.data_filters import filter_most_representative_rows
     from vir.notebook_widgets import create_file_dropdown, load_terminology_labels
 

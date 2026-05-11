@@ -2,7 +2,7 @@ import logging
 
 import polars as pl
 
-from vir.config import PROCESSED_DATA_DIR
+from vir.config import PROCESSED_DATA_DIR, REFERENCES_DIR
 
 logger = logging.getLogger(__file__)
 
@@ -18,7 +18,7 @@ def create_cid10_df():
         "ST_ACAO",
     ]
     cid10 = pl.read_csv(
-        "references/RepositorioTerminologia_202506/tb_cid.csv",
+        REFERENCES_DIR / "RepositorioTerminologia_202506" / "tb_cid.csv",
         encoding="iso-8859-1",
         separator=";",
         has_header=False,
@@ -42,7 +42,7 @@ def create_cid10_df():
 
 
 def create_ciap2_df():
-    ciap2_cid10 = pl.read_csv("references/ciap2-cid10.csv")
+    ciap2_cid10 = pl.read_csv(REFERENCES_DIR / "ciap2-cid10.csv")
     ciap2_cid10 = ciap2_cid10.rename(
         {
             "Código da CIAP2": "code",
@@ -60,7 +60,7 @@ def create_ciap2_df():
 
 
 def create_ab_df():
-    abp_ciap2 = pl.read_csv("references/abp_ciap2.csv")
+    abp_ciap2 = pl.read_csv(REFERENCES_DIR / "abp_ciap2.csv")
     abp_ciap2 = abp_ciap2.rename(
         {
             "CIAP2 relacionada": "related_ciap2",
