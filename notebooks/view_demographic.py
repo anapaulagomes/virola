@@ -48,7 +48,7 @@ def _():
 
 @app.cell
 def _():
-    from vir.viz import AGE_GROUP_COLOR, SEX_COLOR
+    from vir.adapters.datasus.viz import AGE_GROUP_COLOR, SEX_COLOR
 
     return AGE_GROUP_COLOR, SEX_COLOR
 

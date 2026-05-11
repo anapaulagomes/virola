@@ -15,9 +15,9 @@ def _():
     import polars as pl
 
     from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
+    from vir.adapters.datasus.helpers import load_all_cities
     from vir.config import INDICATIVE_CODES_FILE
     from vir.features import IBGE_CITY_MAP
-    from vir.helpers import load_all_cities
     from vir.viz import TABLEAU_COLORS
 
     return (
