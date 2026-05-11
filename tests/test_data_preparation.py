@@ -56,6 +56,34 @@ class TestPrepareDataframe:
         for column in ["unique_id", "state", "city", "region", "population_range"]:
             assert column not in result.columns
 
+    def test_adapter_specific_extra_columns_are_excluded(self, terminology_labels):
+        """Extras carried in the interim (e.g. AKTIN's triage/vitals) must not leak through."""
+        interim = _build_interim_dataframe(terminology_labels).with_columns(
+            pl.lit(3).alias("triage"),
+            pl.lit("home").alias("verbleib"),
+            pl.lit(98.5).alias("saettigung"),
+        )
+        result = prepare_dataframe(interim, terminology_labels, skip_patterns=[])
+
+        canonical = {
+            "year",
+            "week",
+            "sex",
+            "age_group",
+            "code_type",
+            "code",
+            "quantity",
+            "terminology_id",
+            "terminology_label",
+        }
+        assert set(result.columns) == canonical
+
+    def test_missing_canonical_column_raises(self, terminology_labels):
+        """Interim missing a canonical column (e.g. quantity) must fail explicitly."""
+        interim = _build_interim_dataframe(terminology_labels).drop("quantity")
+        with pytest.raises(pl.exceptions.ColumnNotFoundError):
+            prepare_dataframe(interim, terminology_labels, skip_patterns=[])
+
     def test_output_has_expected_columns(self, terminology_labels):
         interim = _build_interim_dataframe(terminology_labels)
         result = prepare_dataframe(interim, terminology_labels, skip_patterns=[])
