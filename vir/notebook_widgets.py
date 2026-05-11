@@ -7,9 +7,9 @@ import numpy as np
 import polars as pl
 from snf import compute as snf_compute
 
+from vir.adapters.datasus import INDICATIVE_CODES_FILE
 from vir.config import (
     DEFAULT_MODEL,
-    INDICATIVE_CODES_FILE,
     INDICATIVE_ENABLED,
     PROCESSED_DATA_DIR,
 )

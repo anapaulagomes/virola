@@ -1,6 +1,9 @@
 from vir.adapters.base import Adapter
+from vir.adapters.datasus import DatasusAdapter
 
-ADAPTERS: dict[str, Adapter] = {}
+ADAPTERS: dict[str, Adapter] = {
+    "datasus": DatasusAdapter(),
+}
 
 
 def known_strata() -> set[str]:

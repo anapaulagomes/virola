@@ -50,7 +50,6 @@ DEFAULT_MODEL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
 MODEL_DIMENSIONS = 768
 
 # filtering
-INDICATIVE_CODES_FILE = REFERENCES_DIR / "indicative_codes_yes_no__2022_2025__90perc.csv"
 INDICATIVE_ENABLED = True
 MIN_WEEKS = 12
 DEFAULT_SKIP_PATTERNS = [("cid10", r"^Z")]
