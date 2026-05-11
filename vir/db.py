@@ -11,10 +11,10 @@ import duckdb
 import numpy as np
 import polars as pl
 
+from vir.adapters.datasus.terminologies.terminology_mapping import load_mapping
 from vir.config import DATA_DIR, DEFAULT_MODEL, MODEL_DIMENSIONS, logger
 from vir.features import IBGE_CITY_MAP
 from vir.helpers import extract_dataset_name, get_n_jobs
-from vir.terminologies.terminology_mapping import load_mapping
 
 PROJECT_DB = DATA_DIR / "virola.db"
 
