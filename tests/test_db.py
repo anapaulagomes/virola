@@ -53,6 +53,65 @@ class TestGetConnection:
         assert isinstance(con2, duckdb.DuckDBPyConnection)
 
 
+class TestRunsAdapterMigration:
+    def _columns(self, connection) -> set[str]:
+        rows = connection.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = 'runs'"
+        ).fetchall()
+        return {row[0] for row in rows}
+
+    def test_fresh_schema_has_adapter_column(self, tmp_db):
+        db_module.create_embeddings_table_if_not_exists()
+        db_module.create_results_schema()
+        connection = db_module.get_connection()
+        assert "adapter" in self._columns(connection)
+
+    def test_existing_rows_are_backfilled_to_datasus(self, tmp_db):
+        db_module.create_embeddings_table_if_not_exists()
+        db_module.create_results_schema()
+        run_id = db_module.insert_run(
+            dataset_name="legacy",
+            city="Bauru",
+            region="Sudeste",
+            population_range="250 - 500 mil",
+            year_min=2022,
+            year_max=2024,
+            snf_k=10,
+            n_clusters=3,
+        )
+        db_module.create_results_schema()
+        adapter_value = (
+            db_module.get_connection()
+            .execute("SELECT adapter FROM runs WHERE run_id = ?", [run_id])
+            .fetchone()[0]
+        )
+        assert adapter_value == "datasus"
+
+    def test_backfill_does_not_overwrite_existing_adapter_values(self, tmp_db):
+        db_module.create_embeddings_table_if_not_exists()
+        db_module.create_results_schema()
+        run_id = db_module.insert_run(
+            dataset_name="aktin_germany",
+            city="germany",
+            region=None,
+            population_range=None,
+            year_min=2018,
+            year_max=2023,
+            snf_k=10,
+            n_clusters=3,
+        )
+        db_module.get_connection(write=True).execute(
+            "UPDATE runs SET adapter = 'aktin' WHERE run_id = ?", [run_id]
+        )
+        db_module.create_results_schema()
+        adapter_value = (
+            db_module.get_connection()
+            .execute("SELECT adapter FROM runs WHERE run_id = ?", [run_id])
+            .fetchone()[0]
+        )
+        assert adapter_value == "aktin"
+
+
 class TestFetchClusterProfilesForRuns:
     @pytest.fixture
     def seeded_db(self, tmp_db):

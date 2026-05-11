@@ -204,7 +204,10 @@ def create_results_schema():
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS cluster_median      FLOAT;
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS n_singletons        INTEGER;
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS pct_singletons      FLOAT;
+            ALTER TABLE runs ADD COLUMN IF NOT EXISTS adapter             VARCHAR;
         """)
+
+        con.execute("UPDATE runs SET adapter = 'datasus' WHERE adapter IS NULL;")
 
 
 def create_embeddings_table_if_not_exists():
