@@ -11,6 +11,7 @@ def _():
     import marimo as mo
     import polars as pl
 
+    from vir.adapters.datasus.cleaning import clean_datasus_raw
     from vir.config import (
         INTERIM_DATA_DIR,
         RAW_DATA_DIR,
@@ -18,21 +19,18 @@ def _():
     )
     from vir.features import (
         CITY_NAMES,
-        CODE_TYPES_MAPPING,
         IBGE_CITY_MAP,
-        ORIGINAL_TO_REDUCED_AGE_GROUP,
     )
     from vir.helpers import suffix_from
 
     return (
         CITY_NAMES,
-        CODE_TYPES_MAPPING,
         IBGE_CITY_MAP,
         INTERIM_DATA_DIR,
-        ORIGINAL_TO_REDUCED_AGE_GROUP,
         Path,
         RAW_DATA_DIR,
         RAW_DATA_FILE,
+        clean_datasus_raw,
         mo,
         pl,
         suffix_from,
@@ -148,11 +146,9 @@ def _(
 
 @app.cell
 def _(
-    CODE_TYPES_MAPPING,
     INTERIM_DATA_DIR,
-    ORIGINAL_TO_REDUCED_AGE_GROUP,
+    clean_datasus_raw,
     force_reprocess,
-    ibge_df,
     mo,
     pl,
     selected_city,
@@ -170,42 +166,7 @@ def _(
         raw_df = pl.read_parquet(selected_raw_folder / "*.parquet")
         raw_df = raw_df.with_row_index("unique_id", offset=0)
 
-        df = (
-            raw_df.with_columns(
-                pl.col("CIDCIAP").str.extract(r"^([A-Z]+)\(", 1).alias("code_type"),
-                pl.col("CIDCIAP").str.extract(r"\(([^)]+)\)", 1).alias("code"),
-            )
-            .drop(["CIDCIAP", "Data_folder"])
-            .drop_nulls(subset=["ANO", "SEMANA", "FX_ETARIA"])
-        )
-        df = df.with_columns(
-            pl.when(pl.col("code_type").eq("AB"))
-            .then(pl.col("code").str.replace(r"-\d+", ""))
-            .otherwise(pl.col("code"))
-        )
-        df = df.with_columns(
-            pl.col("code_type").map_elements(
-                lambda code_type: CODE_TYPES_MAPPING.get(code_type), return_dtype=pl.String
-            )
-        )
-        df = df.with_columns(
-            pl.col("FX_ETARIA").map_elements(
-                lambda age_group: ORIGINAL_TO_REDUCED_AGE_GROUP.get(age_group),
-                return_dtype=pl.String,
-            )
-        )
-        df = df.join(ibge_df, on="CO_MUNICIPIO_IBGE", how="left")
-        df = df.drop(["CO_CNES", "CO_MUNICIPIO_IBGE"])
-        df = df.rename(
-            {
-                "ANO": "year",
-                "SEMANA": "week",
-                "SG_UF": "state",
-                "SEXO": "sex",
-                "FX_ETARIA": "age_group",
-                "QT": "quantity",
-            }
-        )
+        df = clean_datasus_raw(raw_df)
         if selected_city:
             df = df.filter(pl.col("city").eq(selected_city))
         data_source_label = f"processed from raw: `{selected_raw_folder.name}`"
