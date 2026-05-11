@@ -22,7 +22,7 @@ if os.getenv("RAW_DATA_DIR"):
 INTERIM_DATA_DIR = DATA_DIR / "interim"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 CLUSTERING_DIR = DATA_DIR / "clustering"
-REFERENCES_DIR = PROJ_ROOT / "references"
+REFERENCES_DIR = PROJ_ROOT / "vir" / "adapters" / "datasus" / "references"
 VIEWS_CACHE_DIR = DATA_DIR / "views"
 VALIDATION_DIR = DATA_DIR / "validation"
 
