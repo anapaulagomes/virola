@@ -18,6 +18,16 @@ def test_aktin_adapter_name():
     assert _aktin().name == "aktin"
 
 
+def test_default_model_is_sapbert_xlmr_multilingual():
+    """AKTIN labels are German; the multilingual SapBERT-XLMR is the per-adapter
+    default so the clinical view does not poison the SNF fusion."""
+    assert _aktin().default_model == "cambridgeltl/SapBERT-UMLS-2020AB-all-lang-from-XLMR"
+
+
+def test_terminology_csv_filename_is_adapter_scoped():
+    assert _aktin().terminology_csv_filename == "icd10gm_aktin.csv"
+
+
 def test_strata_is_a_single_stratum_named_germany():
     assert _aktin().strata == ["germany"]
 

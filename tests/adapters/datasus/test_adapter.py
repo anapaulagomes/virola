@@ -18,6 +18,17 @@ def test_datasus_adapter_name():
     assert _datasus().name == "datasus"
 
 
+def test_default_model_is_sapbert_pubmedbert():
+    """DATASUS keeps the original English biomedical SapBERT so that existing
+    embeddings and clinical-view caches stay valid."""
+    assert _datasus().default_model == "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+
+
+def test_terminology_csv_filename_is_the_legacy_brazilian_name():
+    """Keep the existing filename so existing DATASUS embeddings runs don't break."""
+    assert _datasus().terminology_csv_filename == "cid10_ciap2_ab.csv"
+
+
 def test_strata_returns_the_ibge_city_names():
     assert set(_datasus().strata) == set(CITY_NAMES)
 

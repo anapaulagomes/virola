@@ -14,14 +14,15 @@ def _():
     import torch
     from transformers import AutoModel, AutoTokenizer
 
-    from vir.config import DEFAULT_MODEL, PROCESSED_DATA_DIR
+    from vir.adapters import ADAPTERS
+    from vir.config import PROCESSED_DATA_DIR
     from vir.db import create_embeddings_table_if_not_exists, insert
     from vir.helpers import get_or_download_model
 
     return (
+        ADAPTERS,
         AutoModel,
         AutoTokenizer,
-        DEFAULT_MODEL,
         PROCESSED_DATA_DIR,
         create_embeddings_table_if_not_exists,
         get_or_download_model,
@@ -41,9 +42,12 @@ def _(mo):
 
 
 @app.cell
-def _(DEFAULT_MODEL, args):
-    model_name = args.get("model", DEFAULT_MODEL)
-    return (model_name,)
+def _(ADAPTERS, args):
+    adapter_name = args.get("adapter", "datasus")
+    adapter = ADAPTERS[adapter_name]
+    model_name = args.get("model", adapter.default_model)
+    terminology_csv_filename = adapter.terminology_csv_filename
+    return adapter_name, model_name, terminology_csv_filename
 
 
 @app.cell
@@ -65,8 +69,8 @@ def _(mo):
 
 
 @app.cell
-def _(PROCESSED_DATA_DIR, pl):
-    codes = pl.read_csv(f"{PROCESSED_DATA_DIR}/cid10_ciap2_ab.csv")
+def _(PROCESSED_DATA_DIR, pl, terminology_csv_filename):
+    codes = pl.read_csv(PROCESSED_DATA_DIR / terminology_csv_filename)
     codes
     return (codes,)
 
@@ -148,13 +152,12 @@ def _(codes, encode_batch):
 
 
 @app.cell
-def _(PROCESSED_DATA_DIR, all_embeddings, codes, model_name, pl):
+def _(PROCESSED_DATA_DIR, adapter_name, all_embeddings, codes, model_name, pl):
     embeddings_df = pl.concat(
         [codes, pl.DataFrame(all_embeddings, schema=["embedding"])], how="horizontal"
     )
-    embeddings_df.write_parquet(
-        f"{PROCESSED_DATA_DIR}/bra_medter_{model_name.replace('/', '__')}.parquet"
-    )
+    sidecar_filename = f"medter_{adapter_name}_{model_name.replace('/', '__')}.parquet"
+    embeddings_df.write_parquet(PROCESSED_DATA_DIR / sidecar_filename)
     all_embeddings
     return (embeddings_df,)
 
