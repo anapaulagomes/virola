@@ -9,6 +9,7 @@ import polars as pl
 import typer
 
 from vir.adapters import ADAPTERS, known_strata
+from vir.cleaning.indicative_template import build_indicative_template
 from vir.clusters import (
     build_cluster_profiles,
     explain_clusters,
@@ -216,6 +217,58 @@ def prepare_clean(
     if exit_code == 0:
         typer.secho("✓ Data cleaning completed successfully", fg=typer.colors.GREEN)
     sys.exit(exit_code)
+
+
+@prepare_app.command("indicative-template")
+def prepare_indicative_template(
+    dataset: Path = typer.Option(
+        ..., "--dataset", "-d", help="Cleaned interim parquet to rank codes from."
+    ),
+    adapter: Optional[str] = typer.Option(
+        None,
+        "--adapter",
+        envvar="VIROLA_ADAPTER",
+        help="Adapter providing the terminology table. Falls back to VIROLA_ADAPTER.",
+    ),
+    coverage: float = typer.Option(
+        0.9, "--coverage", help="Cumulative-volume threshold (default: 0.9)."
+    ),
+    existing: Optional[Path] = typer.Option(
+        None, "--existing", help="Optional CSV of prior (code, code_type, indicative) labels."
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        help="Output CSV path (default: data/processed/indicative_codes_template_<adapter>.csv).",
+    ),
+):
+    """Emit the top-volume codes for an epidemiologist to label."""
+    adapter_name = _resolve_adapter(adapter)
+    adapter_instance = ADAPTERS[adapter_name]
+
+    cleaned = pl.read_parquet(dataset)
+    terminology_csv = PROCESSED_DATA_DIR / adapter_instance.terminology_csv_filename
+    if not terminology_csv.exists():
+        typer.secho(
+            f"✗ Terminology CSV not found at {terminology_csv}. "
+            f"Run `vir setup terminologies --adapter {adapter_name}` first.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
+    terminology_labels = pl.read_csv(terminology_csv)
+
+    existing_labels = pl.read_csv(existing) if existing is not None else None
+
+    template = build_indicative_template(
+        cleaned, terminology_labels, existing_labels=existing_labels, coverage=coverage
+    )
+
+    output_path = output or (PROCESSED_DATA_DIR / f"indicative_codes_template_{adapter_name}.csv")
+    template.write_csv(output_path)
+    typer.secho(
+        f"✓ Wrote {template.height:,} candidate codes to {output_path}",
+        fg=typer.colors.GREEN,
+    )
 
 
 @prepare_app.command("process")

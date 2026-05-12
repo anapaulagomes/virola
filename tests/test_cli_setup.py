@@ -53,3 +53,66 @@ class TestSetupTerminologiesAdapter:
 
         assert result.exit_code != 0
         assert "mars" in result.output.lower() or "unknown" in result.output.lower()
+
+
+class TestPrepareIndicativeTemplate:
+    def test_emits_top_coverage_codes_with_labels(self, redirect_processed_dir, tmp_path):
+        terminology_csv = redirect_processed_dir / "cid10_ciap2_ab.csv"
+        pl.DataFrame(
+            {
+                "code": ["A1", "B2", "C3"],
+                "code_type": ["cid10", "cid10", "cid10"],
+                "description": ["alpha", "bravo", "charlie"],
+            }
+        ).write_csv(terminology_csv)
+
+        cleaned = pl.DataFrame(
+            {
+                "code": ["A1", "B2", "C3"],
+                "code_type": ["cid10"] * 3,
+                "quantity": [70, 25, 5],
+            }
+        )
+        cleaned_path = tmp_path / "cleaned.parquet"
+        cleaned.write_parquet(cleaned_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "prepare",
+                "indicative-template",
+                "--dataset",
+                str(cleaned_path),
+                "--adapter",
+                "datasus",
+                "--coverage",
+                "0.9",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        output_csv = redirect_processed_dir / "indicative_codes_template_datasus.csv"
+        assert output_csv.exists()
+        template = pl.read_csv(output_csv)
+        assert set(template["code"].to_list()) == {"A1", "B2"}
+        assert set(template.columns) >= {"code", "code_type", "description", "indicative"}
+
+    def test_errors_when_terminology_csv_missing(self, redirect_processed_dir, tmp_path):
+        cleaned = pl.DataFrame({"code": ["A1"], "code_type": ["cid10"], "quantity": [1]})
+        cleaned_path = tmp_path / "cleaned.parquet"
+        cleaned.write_parquet(cleaned_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "prepare",
+                "indicative-template",
+                "--dataset",
+                str(cleaned_path),
+                "--adapter",
+                "datasus",
+            ],
+        )
+
+        assert result.exit_code != 0
+        assert "setup terminologies" in result.output
