@@ -68,6 +68,13 @@ def _():
 
 
 @app.cell
+def _():
+    from vir.adapters.datasus import DatasusAdapter
+
+    return (DatasusAdapter,)
+
+
+@app.cell
 def _(load_dotenv):
     _ = load_dotenv()
     return
@@ -211,6 +218,7 @@ def _(PROCESSED_DATA_DIR, city_selector, mo, runs_by_city):
 @app.cell
 def _(
     ClinicalView,
+    DatasusAdapter,
     DemographicView,
     TemporalView,
     adjusted_rand_score,
@@ -241,7 +249,11 @@ def _(
         year_min=_scan_run["year_min"],
         year_max=_scan_run["year_max"],
     )
-    _scan_clinical = ClinicalView(df=_scan_df, dataset_name=_scan_run["dataset_name"])
+    _scan_clinical = ClinicalView(
+        df=_scan_df,
+        dataset_name=_scan_run["dataset_name"],
+        params={"model": DatasusAdapter.default_model},
+    )
     _scan_demographic = DemographicView(df=_scan_df, dataset_name=_scan_run["dataset_name"])
     _scan_temporal = TemporalView(df=_scan_df, dataset_name=_scan_run["dataset_name"])
 
@@ -276,6 +288,7 @@ def _(
 @app.cell
 def _(
     ClinicalView,
+    DatasusAdapter,
     DemographicView,
     TemporalView,
     adjusted_rand_score,
@@ -349,7 +362,11 @@ def _(
     assert _CONDITIONS[0]["name"] == "Full model", "Full model must be first in _CONDITIONS"
 
     def _build_view_affinities(run, dataframe, common_ids):
-        clinical = ClinicalView(df=dataframe, dataset_name=run["dataset_name"])
+        clinical = ClinicalView(
+            df=dataframe,
+            dataset_name=run["dataset_name"],
+            params={"model": DatasusAdapter.default_model},
+        )
         demographic = DemographicView(df=dataframe, dataset_name=run["dataset_name"])
         temporal = TemporalView(df=dataframe, dataset_name=run["dataset_name"])
         return {

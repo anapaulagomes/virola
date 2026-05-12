@@ -5,7 +5,7 @@ from typing import Any, Dict
 import numpy as np
 import polars as pl
 
-from vir.config import DEFAULT_MODEL, logger
+from vir.config import logger
 from vir.db import (
     create_dimensions_table_if_not_exists,
     dimension_exists,
@@ -14,6 +14,16 @@ from vir.db import (
     read_dimension,
 )
 from vir.views.base import BaseView
+
+
+def _required_model(params: dict) -> str:
+    model = params.get("model")
+    if not model:
+        raise ValueError(
+            "ClinicalView requires `model` in params (e.g. "
+            "`params={'model': adapter.default_model}`)."
+        )
+    return model
 
 
 class ClinicalView(BaseView):
@@ -112,7 +122,7 @@ class ClinicalView(BaseView):
         """
 
         terminology_ids = self.df["terminology_id"].unique().to_list()
-        model_name = self.params.get("model", DEFAULT_MODEL)
+        model_name = _required_model(self.params)
 
         # TODO move it out
         con = get_connection()
@@ -141,7 +151,7 @@ class ClinicalView(BaseView):
         return {
             "n_diagnoses": len(embeddings),
             "embedding_dim": len(embeddings[0]) if len(embeddings) > 0 else 0,
-            "model": self.params.get("model", DEFAULT_MODEL),
+            "model": _required_model(self.params),
             "mean_norm": float(np.mean(np.linalg.norm(embeddings, axis=1))),
             "std_norm": float(np.std(np.linalg.norm(embeddings, axis=1))),
         }

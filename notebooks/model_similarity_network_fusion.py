@@ -136,8 +136,8 @@ def _(mo):
 
 
 @app.cell
-def _(load_terminology_labels):
-    terminology_labels = load_terminology_labels()
+def _(active_adapter, load_terminology_labels):
+    terminology_labels = load_terminology_labels(model=active_adapter.default_model)
     return (terminology_labels,)
 
 
@@ -198,9 +198,9 @@ def _(df, extract_dataset_name, file_path):
 
 
 @app.cell
-def _(ClinicalView, DemographicView, TemporalView, view_params):
+def _(ClinicalView, DemographicView, TemporalView, active_adapter, view_params):
     # Instantiate views
-    clinical_view = ClinicalView(**view_params)
+    clinical_view = ClinicalView(**view_params, params={"model": active_adapter.default_model})
     temporal_view = TemporalView(**view_params)
     demographic_view = DemographicView(**view_params)
 

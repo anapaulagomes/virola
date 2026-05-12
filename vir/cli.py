@@ -303,6 +303,12 @@ def prepare_process(
 @view_app.command("clinical")
 def view_clinical(
     dataset: str = typer.Option(..., "--dataset", "-d", help="Dataset file path or name"),
+    adapter: Optional[str] = typer.Option(
+        None,
+        "--adapter",
+        envvar="VIROLA_ADAPTER",
+        help="Adapter providing the embedding model. Falls back to VIROLA_ADAPTER env var.",
+    ),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
     year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
     no_indicative: bool = typer.Option(
@@ -310,10 +316,13 @@ def view_clinical(
     ),
 ):
     """Run clinical view analysis using semantic similarity."""
+    adapter_name = _resolve_adapter(adapter)
     notebook = PROJ_ROOT / "notebooks/view_clinical.py"
     args = [
         "--dataset",
         dataset,
+        "--adapter",
+        adapter_name,
         "--year-min",
         str(year_min),
         "--year-max",
@@ -540,6 +549,8 @@ def pipeline_run(
     args = [
         "--dataset",
         dataset,
+        "--adapter",
+        adapter_name,
         "--year-min",
         str(year_min),
         "--year-max",
@@ -688,6 +699,12 @@ def results_llm_descriptions(
 def results_explain(
     run_id: int = typer.Argument(..., help="run_id to compute explanations for"),
     dataset: str = typer.Option(..., "--dataset", "-d", help="Dataset file path or name"),
+    adapter: Optional[str] = typer.Option(
+        None,
+        "--adapter",
+        envvar="VIROLA_ADAPTER",
+        help="Adapter providing the embedding model. Falls back to VIROLA_ADAPTER env var.",
+    ),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
     year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
     min_weeks: int = typer.Option(12, "--min-weeks", help="Minimum weeks for temporal view"),
@@ -701,6 +718,8 @@ def results_explain(
 
     Requires build-profiles to have been run first.
     """
+    adapter_name = _resolve_adapter(adapter)
+    active_adapter = ADAPTERS[adapter_name]
     typer.secho(f"Loading data for run {run_id}...", fg=typer.colors.BLUE)
 
     df = load_and_prepare_dataframe(
@@ -719,7 +738,9 @@ def results_explain(
 
     n_jobs = get_n_jobs()
 
-    clinical_view = ClinicalView(df=df, dataset_name=dataset_name)
+    clinical_view = ClinicalView(
+        df=df, dataset_name=dataset_name, params={"model": active_adapter.default_model}
+    )
     demographic_view = DemographicView(df=df, dataset_name=dataset_name)
     temporal_view = TemporalView(
         df=df,

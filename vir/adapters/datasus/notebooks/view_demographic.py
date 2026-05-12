@@ -48,9 +48,10 @@ def _():
 
 @app.cell
 def _():
+    from vir.adapters.datasus import DatasusAdapter
     from vir.adapters.datasus.viz import AGE_GROUP_COLOR, SEX_COLOR
 
-    return AGE_GROUP_COLOR, SEX_COLOR
+    return AGE_GROUP_COLOR, DatasusAdapter, SEX_COLOR
 
 
 @app.cell
@@ -84,8 +85,8 @@ def _(mo):
 
 
 @app.cell
-def _(load_terminology_labels):
-    terminology_descriptions = load_terminology_labels()
+def _(DatasusAdapter, load_terminology_labels):
+    terminology_descriptions = load_terminology_labels(model=DatasusAdapter.default_model)
     return (terminology_descriptions,)
 
 

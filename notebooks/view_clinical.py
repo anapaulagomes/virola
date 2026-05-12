@@ -36,6 +36,7 @@ def _():
 
 @app.cell
 def _():
+    from vir.adapters import ADAPTERS
     from vir.helpers import extract_dataset_name, get_n_jobs
     from vir.notebook_widgets import (
         create_file_dropdown,
@@ -44,6 +45,7 @@ def _():
     from vir.views import ClinicalView
 
     return (
+        ADAPTERS,
         ClinicalView,
         create_file_dropdown,
         extract_dataset_name,
@@ -157,8 +159,16 @@ def _(mo):
 
 
 @app.cell
-def _(ClinicalView, dataset_name, df):
-    clinical_view = ClinicalView(df=df, dataset_name=dataset_name)
+def _(ADAPTERS, args):
+    active_adapter = ADAPTERS[args.get("adapter", "datasus")]
+    return (active_adapter,)
+
+
+@app.cell
+def _(ClinicalView, active_adapter, dataset_name, df):
+    clinical_view = ClinicalView(
+        df=df, dataset_name=dataset_name, params={"model": active_adapter.default_model}
+    )
     return (clinical_view,)
 
 
