@@ -8,8 +8,8 @@ import pytest
 
 import vir.db as db_module
 from vir import db
+from vir.adapters import stratum_metadata
 from vir.clusters import _build_labels_count, build_cluster_profiles, explain_clusters
-from vir.db import _city_metadata
 
 
 class TestGetConnection:
@@ -283,7 +283,7 @@ class TestDeleteRun:
         assert db_module.delete_run(seeded_run) is True
 
 
-class TestCityMetadata:
+class TestStratumMetadata:
     @pytest.mark.parametrize(
         "dataset_name,expected",
         [
@@ -314,15 +314,19 @@ class TestCityMetadata:
         ],
     )
     def test_known_cities_and_fallback(self, dataset_name, expected):
-        assert _city_metadata(dataset_name) == expected
+        assert stratum_metadata(dataset_name) == expected
 
     def test_match_is_case_insensitive(self):
-        result = _city_metadata("PORTO_ALEGRE")
+        result = stratum_metadata("PORTO_ALEGRE")
         assert result["city"] == "Porto Alegre"
 
     def test_unknown_returns_all_none(self):
-        result = _city_metadata("xpto_city_does_not_exist")
+        result = stratum_metadata("xpto_city_does_not_exist")
         assert result == {"city": None, "region": None, "population_range": None}
+
+    def test_resolves_aktin_germany_stratum(self):
+        result = stratum_metadata("germany")
+        assert result == {"city": "germany", "region": None, "population_range": None}
 
 
 class TestBuildLabelsCount:

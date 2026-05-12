@@ -11,9 +11,9 @@ import duckdb
 import numpy as np
 import polars as pl
 
+from vir.adapters import stratum_metadata
 from vir.adapters.datasus.terminologies.terminology_mapping import load_mapping
 from vir.config import DATA_DIR, DEFAULT_MODEL, MODEL_DIMENSIONS, logger
-from vir.features import IBGE_CITY_MAP
 from vir.helpers import extract_dataset_name, get_n_jobs
 
 PROJECT_DB = DATA_DIR / "virola.db"
@@ -726,25 +726,6 @@ def get_cross_terminology_pairs() -> list[tuple[str, str, str, str, str]]:
     ]
 
 
-def _city_metadata(dataset_name: str) -> dict:
-    """Extract city, region and population_range from dataset_name.
-
-    Matches by normalizing the city name from IBGE_CITY_MAP against the
-    dataset_name string (lowercase, underscored). Returns None values
-    when no match is found so the run is still recorded.
-    """
-    for entry in IBGE_CITY_MAP.values():
-        normalised = entry["city"].lower().replace(" ", "_")
-        if normalised in dataset_name.lower():
-            return {
-                "city": entry["city"],
-                "region": entry["region"],
-                "population_range": entry["population_range"],
-            }
-    logger.warning(f"Could not resolve city metadata for dataset '{dataset_name}'")
-    return {"city": None, "region": None, "population_range": None}
-
-
 def save_run(
     *,
     dataset_name: str,
@@ -780,7 +761,7 @@ def save_run(
     Returns:
         The run_id of the inserted run.
     """
-    meta = _city_metadata(dataset_name)
+    meta = stratum_metadata(dataset_name)
     n_codes_common = len(common_ids)
 
     run_id = insert_run(
