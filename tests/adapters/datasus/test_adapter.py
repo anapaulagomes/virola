@@ -3,6 +3,7 @@ import polars as pl
 from vir.adapters import ADAPTERS
 from vir.adapters.base import Adapter
 from vir.adapters.datasus.features import CITY_NAMES
+from vir.config import RAW_DATA_FILE
 
 
 def _datasus():
@@ -27,6 +28,23 @@ def test_default_model_is_sapbert_pubmedbert():
 def test_terminology_csv_filename_is_the_legacy_brazilian_name():
     """Keep the existing filename so existing DATASUS embeddings runs don't break."""
     assert _datasus().terminology_csv_filename == "cid10_ciap2_ab.csv"
+
+
+def test_cleaned_filename_preserves_existing_raw_stem_and_city_slug():
+    """Format: ``cleaned_<raw_stem>_<city_slug>.parquet`` matches files written by
+    the legacy DATASUS notebook so existing interim parquets keep being recognised."""
+    expected_stem = RAW_DATA_FILE.parent.stem
+
+    assert _datasus().cleaned_filename("Salvador") == f"cleaned_{expected_stem}_salvador.parquet"
+    assert (
+        _datasus().cleaned_filename("Belo Horizonte")
+        == f"cleaned_{expected_stem}_belo_horizonte.parquet"
+    )
+
+
+def test_cleaned_filename_uses_all_cities_when_no_stratum_is_given():
+    expected_stem = RAW_DATA_FILE.parent.stem
+    assert _datasus().cleaned_filename(None) == f"cleaned_{expected_stem}_all_cities.parquet"
 
 
 def test_strata_returns_the_ibge_city_names():

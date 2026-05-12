@@ -6,6 +6,7 @@ from vir.adapters.base import Adapter
 from vir.adapters.datasus.cleaning import clean_datasus_raw
 from vir.adapters.datasus.features import CITY_NAMES, IBGE_CITY_MAP
 from vir.adapters.datasus.terminology import create_terminologies_df
+from vir.config import RAW_DATA_FILE
 
 _REFERENCES_DIR = Path(__file__).parent / "references"
 INDICATIVE_CODES_FILE = _REFERENCES_DIR / "indicative_codes_yes_no__2022_2025__90perc.csv"
@@ -71,3 +72,8 @@ class DatasusAdapter(Adapter):
     @property
     def indicative_codes_file(self) -> Path | None:
         return INDICATIVE_CODES_FILE
+
+    def cleaned_filename(self, stratum: str | None) -> str:
+        raw_stem = RAW_DATA_FILE.parent.stem
+        slug = stratum.lower().replace(" ", "_") if stratum else "all_cities"
+        return f"cleaned_{raw_stem}_{slug}.parquet"

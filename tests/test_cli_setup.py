@@ -16,6 +16,15 @@ def redirect_processed_dir(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.fixture
+def redirect_interim_dir(tmp_path, monkeypatch):
+    interim = tmp_path / "interim"
+    interim.mkdir()
+    monkeypatch.setattr(config_module, "INTERIM_DATA_DIR", interim)
+    monkeypatch.setattr("vir.cli.INTERIM_DATA_DIR", interim, raising=False)
+    return interim
+
+
 class TestSetupTerminologiesAdapter:
     def test_datasus_writes_cid10_ciap2_ab_csv(self, redirect_processed_dir):
         result = runner.invoke(app, ["setup", "terminologies", "--adapter", "datasus"])
@@ -166,3 +175,100 @@ class TestPrepareIndicativeTemplate:
 
         assert result.exit_code != 0
         assert "setup terminologies" in result.output
+
+
+def _write_aktin_site(directory, encounter_num: int, code: str) -> None:
+    case_columns = (
+        "geschlecht\taufnahme_ts\tentlassung_ts\tage_group\tplz_kurz\t"
+        "triage\tsaettigung\tverbleib\ta_encounter_num"
+    )
+    case_row = (
+        f"M\t2023-06-15T10:00:00Z\t2023-06-15T12:00:00Z\t45-49\t123\t"
+        f"3\t98.0\thome\t{encounter_num}"
+    )
+    (directory / "case_data.txt").write_text(case_columns + "\n" + case_row + "\n")
+
+    diag_columns = "icd_code\tdiagnose_fuehrend\tdiagnose_zusatz\ta_encounter_num"
+    diag_row = f"{code}\t\tG\t{encounter_num}"
+    (directory / "diag_data.txt").write_text(diag_columns + "\n" + diag_row + "\n")
+
+
+class TestPrepareClean:
+    def test_aktin_stratum_routes_to_aktin_adapter(self, redirect_interim_dir, tmp_path):
+        raw_dir = tmp_path / "raw"
+        site = raw_dir / "1_result"
+        site.mkdir(parents=True)
+        _write_aktin_site(site, encounter_num=42, code="M22.0")
+
+        result = runner.invoke(
+            app,
+            [
+                "prepare",
+                "clean",
+                "--stratum",
+                "germany",
+                "--input",
+                str(raw_dir),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        output = redirect_interim_dir / "cleaned_aktin_germany.parquet"
+        assert output.exists()
+        cleaned = pl.read_parquet(output)
+        assert cleaned["code"].to_list() == ["M22.0"]
+        assert cleaned["city"].to_list() == ["germany"]
+        assert cleaned["code_type"].to_list() == ["icd10gm"]
+
+    def test_datasus_stratum_routes_to_datasus_adapter(self, redirect_interim_dir, tmp_path):
+        raw = pl.DataFrame(
+            {
+                "CIDCIAP": ["CID(I10)"],
+                "ANO": [2023],
+                "SEMANA": [24],
+                "SG_UF": ["BA"],
+                "SEXO": ["M"],
+                "FX_ETARIA": ["30 a 39 anos"],
+                "QT": [5],
+                "CO_MUNICIPIO_IBGE": [292740],
+                "CO_CNES": ["1"],
+                "Data_folder": ["x"],
+            }
+        )
+        raw_path = tmp_path / "aesop.parquet"
+        raw.write_parquet(raw_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "prepare",
+                "clean",
+                "--stratum",
+                "Salvador",
+                "--input",
+                str(raw_path),
+            ],
+            env={"VIROLA_ADAPTER": ""},
+        )
+
+        assert result.exit_code == 0, result.output
+        outputs = list(redirect_interim_dir.glob("cleaned_*_salvador.parquet"))
+        assert len(outputs) == 1
+        cleaned = pl.read_parquet(outputs[0])
+        assert cleaned["city"].unique().to_list() == ["Salvador"]
+        assert cleaned["code"].to_list() == ["I10"]
+
+    def test_adapter_flag_contradicting_stratum_errors(self, redirect_interim_dir, tmp_path):
+        result = runner.invoke(
+            app,
+            [
+                "prepare",
+                "clean",
+                "--stratum",
+                "germany",
+                "--adapter",
+                "datasus",
+            ],
+        )
+        assert result.exit_code != 0
+        assert "contradicts" in result.output

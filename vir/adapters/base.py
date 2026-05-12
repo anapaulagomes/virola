@@ -54,3 +54,7 @@ class Adapter(ABC):
     def indicative_codes_file(self) -> Path | None:
         """Optional path to the indicative-codes labeling CSV. ``None`` when not provided."""
         return None
+
+    @abstractmethod
+    def cleaned_filename(self, stratum: str | None) -> str:
+        """Return the filename ``vir prepare clean`` writes into ``INTERIM_DATA_DIR`` for this stratum."""
