@@ -5,7 +5,7 @@ import polars as pl
 from vir.adapters.base import Adapter
 from vir.adapters.datasus.cleaning import clean_datasus_raw
 from vir.adapters.datasus.features import CITY_NAMES, IBGE_CITY_MAP
-from vir.terminologies.terminologies import create_terminologies_df
+from vir.adapters.datasus.terminology import create_terminologies_df
 
 _REFERENCES_DIR = Path(__file__).parent / "references"
 INDICATIVE_CODES_FILE = _REFERENCES_DIR / "indicative_codes_yes_no__2022_2025__90perc.csv"

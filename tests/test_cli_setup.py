@@ -97,6 +97,56 @@ class TestPrepareIndicativeTemplate:
         assert set(template["code"].to_list()) == {"A1", "B2"}
         assert set(template.columns) >= {"code", "code_type", "description", "indicative"}
 
+    def test_works_for_aktin_against_its_icd10gm_terminology(
+        self, redirect_processed_dir, tmp_path
+    ):
+        """AKTIN goes through the same CLI; the adapter swap is the only difference."""
+        terminology_csv = redirect_processed_dir / "icd10gm_aktin.csv"
+        pl.DataFrame(
+            {
+                "code": ["M22.0", "S93.4", "A00.0"],
+                "code_type": ["icd10gm"] * 3,
+                "description": [
+                    "Habituelle Luxation der Patella",
+                    "Verstauchung und Zerrung des oberen Sprunggelenkes",
+                    "Cholera durch Vibrio cholerae O:1, Biovar cholerae",
+                ],
+            }
+        ).write_csv(terminology_csv)
+
+        cleaned = pl.DataFrame(
+            {
+                "code": ["M22.0", "S93.4", "A00.0"],
+                "code_type": ["icd10gm"] * 3,
+                "quantity": [80, 15, 5],
+            }
+        )
+        cleaned_path = tmp_path / "cleaned_aktin_germany.parquet"
+        cleaned.write_parquet(cleaned_path)
+
+        result = runner.invoke(
+            app,
+            [
+                "prepare",
+                "indicative-template",
+                "--dataset",
+                str(cleaned_path),
+                "--adapter",
+                "aktin",
+                "--coverage",
+                "0.9",
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        output_csv = redirect_processed_dir / "indicative_codes_template_aktin.csv"
+        assert output_csv.exists()
+        template = pl.read_csv(output_csv)
+        assert set(template["code"].to_list()) == {"M22.0", "S93.4"}
+        assert template["code_type"].unique().to_list() == ["icd10gm"]
+        descriptions = {row["code"]: row["description"] for row in template.iter_rows(named=True)}
+        assert descriptions["M22.0"] == "Habituelle Luxation der Patella"
+
     def test_errors_when_terminology_csv_missing(self, redirect_processed_dir, tmp_path):
         cleaned = pl.DataFrame({"code": ["A1"], "code_type": ["cid10"], "quantity": [1]})
         cleaned_path = tmp_path / "cleaned.parquet"
