@@ -14,6 +14,8 @@ class Adapter(ABC):
     """
 
     name: str
+    default_model: str
+    terminology_csv_filename: str
 
     @abstractmethod
     def clean(

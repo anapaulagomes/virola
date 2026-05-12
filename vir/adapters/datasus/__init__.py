@@ -19,6 +19,8 @@ class DatasusAdapter(Adapter):
     """
 
     name = "datasus"
+    default_model = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+    terminology_csv_filename = "cid10_ciap2_ab.csv"
 
     def clean(
         self,

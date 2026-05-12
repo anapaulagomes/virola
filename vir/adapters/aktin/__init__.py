@@ -16,6 +16,8 @@ class AktinAdapter(Adapter):
     """
 
     name = "aktin"
+    default_model = "cambridgeltl/SapBERT-UMLS-2020AB-all-lang-from-XLMR"
+    terminology_csv_filename = "icd10gm_aktin.csv"
 
     def clean(
         self,
