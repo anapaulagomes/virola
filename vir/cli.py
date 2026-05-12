@@ -8,7 +8,7 @@ from typing import Optional
 import polars as pl
 import typer
 
-from vir.adapters import ADAPTERS
+from vir.adapters import ADAPTERS, known_strata
 from vir.clusters import (
     build_cluster_profiles,
     explain_clusters,
@@ -27,7 +27,6 @@ from vir.db import (
     fetch_cluster_assignments,
     fetch_runs,
 )
-from vir.features import CITY_NAMES
 from vir.helpers import extract_dataset_name, get_n_jobs
 from vir.notebook_widgets import load_and_prepare_dataframe
 from vir.views import ClinicalView, DemographicView, TemporalView
@@ -49,6 +48,33 @@ def _resolve_adapter(flag: str | None) -> str:
         )
         raise typer.Exit(code=1)
     return flag
+
+
+def _resolve_stratum(stratum: str | None, city: str | None) -> str | None:
+    """Merge the new ``--stratum`` flag with the deprecated ``--city`` alias."""
+    if stratum and city:
+        typer.secho("✗ Pass either --stratum or --city, not both.", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+    if city:
+        typer.secho(
+            "Warning: --city is deprecated; use --stratum instead.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        return city
+    return stratum
+
+
+def _validate_stratum(stratum: str | None) -> None:
+    if stratum is None:
+        return
+    strata = known_strata()
+    if stratum not in strata:
+        typer.secho(
+            f"✗ Unknown stratum {stratum!r}. Known: {', '.join(sorted(strata))}.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
 
 
 app = typer.Typer(
@@ -161,9 +187,10 @@ def setup_embeddings(
 
 @prepare_app.command("clean")
 def prepare_clean(
-    city: Optional[str] = typer.Option(
-        None, "--city", help=f"City name to filter: {', '.join(CITY_NAMES)}"
+    stratum: Optional[str] = typer.Option(
+        None, "--stratum", help="Stratum to filter (e.g. germany, 'Belo Horizonte')."
     ),
+    city: Optional[str] = typer.Option(None, "--city", help="DEPRECATED alias for --stratum."),
     input_file: Optional[Path] = typer.Option(None, "--input", help="Input parquet file"),
     output_dir: Optional[Path] = typer.Option(None, "--output", help="Output directory"),
     force: bool = typer.Option(
@@ -171,10 +198,13 @@ def prepare_clean(
     ),
 ):
     """Clean and standardize raw data."""
+    resolved_stratum = _resolve_stratum(stratum, city)
+    _validate_stratum(resolved_stratum)
+
     notebook = DATASUS_NOTEBOOKS / "data_cleaning.py"
     args = []
-    if city:
-        args.extend(["--city", city])
+    if resolved_stratum:
+        args.extend(["--city", resolved_stratum])
     if input_file:
         args.extend(["--input", str(input_file)])
     if output_dir:
@@ -365,7 +395,10 @@ def model_snf(
 
 @pipeline_app.command("run")
 def pipeline_run(
-    city: str = typer.Argument(..., help=f"City name: {', '.join(CITY_NAMES)}"),
+    stratum: str = typer.Argument(
+        ...,
+        help="Stratum (e.g. germany, 'Belo Horizonte'). See `known_strata()` for the registry.",
+    ),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
     year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
     min_weeks: int = typer.Option(12, "--min-weeks", help="Minimum weeks for temporal view"),
@@ -379,26 +412,21 @@ def pipeline_run(
         None, "--notes", help="Free-text note attached to the SNF run (e.g. 'run for paper')"
     ),
 ):
-    """Run complete pipeline for a city: clean -> process -> views -> model snf."""
+    """Run complete pipeline for a stratum: clean -> process -> views -> model snf."""
 
-    if city not in CITY_NAMES:
-        typer.secho(
-            f"✗ Invalid city name. Available cities: {', '.join(CITY_NAMES)}",
-            fg=typer.colors.RED,
-        )
-        raise typer.Exit(1)
+    _validate_stratum(stratum)
 
     typer.secho(f"\n{'=' * 60}", fg=typer.colors.CYAN)
-    typer.secho(f"Running pipeline for: {city}", fg=typer.colors.CYAN, bold=True)
+    typer.secho(f"Running pipeline for: {stratum}", fg=typer.colors.CYAN, bold=True)
     typer.secho(f"{'=' * 60}\n", fg=typer.colors.CYAN)
 
-    city_slug = city.lower().replace(" ", "_")
+    city_slug = stratum.lower().replace(" ", "_")
 
     # Step 1: Clean data
     if not skip_clean:
         typer.secho("Step 1/6: Cleaning data...", fg=typer.colors.BLUE, bold=True)
         notebook = DATASUS_NOTEBOOKS / "data_cleaning.py"
-        args = ["--city", city]
+        args = ["--city", stratum]
         exit_code = run_marimo_notebook(notebook, args)
         if exit_code != 0:
             typer.secho("✗ Data cleaning failed", fg=typer.colors.RED)
@@ -411,7 +439,7 @@ def pipeline_run(
     matching_interim = sorted(INTERIM_DATA_DIR.glob(f"cleaned_*{city_slug}*.parquet"))
     if not matching_interim:
         typer.secho(
-            f"✗ No cleaned interim file found for city '{city}' in {INTERIM_DATA_DIR}",
+            f"✗ No cleaned interim file found for stratum '{stratum}' in {INTERIM_DATA_DIR}",
             fg=typer.colors.RED,
         )
         raise typer.Exit(1)
@@ -514,7 +542,11 @@ def pipeline_run(
     typer.secho("✓ SNF clustering completed\n", fg=typer.colors.GREEN)
 
     typer.secho(f"\n{'=' * 60}", fg=typer.colors.GREEN)
-    typer.secho(f"✓ Pipeline completed successfully for {city}!", fg=typer.colors.GREEN, bold=True)
+    typer.secho(
+        f"✓ Pipeline completed successfully for {stratum}!",
+        fg=typer.colors.GREEN,
+        bold=True,
+    )
     typer.secho(f"{'=' * 60}\n", fg=typer.colors.GREEN)
     typer.secho(f"Results saved to: {CLUSTERING_DIR}", fg=typer.colors.CYAN)
 
@@ -638,28 +670,31 @@ def results_explain(
 @results_app.command("delete")
 def results_delete(
     run_id: Optional[int] = typer.Option(None, "--id", help="run_id to delete"),
-    city: Optional[str] = typer.Option(
-        None, "--city", help=f"Delete all runs for a city: {', '.join(CITY_NAMES)}"
+    stratum: Optional[str] = typer.Option(
+        None, "--stratum", help="Delete all runs for a stratum (e.g. germany, 'Belo Horizonte')."
     ),
+    city: Optional[str] = typer.Option(None, "--city", help="DEPRECATED alias for --stratum."),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
 ):
-    """Delete a run by id, or all runs for a city.
+    """Delete a run by id, or all runs for a stratum.
 
     Removes cluster assignments, profiles, multi-K and Leiden sweep rows,
     plus the parquet sidecar in data/runs/.
     """
-    if run_id is None and city is None:
-        typer.secho("✗ Provide --id or --city.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-    if run_id is not None and city is not None:
-        typer.secho("✗ --id and --city are mutually exclusive.", fg=typer.colors.RED)
-        raise typer.Exit(1)
-    if city is not None and city not in CITY_NAMES:
-        typer.secho(f"✗ Invalid city. Available: {', '.join(CITY_NAMES)}", fg=typer.colors.RED)
-        raise typer.Exit(1)
+    resolved_stratum = _resolve_stratum(stratum, city)
 
-    if city is not None:
-        target_run_ids = fetch_runs().filter(pl.col("city") == city).get_column("run_id").to_list()
+    if run_id is None and resolved_stratum is None:
+        typer.secho("✗ Provide --id or --stratum.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    if run_id is not None and resolved_stratum is not None:
+        typer.secho("✗ --id and --stratum are mutually exclusive.", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    _validate_stratum(resolved_stratum)
+
+    if resolved_stratum is not None:
+        target_run_ids = (
+            fetch_runs().filter(pl.col("city").eq(resolved_stratum)).get_column("run_id").to_list()
+        )
     else:
         target_run_ids = [run_id]
 
@@ -687,9 +722,10 @@ def results_delete(
 
 @validate_app.command("ablation")
 def validate_ablation(
-    city: Optional[str] = typer.Option(
-        None, "--city", help=f"City name to run ablation for: {', '.join(CITY_NAMES)}"
+    stratum: Optional[str] = typer.Option(
+        None, "--stratum", help="Stratum to run ablation for (e.g. 'Belo Horizonte')."
     ),
+    city: Optional[str] = typer.Option(None, "--city", help="DEPRECATED alias for --stratum."),
     permutations: int = typer.Option(
         AFFINITY_ZSCORE_PERMS,
         "--permutations",
@@ -701,11 +737,14 @@ def validate_ablation(
         help=f"Output directory (default: {VALIDATION_DIR / 'ablation'})",
     ),
 ):
-    """Run ablation study across selected cities."""
+    """Run ablation study across selected strata."""
+    resolved_stratum = _resolve_stratum(stratum, city)
+    _validate_stratum(resolved_stratum)
+
     notebook = DATASUS_NOTEBOOKS / "validation" / "validation_ablation.py"
     args = []
-    if city:
-        args.extend(["--city", city])
+    if resolved_stratum:
+        args.extend(["--city", resolved_stratum])
     if permutations:
         args.extend(["--permutations", str(permutations)])
     if output_directory:

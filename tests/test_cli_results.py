@@ -48,11 +48,11 @@ class TestResultsList:
 
 
 class TestResultsDelete:
-    def test_errors_when_neither_id_nor_city_given(self, tmp_db):
+    def test_errors_when_neither_id_nor_stratum_given(self, tmp_db):
         result = runner.invoke(app, ["results", "delete"])
         assert result.exit_code != 0
         assert "--id" in result.output
-        assert "--city" in result.output
+        assert "--stratum" in result.output
 
     def test_errors_when_both_id_and_city_given(self, tmp_db):
         result = runner.invoke(app, ["results", "delete", "--id", "1", "--city", "Manaus"])
@@ -115,7 +115,13 @@ class TestResultsDelete:
         assert remaining_ids == [unmapped]
         assert bauru not in remaining_ids
 
-    def test_invalid_city_name_rejected(self, tmp_db):
+    def test_invalid_stratum_name_rejected(self, tmp_db):
+        result = runner.invoke(app, ["results", "delete", "--stratum", "Atlantis", "--yes"])
+        assert result.exit_code != 0
+        assert "Unknown stratum" in result.output
+
+    def test_city_flag_still_accepted_with_deprecation_warning(self, tmp_db):
         result = runner.invoke(app, ["results", "delete", "--city", "Atlantis", "--yes"])
         assert result.exit_code != 0
-        assert "Invalid city" in result.output
+        assert "deprecated" in result.output.lower()
+        assert "Unknown stratum" in result.output
