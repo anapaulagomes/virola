@@ -130,3 +130,60 @@ def test_clean_pools_multiple_aktin_sites_into_one_interim_parquet(tmp_path):
 def test_clean_raises_when_no_case_data_is_found(tmp_path):
     with pytest.raises(FileNotFoundError, match="case_data.txt"):
         _aktin().clean(tmp_path, tmp_path / "out.parquet")
+
+
+def test_clean_raises_when_a_site_has_case_data_but_no_diag_data(tmp_path):
+    """Silent orphan-site loss is the worst failure mode: encounters disappear
+    at the inner-join with no signal. Fail fast instead."""
+    site = tmp_path / "1_result"
+    site.mkdir()
+    case_columns = (
+        "geschlecht\taufnahme_ts\tentlassung_ts\tage_group\tplz_kurz\t"
+        "triage\tsaettigung\tverbleib\ta_encounter_num"
+    )
+    case_row = "M\t2023-06-15T10:00:00Z\t2023-06-15T12:00:00Z\t45-49\t123\t3\t98.0\thome\t1"
+    (site / "case_data.txt").write_text(case_columns + "\n" + case_row + "\n")
+
+    with pytest.raises(FileNotFoundError, match="diag_data.txt"):
+        _aktin().clean(tmp_path, tmp_path / "out.parquet")
+
+
+def test_clean_namespaces_encounter_ids_across_sites_to_avoid_collisions(tmp_path):
+    """Two sites both export encounter_num=1 — they must not be merged or
+    cross-joined. The adapter must distinguish them so each encounter's
+    diagnoses route to that site's case."""
+    for site_id in (1, 2):
+        site = tmp_path / f"{site_id}_result"
+        site.mkdir()
+        _write_aktin_site(site, encounter_num=1, code=f"M22.{site_id}")
+
+    output_path = tmp_path / "cleaned.parquet"
+    _aktin().clean(tmp_path, output_path)
+
+    cleaned = pl.read_parquet(output_path)
+    assert cleaned.height == 2
+    assert set(cleaned["code"].to_list()) == {"M22.1", "M22.2"}
+
+
+def test_clean_descends_into_aktin_result_zips(tmp_path):
+    """AKTIN exports usually ship as ``<site>_result.zip``. The adapter should
+    read case_data.txt + diag_data.txt from inside the zip, not require
+    pre-unzipping."""
+    import zipfile
+
+    site_dir = tmp_path / "_staging"
+    site_dir.mkdir()
+    _write_aktin_site(site_dir, encounter_num=42, code="M22.0")
+    zip_path = tmp_path / "1_result.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.write(site_dir / "case_data.txt", arcname="case_data.txt")
+        archive.write(site_dir / "diag_data.txt", arcname="diag_data.txt")
+    (site_dir / "case_data.txt").unlink()
+    (site_dir / "diag_data.txt").unlink()
+    site_dir.rmdir()
+
+    output_path = tmp_path / "cleaned.parquet"
+    _aktin().clean(tmp_path, output_path)
+
+    cleaned = pl.read_parquet(output_path)
+    assert cleaned["code"].to_list() == ["M22.0"]

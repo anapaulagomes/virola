@@ -513,7 +513,8 @@ def pipeline_run(
     """Run complete pipeline for a stratum: clean -> process -> views -> model snf."""
 
     _validate_stratum(stratum)
-    adapter_name = adapter_for_stratum(stratum).name
+    active_adapter = adapter_for_stratum(stratum)
+    adapter_name = active_adapter.name
 
     typer.secho(f"\n{'=' * 60}", fg=typer.colors.CYAN)
     typer.secho(
@@ -528,13 +529,10 @@ def pipeline_run(
     # Step 1: Clean data
     if not skip_clean:
         typer.secho("Step 1/6: Cleaning data...", fg=typer.colors.BLUE, bold=True)
-        notebook = DATASUS_NOTEBOOKS / "data_cleaning.py"
-        args = ["--city", stratum]
-        exit_code = run_marimo_notebook(notebook, args)
-        if exit_code != 0:
-            typer.secho("✗ Data cleaning failed", fg=typer.colors.RED)
-            sys.exit(exit_code)
-        typer.secho("✓ Data cleaning completed\n", fg=typer.colors.GREEN)
+        cleaned_path = INTERIM_DATA_DIR / active_adapter.cleaned_filename(stratum)
+        cleaned_path.parent.mkdir(parents=True, exist_ok=True)
+        active_adapter.clean(raw_path=RAW_DATA_DIR, output_path=cleaned_path, stratum=stratum)
+        typer.secho(f"✓ Data cleaning completed → {cleaned_path}\n", fg=typer.colors.GREEN)
     else:
         typer.secho("Step 1/6: Skipping data cleaning\n", fg=typer.colors.YELLOW)
 
