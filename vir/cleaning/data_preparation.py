@@ -9,6 +9,7 @@ def _():
     import marimo as mo
     import polars as pl
 
+    from vir.adapters import ADAPTERS
     from vir.cleaning.prepare import prepare_dataframe
     from vir.config import INTERIM_DATA_DIR, PROCESSED_DATA_DIR
     from vir.helpers import extract_dataset_name
@@ -18,6 +19,7 @@ def _():
     )
 
     return (
+        ADAPTERS,
         INTERIM_DATA_DIR,
         PROCESSED_DATA_DIR,
         extract_dataset_name,
@@ -81,8 +83,10 @@ def _(dataset_dropdown, mo, run_button):
     if mo.app_meta().mode == "script":
         cli_args = mo.cli_args()
         input_path_override = cli_args.get("dataset")
+        adapter_name = cli_args.get("adapter", "datasus")
     else:
         input_path_override = None
+        adapter_name = "datasus"
 
     selected_input_path = input_path_override or (
         str(dataset_dropdown.value) if dataset_dropdown.value else None
@@ -92,18 +96,31 @@ def _(dataset_dropdown, mo, run_button):
         selected_input_path is None,
         mo.md("No dataset selected."),
     )
-    return (selected_input_path,)
+    return adapter_name, selected_input_path
 
 
 @app.cell
-def _(load_indicative_codes, load_terminology_labels, mo, selected_input_path):
+def _(ADAPTERS, adapter_name):
+    active_adapter = ADAPTERS[adapter_name]
+    return (active_adapter,)
+
+
+@app.cell
+def _(
+    active_adapter,
+    load_indicative_codes,
+    load_terminology_labels,
+    mo,
+    selected_input_path,
+):
     mo.stop(selected_input_path is None)
 
     terminology_labels = load_terminology_labels()
-    exclude_codes, _ = load_indicative_codes()
+    exclude_codes, _ = load_indicative_codes(path=active_adapter.indicative_codes_file)
 
     mo.md(f"""
     **Configuration**
+    - Adapter: `{active_adapter.name}`
     - Input: `{selected_input_path}`
     - Terminology terms loaded: {len(terminology_labels):,}
     - Codes to exclude: {len(exclude_codes):,}
@@ -114,6 +131,7 @@ def _(load_indicative_codes, load_terminology_labels, mo, selected_input_path):
 @app.cell
 def _(
     PROCESSED_DATA_DIR,
+    active_adapter,
     exclude_codes,
     extract_dataset_name,
     mo,
@@ -134,6 +152,7 @@ def _(
         dataframe=interim_df,
         terminology_labels=terminology_labels,
         exclude_codes=exclude_codes,
+        skip_patterns=active_adapter.skip_patterns,
         keep_city=keep_city,
     )
 

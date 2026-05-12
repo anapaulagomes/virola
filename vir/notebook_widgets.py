@@ -1,5 +1,6 @@
 """Widgets and data loading functions for notebooks."""
 
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import marimo as mo
@@ -7,7 +8,6 @@ import numpy as np
 import polars as pl
 from snf import compute as snf_compute
 
-from vir.adapters.datasus import INDICATIVE_CODES_FILE
 from vir.config import (
     DEFAULT_MODEL,
     INDICATIVE_ENABLED,
@@ -15,6 +15,8 @@ from vir.config import (
 )
 from vir.data_filters import filter_min_temporal_coverage
 from vir.db import fetch_terminologies
+
+_PATH_NOT_PROVIDED = object()
 
 
 def load_terminology_labels(model: str = DEFAULT_MODEL) -> pl.DataFrame:
@@ -31,26 +33,43 @@ def load_terminology_labels(model: str = DEFAULT_MODEL) -> pl.DataFrame:
 
 
 def load_indicative_codes(
+    path: Optional[Path] = _PATH_NOT_PROVIDED,
     enabled: bool = INDICATIVE_ENABLED,
 ) -> Tuple[List[str], bool]:
-    """
-    Load non-indicative codes to be excluded from analysis.
+    """Load non-indicative codes to be excluded from analysis.
 
     Args:
-        enabled: Whether to apply indicative filtering (default True).
-                 Pass False to skip filtering (include all codes).
+        path: Path to the labeling CSV. Pass ``adapter.indicative_codes_file``
+            from the active adapter — that is ``None`` for adapters without a
+            labeling CSV (e.g. AKTIN), in which case filtering is skipped.
+            Required: omitting the argument raises ``ValueError`` so adapter
+            context can't be silently dropped.
+        enabled: When ``False`` filtering is unconditionally disabled.
 
     Returns:
-        Tuple of (list of code labels to exclude, enabled flag).
-        When enabled=False, returns ([], False) meaning no filter is applied.
+        Tuple of ``(list of code labels to exclude, enabled flag)``.
+        Returns ``([], False)`` when ``enabled=False`` or ``path is None``.
+
+    Raises:
+        ValueError: if ``enabled=True`` and ``path`` is omitted. The caller must
+            be explicit about which adapter's labeling CSV to read.
     """
     if not enabled:
         return [], False
 
-    indicative_codes = pl.read_csv(INDICATIVE_CODES_FILE)
+    if path is _PATH_NOT_PROVIDED:
+        raise ValueError(
+            "load_indicative_codes(): pass `path=adapter.indicative_codes_file` "
+            "or an explicit CSV path."
+        )
+
+    if path is None:
+        return [], False
+
+    indicative_codes = pl.read_csv(path)
     exclude_codes = [
         f"{row['code']}:{row['code_type']}"
-        for row in indicative_codes.filter(pl.col("indicative") == "no").iter_rows(named=True)
+        for row in indicative_codes.filter(pl.col("indicative").eq("no")).iter_rows(named=True)
     ]
 
     return exclude_codes, True

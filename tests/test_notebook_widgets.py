@@ -61,27 +61,40 @@ class TestLoadIndicativeCodes:
         assert codes == []
         assert enabled is False
 
-    def test_enabled_returns_no_codes_for_exclusion(self, indicative_csv, monkeypatch):
-        monkeypatch.setattr("vir.notebook_widgets.INDICATIVE_CODES_FILE", indicative_csv)
-        codes, enabled = load_indicative_codes(enabled=True)
+    def test_enabled_reads_path_and_returns_no_codes(self, indicative_csv):
+        codes, enabled = load_indicative_codes(path=indicative_csv, enabled=True)
 
         assert enabled is True
         assert "Z760:cid10" in codes
         assert "Z000:cid10" in codes
 
-    def test_enabled_does_not_include_yes_codes(self, indicative_csv, monkeypatch):
-        monkeypatch.setattr("vir.notebook_widgets.INDICATIVE_CODES_FILE", indicative_csv)
-        codes, _ = load_indicative_codes(enabled=True)
+    def test_enabled_does_not_include_yes_codes(self, indicative_csv):
+        codes, _ = load_indicative_codes(path=indicative_csv, enabled=True)
 
         assert "I10:cid10" not in codes
         assert "ABP005:ab" not in codes
         assert "K86:ciap2" not in codes
 
-    def test_enabled_count_matches_no_rows(self, indicative_csv, monkeypatch):
-        monkeypatch.setattr("vir.notebook_widgets.INDICATIVE_CODES_FILE", indicative_csv)
-        codes, _ = load_indicative_codes(enabled=True)
+    def test_enabled_count_matches_no_rows(self, indicative_csv):
+        codes, _ = load_indicative_codes(path=indicative_csv, enabled=True)
 
         assert len(codes) == 2  # Z760 and Z000
+
+    def test_explicit_none_disables_filter_even_when_enabled(self):
+        """``adapter.indicative_codes_file`` is ``None`` for adapters without a
+        labeling CSV (e.g. AKTIN). Passing ``None`` must skip the filter cleanly,
+        not crash trying to read a None path."""
+        codes, enabled = load_indicative_codes(path=None, enabled=True)
+
+        assert codes == []
+        assert enabled is False
+
+    def test_missing_path_argument_raises(self):
+        """Implicit defaults to DATASUS' file are no longer allowed — caller
+        must pass ``adapter.indicative_codes_file`` (possibly ``None``) so
+        that adapter-context bugs don't get papered over."""
+        with pytest.raises(ValueError, match="indicative_codes_file"):
+            load_indicative_codes(enabled=True)
 
 
 class TestLoadAndPrepareDataframe:
