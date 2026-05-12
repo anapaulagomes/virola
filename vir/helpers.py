@@ -21,7 +21,7 @@ def get_or_download_model(
     Returns:
         str: path to model weights within model directory
     """
-    if os.getenv("HF_FROM_LIMITED_ENV") is None:
+    if not os.getenv("HF_FROM_LIMITED_ENV"):
         logger.info("Regular environment detected.")
         return repo_id
 
