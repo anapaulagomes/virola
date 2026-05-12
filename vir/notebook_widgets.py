@@ -9,7 +9,6 @@ import polars as pl
 from snf import compute as snf_compute
 
 from vir.config import (
-    DEFAULT_MODEL,
     INDICATIVE_ENABLED,
     PROCESSED_DATA_DIR,
 )
@@ -17,18 +16,28 @@ from vir.data_filters import filter_min_temporal_coverage
 from vir.db import fetch_terminologies
 
 _PATH_NOT_PROVIDED = object()
+_MODEL_NOT_PROVIDED = object()
 
 
-def load_terminology_labels(model: str = DEFAULT_MODEL) -> pl.DataFrame:
-    """
-    Load terminology labels from database.
+def load_terminology_labels(model: str = _MODEL_NOT_PROVIDED) -> pl.DataFrame:
+    """Load terminology labels (with embeddings) from the database.
 
     Args:
-        model: Model name for embeddings (default: DEFAULT_MODEL)
+        model: Embedding model identifier. Pass ``adapter.default_model`` from
+            the active adapter — DATASUS uses ``SapBERT-from-PubMedBERT``,
+            AKTIN uses the multilingual ``SapBERT-XLMR``. Required.
 
     Returns:
-        DataFrame with id, code, code_type, label columns
+        DataFrame with id, code, code_type, label columns.
+
+    Raises:
+        ValueError: if ``model`` is omitted.
     """
+    if model is _MODEL_NOT_PROVIDED:
+        raise ValueError(
+            "load_terminology_labels(): pass `model=adapter.default_model` "
+            "or an explicit model name."
+        )
     return fetch_terminologies(model)
 
 

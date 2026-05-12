@@ -106,8 +106,17 @@ def _(files_dropdown):
 
 
 @app.cell
-def _(ClinicalView, dataset_name, df):
-    clinical_view = ClinicalView(df=df, dataset_name=dataset_name)
+def _():
+    from vir.adapters.datasus import DatasusAdapter
+
+    return (DatasusAdapter,)
+
+
+@app.cell
+def _(ClinicalView, DatasusAdapter, dataset_name, df):
+    clinical_view = ClinicalView(
+        df=df, dataset_name=dataset_name, params={"model": DatasusAdapter.default_model}
+    )
     distance_matrix = clinical_view.get_matrix()
     terminology_ids = clinical_view.get_terminology_ids()
     id_to_idx = {tid: idx for idx, tid in enumerate(terminology_ids)}

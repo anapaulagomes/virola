@@ -115,7 +115,7 @@ def _(
 ):
     mo.stop(selected_input_path is None)
 
-    terminology_labels = load_terminology_labels()
+    terminology_labels = load_terminology_labels(model=active_adapter.default_model)
     exclude_codes, _ = load_indicative_codes(path=active_adapter.indicative_codes_file)
 
     mo.md(f"""

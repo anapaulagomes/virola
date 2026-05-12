@@ -6,6 +6,7 @@ import pytest
 from vir.notebook_widgets import (
     load_and_prepare_dataframe,
     load_indicative_codes,
+    load_terminology_labels,
 )
 
 
@@ -95,6 +96,14 @@ class TestLoadIndicativeCodes:
         that adapter-context bugs don't get papered over."""
         with pytest.raises(ValueError, match="indicative_codes_file"):
             load_indicative_codes(enabled=True)
+
+
+class TestLoadTerminologyLabels:
+    def test_missing_model_argument_raises(self):
+        """Caller must pass ``adapter.default_model`` — the implicit framework
+        default would silently use PubMedBERT for AKTIN (wrong embeddings)."""
+        with pytest.raises(ValueError, match="default_model"):
+            load_terminology_labels()
 
 
 class TestLoadAndPrepareDataframe:

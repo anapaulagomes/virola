@@ -13,11 +13,12 @@ def _():
 
 @app.cell
 def _():
-    from vir.adapters.datasus import INDICATIVE_CODES_FILE
+    from vir.adapters.datasus import INDICATIVE_CODES_FILE, DatasusAdapter
     from vir.cleaning.indicative_template import build_indicative_template
     from vir.notebook_widgets import create_file_dropdown, load_terminology_labels
 
     return (
+        DatasusAdapter,
         INDICATIVE_CODES_FILE,
         build_indicative_template,
         create_file_dropdown,
@@ -43,8 +44,8 @@ def _(mo):
 
 
 @app.cell
-def _(load_terminology_labels):
-    terminology_labels = load_terminology_labels()
+def _(DatasusAdapter, load_terminology_labels):
+    terminology_labels = load_terminology_labels(model=DatasusAdapter.default_model)
     return (terminology_labels,)
 
 
