@@ -8,6 +8,7 @@ from typing import Optional
 import polars as pl
 import typer
 
+from vir.adapters import ADAPTERS
 from vir.clusters import (
     build_cluster_profiles,
     explain_clusters,
@@ -16,8 +17,8 @@ from vir.clusters import (
 from vir.config import (
     AFFINITY_ZSCORE_PERMS,
     CLUSTERING_DIR,
-    DEFAULT_MODEL,
     INTERIM_DATA_DIR,
+    PROCESSED_DATA_DIR,
     PROJ_ROOT,
     VALIDATION_DIR,
 )
@@ -29,8 +30,26 @@ from vir.db import (
 from vir.features import CITY_NAMES
 from vir.helpers import extract_dataset_name, get_n_jobs
 from vir.notebook_widgets import load_and_prepare_dataframe
-from vir.terminologies.terminologies import main as run_terminologies
 from vir.views import ClinicalView, DemographicView, TemporalView
+
+
+def _resolve_adapter(flag: str | None) -> str:
+    """Pick the adapter name from the flag, env var, or fail with a helpful error."""
+    if not flag:
+        typer.secho(
+            "✗ --adapter is required (or set the VIROLA_ADAPTER environment variable). "
+            f"Known adapters: {', '.join(sorted(ADAPTERS))}.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
+    if flag not in ADAPTERS:
+        typer.secho(
+            f"✗ Unknown adapter {flag!r}. Known: {', '.join(sorted(ADAPTERS))}.",
+            fg=typer.colors.RED,
+        )
+        raise typer.Exit(code=1)
+    return flag
+
 
 app = typer.Typer(
     name="vir",
@@ -88,21 +107,44 @@ def run_marimo_notebook(notebook_path: Path, args: list[str]) -> int:
 
 
 @setup_app.command("terminologies")
-def setup_terminologies():
-    """Create terminology files from source data."""
-    run_terminologies()
-    typer.secho("✓ Terminology files created successfully", fg=typer.colors.GREEN)
+def setup_terminologies(
+    adapter: Optional[str] = typer.Option(
+        None,
+        "--adapter",
+        envvar="VIROLA_ADAPTER",
+        help="Adapter name (e.g. datasus, aktin). Falls back to VIROLA_ADAPTER env var.",
+    ),
+):
+    """Build the terminology-labels CSV for the chosen adapter."""
+    adapter_name = _resolve_adapter(adapter)
+    adapter_instance = ADAPTERS[adapter_name]
+    labels = adapter_instance.build_terminology_labels()
+    output_path = PROCESSED_DATA_DIR / adapter_instance.terminology_csv_filename
+    labels.write_csv(output_path)
+    typer.secho(
+        f"✓ Wrote {labels.height:,} terminology labels to {output_path}",
+        fg=typer.colors.GREEN,
+    )
 
 
 @setup_app.command("embeddings")
 def setup_embeddings(
+    adapter: Optional[str] = typer.Option(
+        None,
+        "--adapter",
+        envvar="VIROLA_ADAPTER",
+        help="Adapter name (e.g. datasus, aktin). Falls back to VIROLA_ADAPTER env var.",
+    ),
     model: Optional[str] = typer.Option(
-        None, "--model", help=f"Transformer model name (uses {DEFAULT_MODEL} if not specified)"
+        None,
+        "--model",
+        help="Transformer model name (uses the adapter's default_model if not specified)",
     ),
 ):
-    """Generate medical code embeddings database."""
+    """Generate medical code embeddings database for the chosen adapter."""
+    adapter_name = _resolve_adapter(adapter)
     notebook = SOURCE_MODULE / "terminologies/embeddings_model.py"
-    args = []
+    args = ["--adapter", adapter_name]
     if model:
         args.extend(["--model", model])
 
