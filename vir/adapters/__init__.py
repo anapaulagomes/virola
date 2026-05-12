@@ -1,8 +1,10 @@
+from vir.adapters.aktin import AktinAdapter
 from vir.adapters.base import Adapter
 from vir.adapters.datasus import DatasusAdapter
 
 ADAPTERS: dict[str, Adapter] = {
     "datasus": DatasusAdapter(),
+    "aktin": AktinAdapter(),
 }
 
 
