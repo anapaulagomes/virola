@@ -22,6 +22,7 @@ def _():
     from sklearn.metrics.pairwise import cosine_similarity
     from snf import compute, metrics
 
+    from vir.adapters.datasus.features import CITY_NAMES
     from vir.config import (
         AFFINITY_ZSCORE_PERMS,
         AFFINITY_ZSCORE_SEED,
@@ -29,7 +30,6 @@ def _():
         VALIDATION_DIR,
     )
     from vir.db import fetch_cluster_assignments, fetch_runs
-    from vir.features import CITY_NAMES
     from vir.helpers import slugify
     from vir.notebook_widgets import (
         distance_to_affinity,

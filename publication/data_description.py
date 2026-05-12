@@ -16,8 +16,8 @@ def _():
 
     from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
     from vir.adapters.datasus import INDICATIVE_CODES_FILE
+    from vir.adapters.datasus.features import IBGE_CITY_MAP
     from vir.adapters.datasus.helpers import load_all_cities
-    from vir.features import IBGE_CITY_MAP
     from vir.viz import TABLEAU_COLORS
 
     return (

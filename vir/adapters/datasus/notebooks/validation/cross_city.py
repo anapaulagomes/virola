@@ -19,10 +19,10 @@ def _():
 @app.cell
 def _():
     from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
+    from vir.adapters.datasus.features import CITY_NAMES, CODE_TYPES_MAPPING
     from vir.adapters.datasus.viz import AGE_GROUP_COLOR, SEX_COLOR
     from vir.config import DATA_DIR, REFERENCES_DIR
     from vir.db import fetch_cluster_assignments, fetch_runs
-    from vir.features import CITY_NAMES, CODE_TYPES_MAPPING
     from vir.viz import TABLEAU_COLORS
 
     return (

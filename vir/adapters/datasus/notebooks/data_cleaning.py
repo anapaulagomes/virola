@@ -12,14 +12,14 @@ def _():
     import polars as pl
 
     from vir.adapters.datasus.cleaning import clean_datasus_raw
+    from vir.adapters.datasus.features import (
+        CITY_NAMES,
+        IBGE_CITY_MAP,
+    )
     from vir.config import (
         INTERIM_DATA_DIR,
         RAW_DATA_DIR,
         RAW_DATA_FILE,
-    )
-    from vir.features import (
-        CITY_NAMES,
-        IBGE_CITY_MAP,
     )
     from vir.helpers import suffix_from
 

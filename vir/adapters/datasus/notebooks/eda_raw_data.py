@@ -10,10 +10,14 @@ def _():
     import plotly.express as px
     import polars as pl
 
+    from vir.adapters.datasus.features import (
+        IBGE_CITY_MAP,
+        ORIGINAL_AGE_GROUP,
+        POPULATION_RANGE,
+    )
     from vir.adapters.datasus.helpers import load_all_cities
     from vir.config import RAW_DATA_FILE
     from vir.data_filters import filter_min_temporal_coverage, filter_temporal_quantiles
-    from vir.features import IBGE_CITY_MAP, ORIGINAL_AGE_GROUP, POPULATION_RANGE
     from vir.viz import plot_categories, scatter_plot_year_per_week
 
     return (
