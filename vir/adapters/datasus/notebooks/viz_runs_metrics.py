@@ -15,8 +15,8 @@ def _():
 
 @app.cell
 def _():
+    from vir.adapters.datasus.features import CITY_NAMES
     from vir.db import fetch_run_leiden, fetch_run_multi_k, fetch_runs
-    from vir.features import CITY_NAMES
 
     return CITY_NAMES, fetch_run_leiden, fetch_run_multi_k, fetch_runs
 

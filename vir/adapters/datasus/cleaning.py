@@ -7,7 +7,7 @@ thin UI shell around this function.
 
 import polars as pl
 
-from vir.features import (
+from vir.adapters.datasus.features import (
     CODE_TYPES_MAPPING,
     IBGE_CITY_MAP,
     ORIGINAL_TO_REDUCED_AGE_GROUP,

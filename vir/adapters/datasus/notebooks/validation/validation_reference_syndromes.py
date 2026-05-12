@@ -22,9 +22,9 @@ def _():
 
 @app.cell
 def _():
+    from vir.adapters.datasus.features import CITY_NAMES, CODE_TYPES_MAPPING
     from vir.config import DATA_DIR, REFERENCES_DIR
     from vir.db import fetch_cluster_assignments, fetch_runs
-    from vir.features import CITY_NAMES, CODE_TYPES_MAPPING
 
     return (
         CITY_NAMES,
