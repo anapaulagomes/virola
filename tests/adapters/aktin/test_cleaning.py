@@ -140,3 +140,72 @@ def test_case_data_extras_are_retained_for_later_statistics(cases, diagnoses):
 
     for column in ("triage", "saettigung", "verbleib", "a_encounter_num", "entlassung_ts"):
         assert column in result.columns
+
+
+def test_unknown_age_group_value_is_dropped_not_silently_nulled(cases, diagnoses):
+    """An age_group not in the bucket mapping (e.g. ``unbekannt``) must not
+    leak through as a row with ``age_group=None`` — that would corrupt every
+    downstream group-by aggregation. Either drop the row or fail loudly."""
+    cases_with_unknown_bin = cases.with_columns(
+        pl.when(pl.col("a_encounter_num").eq(1))
+        .then(pl.lit("unbekannt"))
+        .otherwise(pl.col("age_group"))
+        .alias("age_group")
+    )
+    result = clean_aktin_raw(cases_with_unknown_bin, diagnoses)
+
+    assert result["age_group"].null_count() == 0
+    assert 1 not in result["a_encounter_num"].to_list()
+
+
+def test_aufnahme_ts_with_timezone_offset_is_accepted(cases, diagnoses):
+    """AKTIN sites occasionally emit ``+00:00`` instead of ``Z``. Strict format
+    matching silently produces null ``_admission`` → null year/week. Accept
+    both shapes."""
+    cases_with_offset = cases.with_columns(
+        pl.when(pl.col("a_encounter_num").eq(1))
+        .then(pl.lit("2023-06-15T10:00:00+00:00"))
+        .otherwise(pl.col("aufnahme_ts"))
+        .alias("aufnahme_ts")
+    )
+    result = clean_aktin_raw(cases_with_offset, diagnoses)
+
+    encounter_1 = result.filter(pl.col("a_encounter_num").eq(1)).row(0, named=True)
+    assert encounter_1["year"] == 2023
+    assert encounter_1["week"] == 24
+
+
+def test_malformed_aufnahme_ts_drops_the_case(cases, diagnoses):
+    """A garbage timestamp must produce a dropped row, not a row with null
+    year/week silently riding through."""
+    cases_with_garbage = cases.with_columns(
+        pl.when(pl.col("a_encounter_num").eq(1))
+        .then(pl.lit("not a timestamp"))
+        .otherwise(pl.col("aufnahme_ts"))
+        .alias("aufnahme_ts")
+    )
+    result = clean_aktin_raw(cases_with_garbage, diagnoses)
+
+    assert 1 not in result["a_encounter_num"].to_list()
+    assert result["year"].null_count() == 0
+    assert result["week"].null_count() == 0
+
+
+def test_empty_cases_does_not_explode(diagnoses):
+    """An empty ``cases`` frame must produce an empty result without raising."""
+    empty_cases = pl.DataFrame(
+        schema={
+            "geschlecht": pl.Utf8,
+            "aufnahme_ts": pl.Utf8,
+            "entlassung_ts": pl.Utf8,
+            "age_group": pl.Utf8,
+            "plz_kurz": pl.Utf8,
+            "triage": pl.Utf8,
+            "saettigung": pl.Utf8,
+            "verbleib": pl.Utf8,
+            "a_encounter_num": pl.Int64,
+        }
+    )
+    result = clean_aktin_raw(empty_cases, diagnoses)
+
+    assert result.height == 0

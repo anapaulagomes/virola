@@ -29,7 +29,7 @@ AKTIN_AGE_BUCKETS: dict[str, str] = {
     "80+": "80+",
 }
 
-_REQUIRED_CASE_FIELDS = ["geschlecht", "aufnahme_ts", "age_group"]
+_REQUIRED_CASE_FIELDS: tuple[str, ...] = ("geschlecht", "aufnahme_ts", "age_group")
 
 
 def _null_when_empty(column: str) -> pl.Expr:
@@ -43,11 +43,11 @@ def clean_aktin_raw(cases: pl.DataFrame, diagnoses: pl.DataFrame) -> pl.DataFram
 
     1. Drop case rows with empty / null ``geschlecht``, ``aufnahme_ts`` or
        ``age_group``.
-    2. Parse ``aufnahme_ts`` (UTC) and derive ISO ``(year, week)`` directly —
-       no local-time conversion: the boundary smearing at week edges is small
-       and uniform, so it is left as a known source of doubt rather than
-       silently corrected.
-    3. Collapse the native 5-year ``age_group`` to one of the 8 AKTIN buckets.
+    2. Parse ``aufnahme_ts`` accepting both ``Z`` and ``+00:00`` offsets;
+       unparseable timestamps drop the row rather than ride through as a null
+       year/week.
+    3. Collapse the native 5-year ``age_group`` to one of the 8 AKTIN buckets;
+       any value outside the bucket map drops the row.
     4. Keep only diagnoses with ``diagnose_zusatz == 'G'`` (confirmed).
     5. Inner-join cases × confirmed diagnoses on ``a_encounter_num``.
     6. Add ``city = "germany"``, ``code_type = "icd10gm"``, ``quantity = 1``.
@@ -58,14 +58,17 @@ def clean_aktin_raw(cases: pl.DataFrame, diagnoses: pl.DataFrame) -> pl.DataFram
     """
     cleaned_cases = (
         cases.with_columns([_null_when_empty(column) for column in _REQUIRED_CASE_FIELDS])
-        .drop_nulls(subset=_REQUIRED_CASE_FIELDS)
+        .drop_nulls(subset=list(_REQUIRED_CASE_FIELDS))
         .with_columns(
-            _admission=pl.col("aufnahme_ts").str.to_datetime("%Y-%m-%dT%H:%M:%SZ", time_zone="UTC")
+            _admission=pl.col("aufnahme_ts")
+            .str.replace(r"Z$", "+00:00")
+            .str.to_datetime("%Y-%m-%dT%H:%M:%S%z", strict=False),
+            age_group=pl.col("age_group").replace_strict(AKTIN_AGE_BUCKETS, default=None),
         )
+        .drop_nulls(subset=["_admission", "age_group"])
         .with_columns(
             year=pl.col("_admission").dt.iso_year(),
             week=pl.col("_admission").dt.week(),
-            age_group=pl.col("age_group").replace_strict(AKTIN_AGE_BUCKETS, default=None),
         )
         .drop(["_admission", "plz_kurz"])
         .rename({"geschlecht": "sex"})
