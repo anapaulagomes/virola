@@ -28,6 +28,14 @@ def test_terminology_csv_filename_is_adapter_scoped():
     assert _aktin().terminology_csv_filename == "icd10gm_aktin.csv"
 
 
+def test_cleaned_filename_uses_aktin_germany_for_the_single_stratum():
+    assert _aktin().cleaned_filename("germany") == "cleaned_aktin_germany.parquet"
+
+
+def test_cleaned_filename_falls_back_to_aktin_all_when_stratum_is_none():
+    assert _aktin().cleaned_filename(None) == "cleaned_aktin_all.parquet"
+
+
 def test_strata_is_a_single_stratum_named_germany():
     assert _aktin().strata == ["germany"]
 

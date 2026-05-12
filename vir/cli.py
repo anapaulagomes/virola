@@ -21,6 +21,7 @@ from vir.config import (
     INTERIM_DATA_DIR,
     PROCESSED_DATA_DIR,
     PROJ_ROOT,
+    RAW_DATA_DIR,
     VALIDATION_DIR,
 )
 from vir.db import (
@@ -192,31 +193,49 @@ def prepare_clean(
         None, "--stratum", help="Stratum to filter (e.g. germany, 'Belo Horizonte')."
     ),
     city: Optional[str] = typer.Option(None, "--city", help="DEPRECATED alias for --stratum."),
-    input_file: Optional[Path] = typer.Option(None, "--input", help="Input parquet file"),
-    output_dir: Optional[Path] = typer.Option(None, "--output", help="Output directory"),
-    force: bool = typer.Option(
-        False, "--force", help="Reprocess from raw even if cached output exists"
+    adapter: Optional[str] = typer.Option(
+        None,
+        "--adapter",
+        envvar="VIROLA_ADAPTER",
+        help="Adapter name. Derived from --stratum when given; falls back to VIROLA_ADAPTER env "
+        "var otherwise.",
+    ),
+    input_path: Optional[Path] = typer.Option(
+        None, "--input", help="Raw data path (file or directory). Defaults to RAW_DATA_DIR."
+    ),
+    output_dir: Optional[Path] = typer.Option(
+        None, "--output", help="Output directory. Defaults to INTERIM_DATA_DIR."
     ),
 ):
-    """Clean and standardize raw data."""
+    """Clean and standardize raw data via the active adapter."""
     resolved_stratum = _resolve_stratum(stratum, city)
     _validate_stratum(resolved_stratum)
 
-    notebook = DATASUS_NOTEBOOKS / "data_cleaning.py"
-    args = []
     if resolved_stratum:
-        args.extend(["--city", resolved_stratum])
-    if input_file:
-        args.extend(["--input", str(input_file)])
-    if output_dir:
-        args.extend(["--output", str(output_dir)])
-    if force:
-        args.append("--force")
+        active_adapter = adapter_for_stratum(resolved_stratum)
+        if adapter and adapter != active_adapter.name:
+            typer.secho(
+                f"✗ --adapter {adapter!r} contradicts --stratum {resolved_stratum!r} "
+                f"(owned by {active_adapter.name!r}).",
+                fg=typer.colors.RED,
+            )
+            raise typer.Exit(code=1)
+    else:
+        adapter_name = _resolve_adapter(adapter)
+        active_adapter = ADAPTERS[adapter_name]
 
-    exit_code = run_marimo_notebook(notebook, args)
-    if exit_code == 0:
-        typer.secho("✓ Data cleaning completed successfully", fg=typer.colors.GREEN)
-    sys.exit(exit_code)
+    raw_path = input_path or RAW_DATA_DIR
+    destination = (output_dir or INTERIM_DATA_DIR) / active_adapter.cleaned_filename(
+        resolved_stratum
+    )
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    typer.secho(
+        f"Cleaning {active_adapter.name} data from {raw_path} → {destination}",
+        fg=typer.colors.BLUE,
+    )
+    active_adapter.clean(raw_path=raw_path, output_path=destination, stratum=resolved_stratum)
+    typer.secho(f"✓ Wrote cleaned interim to {destination}", fg=typer.colors.GREEN)
 
 
 @prepare_app.command("indicative-template")

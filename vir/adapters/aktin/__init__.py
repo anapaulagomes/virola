@@ -72,3 +72,7 @@ class AktinAdapter(Adapter):
     @property
     def code_types(self) -> list[str]:
         return ["icd10gm"]
+
+    def cleaned_filename(self, stratum: str | None) -> str:
+        slug = (stratum or "all").lower().replace(" ", "_")
+        return f"cleaned_aktin_{slug}.parquet"

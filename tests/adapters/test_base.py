@@ -36,6 +36,9 @@ class _StubAdapter(Adapter):
     def code_types(self) -> list[str]:
         return []
 
+    def cleaned_filename(self, stratum: str | None) -> str:
+        return f"cleaned_{stratum or 'all'}.parquet"
+
 
 def test_adapter_cannot_be_instantiated_directly():
     with pytest.raises(TypeError):
