@@ -4,8 +4,19 @@ from typing import List, Optional, Tuple
 
 import polars as pl
 
-from vir.config import SKIP_PATTERNS
+from vir.adapters import ADAPTERS
 from vir.data_filters import filter_skip_patterns
+
+
+def _default_skip_patterns() -> list[tuple[str, str]]:
+    """Union of every registered adapter's ``skip_patterns``.
+
+    The framework default is the union because each pattern is ``code_type``-scoped:
+    DATASUS' ``("cid10", "^Z")`` never fires on an AKTIN row (whose ``code_type``
+    is ``icd10gm``) and vice versa. When the call site knows which adapter is
+    active it should pass ``adapter.skip_patterns`` explicitly.
+    """
+    return [pattern for adapter in ADAPTERS.values() for pattern in adapter.skip_patterns]
 
 
 def prepare_dataframe(
@@ -36,7 +47,9 @@ def prepare_dataframe(
         dataframe: Interim DataFrame loaded from data/interim/
         terminology_labels: DataFrame with id, code, code_type, label columns
         exclude_codes: Optional list of labels to exclude (format: ``code:code_type``)
-        skip_patterns: Override SKIP_PATTERNS; pass [] to disable all pattern filters
+        skip_patterns: ``(code_type, regex)`` pairs to drop. ``None`` falls back to
+            the union of every registered adapter's ``skip_patterns``; pass ``[]``
+            to disable all pattern filters.
         keep_city: If True, retain the ``city`` column (used for cross-city analysis)
 
     Returns:
@@ -69,7 +82,7 @@ def prepare_dataframe(
     if exclude_codes:
         dataframe = dataframe.filter(~pl.col("terminology_label").is_in(exclude_codes))
 
-    resolved_patterns = SKIP_PATTERNS if skip_patterns is None else skip_patterns
+    resolved_patterns = _default_skip_patterns() if skip_patterns is None else skip_patterns
     if resolved_patterns:
         dataframe = filter_skip_patterns(dataframe, resolved_patterns)
 

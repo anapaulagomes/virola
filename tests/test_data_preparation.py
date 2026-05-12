@@ -262,6 +262,42 @@ class TestPrepareDataframe:
         assert "Z96:ciap2" in labels
         assert "Z760:cid10" not in labels
 
+    def test_default_skip_patterns_use_union_of_registered_adapters(self, terminology_labels):
+        """``skip_patterns=None`` should drop every adapter's Z-chapter (DATASUS cid10 + AKTIN icd10gm)
+        without touching unrelated code_types."""
+        extra_labels = terminology_labels.vstack(
+            pl.DataFrame(
+                {
+                    "id": [99, 100],
+                    "code": ["Z96", "Z00"],
+                    "code_type": ["ciap2", "icd10gm"],
+                    "description": ["some ciap2 Z code", "ICD-10-GM Z code"],
+                    "label": ["Z96:ciap2", "Z00:icd10gm"],
+                }
+            )
+        )
+        rows = []
+        for row in extra_labels.iter_rows(named=True):
+            rows.append(
+                {
+                    "year": 2022,
+                    "week": 1,
+                    "sex": "M",
+                    "age_group": "adult",
+                    "code_type": row["code_type"],
+                    "code": row["code"],
+                    "quantity": 10,
+                }
+            )
+        interim = pl.DataFrame(rows)
+        result = prepare_dataframe(interim, extra_labels, skip_patterns=None)
+        labels = set(result["terminology_label"].unique().to_list())
+
+        assert "Z760:cid10" not in labels
+        assert "Z00:icd10gm" not in labels
+        assert "Z96:ciap2" in labels
+        assert "I10:cid10" in labels
+
     def test_no_skip_patterns_keeps_all_codes(self, terminology_labels):
         interim = _build_interim_dataframe(terminology_labels)
         result = prepare_dataframe(interim, terminology_labels, skip_patterns=[])
