@@ -57,6 +57,7 @@ def _():
 
 @app.cell
 def _():
+    from vir.adapters import ADAPTERS
     from vir.config import (
         AFFINITY_ZSCORE_PERMS,
         AFFINITY_ZSCORE_SEED,
@@ -80,6 +81,7 @@ def _():
     from vir.views import ClinicalView, DemographicView, TemporalView
 
     return (
+        ADAPTERS,
         CLUSTERING_DIR,
         ClinicalView,
         AFFINITY_ZSCORE_PERMS,
@@ -140,9 +142,16 @@ def _(load_terminology_labels):
 
 
 @app.cell
-def _(args, load_indicative_codes):
+def _(ADAPTERS, args):
+    active_adapter = ADAPTERS[args.get("adapter", "datasus")]
+    return (active_adapter,)
+
+
+@app.cell
+def _(active_adapter, args, load_indicative_codes):
     exclude_codes, indicative_codes_enabled = load_indicative_codes(
-        enabled="no-indicative" not in args
+        path=active_adapter.indicative_codes_file,
+        enabled="no-indicative" not in args,
     )
     return exclude_codes, indicative_codes_enabled
 

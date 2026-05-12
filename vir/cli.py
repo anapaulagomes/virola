@@ -8,7 +8,7 @@ from typing import Optional
 import polars as pl
 import typer
 
-from vir.adapters import ADAPTERS, known_strata
+from vir.adapters import ADAPTERS, adapter_for_stratum, known_strata
 from vir.cleaning.indicative_template import build_indicative_template
 from vir.clusters import (
     build_cluster_profiles,
@@ -276,10 +276,18 @@ def prepare_process(
     dataset: str = typer.Option(
         ..., "--dataset", "-d", help="Path to a cleaned interim parquet file"
     ),
+    adapter: Optional[str] = typer.Option(
+        None,
+        "--adapter",
+        envvar="VIROLA_ADAPTER",
+        help="Adapter providing skip_patterns + indicative-codes file. "
+        "Falls back to VIROLA_ADAPTER env var.",
+    ),
 ):
     """Prepare a cleaned interim dataset: aggregate, join terminology, filter codes."""
+    adapter_name = _resolve_adapter(adapter)
     notebook = CLEANING_MODULE / "data_preparation.py"
-    args = ["--dataset", dataset]
+    args = ["--dataset", dataset, "--adapter", adapter_name]
 
     exit_code = run_marimo_notebook(notebook, args)
     if exit_code == 0:
@@ -405,6 +413,12 @@ def model_indicative_codes(
 @model_app.command("snf")
 def model_snf(
     dataset: str = typer.Option(..., "--dataset", "-d", help="Dataset file path or name"),
+    adapter: Optional[str] = typer.Option(
+        None,
+        "--adapter",
+        envvar="VIROLA_ADAPTER",
+        help="Adapter providing indicative-codes file. Falls back to VIROLA_ADAPTER env var.",
+    ),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
     year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
     snf_k: int = typer.Option(10, "--snf-k", help="SNF parameter k"),
@@ -417,10 +431,13 @@ def model_snf(
     ),
 ):
     """Run Similarity Network Fusion clustering. Results are saved to virola.db."""
+    adapter_name = _resolve_adapter(adapter)
     notebook = PROJ_ROOT / "notebooks/model_similarity_network_fusion.py"
     args = [
         "--dataset",
         dataset,
+        "--adapter",
+        adapter_name,
         "--year-min",
         str(year_min),
         "--year-max",
@@ -468,9 +485,14 @@ def pipeline_run(
     """Run complete pipeline for a stratum: clean -> process -> views -> model snf."""
 
     _validate_stratum(stratum)
+    adapter_name = adapter_for_stratum(stratum).name
 
     typer.secho(f"\n{'=' * 60}", fg=typer.colors.CYAN)
-    typer.secho(f"Running pipeline for: {stratum}", fg=typer.colors.CYAN, bold=True)
+    typer.secho(
+        f"Running pipeline for: {stratum} (adapter: {adapter_name})",
+        fg=typer.colors.CYAN,
+        bold=True,
+    )
     typer.secho(f"{'=' * 60}\n", fg=typer.colors.CYAN)
 
     city_slug = stratum.lower().replace(" ", "_")
@@ -500,7 +522,7 @@ def pipeline_run(
 
     typer.secho("Step 2/6: Processing data...", fg=typer.colors.BLUE, bold=True)
     notebook = CLEANING_MODULE / "data_preparation.py"
-    args = ["--dataset", str(interim_file)]
+    args = ["--dataset", str(interim_file), "--adapter", adapter_name]
     exit_code = run_marimo_notebook(notebook, args)
     if exit_code != 0:
         typer.secho("✗ Data preparation failed", fg=typer.colors.RED)
@@ -574,6 +596,8 @@ def pipeline_run(
     args = [
         "--dataset",
         dataset,
+        "--adapter",
+        adapter_name,
         "--year-min",
         str(year_min),
         "--year-max",
