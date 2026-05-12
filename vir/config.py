@@ -52,31 +52,6 @@ MODEL_DIMENSIONS = 768
 # filtering
 INDICATIVE_ENABLED = True
 MIN_WEEKS = 12
-DEFAULT_SKIP_PATTERNS = [("cid10", r"^Z")]
-
-
-def _parse_skip_patterns(raw: str) -> list[tuple]:
-    """Parse VIROLA_SKIP_PATTERNS env var.
-
-    Format: semicolon-separated entries, each as ``code_type|regex``.
-    Use ``*`` as code_type to match all types (maps to None).
-
-    Example: ``cid10|^Z;*|^ABP``
-    """
-    result = []
-    for entry in raw.split(";"):
-        entry = entry.strip()
-        if not entry:
-            continue
-        code_type, _, regex = entry.partition("|")
-        result.append((None if code_type.strip() == "*" else code_type.strip(), regex))
-    return result
-
-
-_raw_skip = os.getenv("VIROLA_SKIP_PATTERNS")
-SKIP_PATTERNS: list[tuple] = (
-    _parse_skip_patterns(_raw_skip) if _raw_skip else DEFAULT_SKIP_PATTERNS
-)
 
 
 def get_indicative_label(enabled: bool = INDICATIVE_ENABLED) -> str:
