@@ -21,7 +21,7 @@ def test_includes_a_known_four_character_diagnosis_with_its_german_label():
     the long German title."""
     labels = build_icd10gm_labels()
 
-    row = labels.filter(pl.col("code") == "A00.0").row(0, named=True)
+    row = labels.filter(pl.col("code").eq("A00.0")).row(0, named=True)
     assert row["description"] == "Cholera durch Vibrio cholerae O:1, Biovar cholerae"
 
 
@@ -50,7 +50,7 @@ def test_includes_three_character_root_codes_with_their_block_title():
     cholera). The labels table must still resolve that to a description."""
     labels = build_icd10gm_labels()
 
-    row = labels.filter(pl.col("code") == "A00").row(0, named=True)
+    row = labels.filter(pl.col("code").eq("A00")).row(0, named=True)
     assert row["description"] == "Cholera"
 
 
@@ -64,7 +64,7 @@ def test_has_enough_codes_to_cover_the_classification():
 def test_no_null_or_empty_codes_or_descriptions():
     labels = build_icd10gm_labels()
 
-    assert labels.filter(pl.col("code").is_null() | (pl.col("code") == "")).height == 0
+    assert labels.filter(pl.col("code").is_null() | pl.col("code").eq("")).height == 0
     assert (
-        labels.filter(pl.col("description").is_null() | (pl.col("description") == "")).height == 0
+        labels.filter(pl.col("description").is_null() | pl.col("description").eq("")).height == 0
     )
