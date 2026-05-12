@@ -14,14 +14,14 @@ def _():
 @app.cell
 def _():
     from vir.adapters.datasus import INDICATIVE_CODES_FILE
-    from vir.data_filters import filter_most_representative_rows
+    from vir.cleaning.indicative_template import build_indicative_template
     from vir.notebook_widgets import create_file_dropdown, load_terminology_labels
 
     return (
-        create_file_dropdown,
-        filter_most_representative_rows,
-        load_terminology_labels,
         INDICATIVE_CODES_FILE,
+        build_indicative_template,
+        create_file_dropdown,
+        load_terminology_labels,
     )
 
 
@@ -103,10 +103,8 @@ def _(indicative_starter_file, INDICATIVE_CODES_FILE):
 
 @app.cell
 def _(indicative_file, pl):
-    df_labeled = (
-        pl.read_csv(indicative_file)
-        .with_columns(pl.col("indicative").fill_null("").str.strip_chars().str.to_lowercase())
-        .filter(pl.col("indicative").eq("yes"))
+    df_labeled = pl.read_csv(indicative_file).with_columns(
+        pl.col("indicative").fill_null("").str.strip_chars().str.to_lowercase()
     )
     df_labeled
     return (df_labeled,)
@@ -121,19 +119,9 @@ def _(mo):
 
 
 @app.cell
-def _(df, df_labeled, filter_most_representative_rows, terminology_labels):
-    most75_df = (
-        filter_most_representative_rows(df, group_by=["code", "code_type"], threshold=0.75)
-        .join(
-            df_labeled.select(["code_type", "code", "indicative"]),
-            how="left",
-            on=["code_type", "code"],
-        )
-        .join(
-            terminology_labels.select(["code_type", "code", "description"]),
-            how="left",
-            on=["code_type", "code"],
-        )
+def _(build_indicative_template, df, df_labeled, terminology_labels):
+    most75_df = build_indicative_template(
+        df, terminology_labels, existing_labels=df_labeled, coverage=0.75
     )
     most75_df
     return
@@ -148,19 +136,9 @@ def _(mo):
 
 
 @app.cell
-def _(df, df_labeled, filter_most_representative_rows, terminology_labels):
-    most90_df = (
-        filter_most_representative_rows(df, group_by=["code", "code_type"], threshold=0.90)
-        .join(
-            df_labeled.select(["code_type", "code", "indicative"]),
-            how="left",
-            on=["code_type", "code"],
-        )
-        .join(
-            terminology_labels.select(["code_type", "code", "description"]),
-            how="left",
-            on=["code_type", "code"],
-        )
+def _(build_indicative_template, df, df_labeled, terminology_labels):
+    most90_df = build_indicative_template(
+        df, terminology_labels, existing_labels=df_labeled, coverage=0.90
     )
     most90_df
     return
