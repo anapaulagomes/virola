@@ -799,7 +799,20 @@ def save_run(
     if multi_k_results:
         insert_run_multi_k(run_id, multi_k_results)
 
-    if df is not None:
+    if df is None:
+        logger.warning(
+            f"Run {run_id} has no per-record parquet: ``df`` was None when ``save_run`` "
+            f"was called. The cluster_assignments rows exist in the DB but the viz "
+            f"notebooks won't be able to render this run."
+        )
+    elif df.is_empty():
+        logger.warning(
+            f"Run {run_id} has no per-record parquet: ``df`` was empty when ``save_run`` "
+            f"was called. Likely cause: year filter + ``filter_min_temporal_coverage`` "
+            f"removed every row before SNF. Delete the orphan run with "
+            f"``vir results delete --id {run_id}`` and re-run with a wider year range."
+        )
+    else:
         runs_dir = DATA_DIR / "runs"
         runs_dir.mkdir(parents=True, exist_ok=True)
         dataset_path = runs_dir / f"{run_id}.parquet"

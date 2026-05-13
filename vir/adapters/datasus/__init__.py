@@ -6,6 +6,7 @@ from vir.adapters.base import Adapter
 from vir.adapters.datasus.cleaning import clean_datasus_raw
 from vir.adapters.datasus.features import CITY_NAMES, IBGE_CITY_MAP
 from vir.adapters.datasus.terminology import create_terminologies_df
+from vir.adapters.datasus.viz import AGE_GROUP_COLOR, CODE_TYPE_COLOR, SEX_COLOR
 from vir.config import RAW_DATA_FILE
 
 _REFERENCES_DIR = Path(__file__).parent / "references"
@@ -77,3 +78,11 @@ class DatasusAdapter(Adapter):
         raw_stem = RAW_DATA_FILE.parent.stem
         slug = stratum.lower().replace(" ", "_") if stratum else "all_cities"
         return f"cleaned_{raw_stem}_{slug}.parquet"
+
+    @property
+    def viz_palettes(self) -> dict[str, dict[str, str]]:
+        return {
+            "sex": SEX_COLOR,
+            "age_group": AGE_GROUP_COLOR,
+            "code_type": {key.lower(): value for key, value in CODE_TYPE_COLOR.items()},
+        }

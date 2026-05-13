@@ -39,6 +39,10 @@ class _StubAdapter(Adapter):
     def cleaned_filename(self, stratum: str | None) -> str:
         return f"cleaned_{stratum or 'all'}.parquet"
 
+    @property
+    def viz_palettes(self) -> dict[str, dict[str, str]]:
+        return {"sex": {}, "age_group": {}, "code_type": {}}
+
 
 def test_adapter_cannot_be_instantiated_directly():
     with pytest.raises(TypeError):

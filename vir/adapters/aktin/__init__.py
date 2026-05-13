@@ -9,6 +9,7 @@ from loguru import logger
 
 from vir.adapters.aktin.cleaning import clean_aktin_raw
 from vir.adapters.aktin.terminology import build_icd10gm_labels
+from vir.adapters.aktin.viz import AGE_GROUP_COLOR, CODE_TYPE_COLOR, SEX_COLOR
 from vir.adapters.base import Adapter
 
 _FileSource = Union[Path, tuple[Path, str]]
@@ -170,3 +171,11 @@ class AktinAdapter(Adapter):
     def cleaned_filename(self, stratum: str | None) -> str:
         slug = (stratum or "all").lower().replace(" ", "_")
         return f"cleaned_aktin_{slug}.parquet"
+
+    @property
+    def viz_palettes(self) -> dict[str, dict[str, str]]:
+        return {
+            "sex": SEX_COLOR,
+            "age_group": AGE_GROUP_COLOR,
+            "code_type": CODE_TYPE_COLOR,
+        }
