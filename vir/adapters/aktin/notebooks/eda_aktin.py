@@ -93,6 +93,12 @@ def _(mo):
 
 
 @app.cell
+def _():
+    age_order = ["0-4", "5-9", "10-14", "15-19", "20-39", "40-59", "60-79", "80+"]
+    return (age_order,)
+
+
+@app.cell
 def _(df, mo, px):
     sex_per_encounter = df.unique(subset=["a_encounter_num"]).group_by("sex").len().sort("sex")
     sex_chart = px.bar(
@@ -107,8 +113,7 @@ def _(df, mo, px):
 
 
 @app.cell
-def _(df, mo, pl, px):
-    age_order = ["0-4", "5-9", "10-14", "15-19", "20-39", "40-59", "60-79", "80+"]
+def _(age_order, df, mo, pl, px):
     age_per_encounter = (
         df.unique(subset=["a_encounter_num"])
         .group_by("age_group")
@@ -129,9 +134,8 @@ def _(df, mo, pl, px):
 
 
 @app.cell
-def _(df, mo, px):
+def _(age_order, df, mo, px):
     sex_age = df.unique(subset=["a_encounter_num"]).group_by(["age_group", "sex"]).len()
-    age_order = ["0-4", "5-9", "10-14", "15-19", "20-39", "40-59", "60-79", "80+"]
     sex_age_chart = px.bar(
         sex_age,
         x="age_group",
