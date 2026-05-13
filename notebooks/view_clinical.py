@@ -19,6 +19,7 @@ def _():
     import umap
     from dotenv import load_dotenv
     from embedding_atlas.widget import EmbeddingAtlasWidget
+    from loguru import logger
     from sklearn.cluster import AgglomerativeClustering
     from sklearn.metrics import silhouette_score
 
@@ -26,6 +27,7 @@ def _():
         AgglomerativeClustering,
         EmbeddingAtlasWidget,
         load_dotenv,
+        logger,
         np,
         pl,
         px,
@@ -422,8 +424,28 @@ def _(AgglomerativeClustering, clinical_distance_matrix):
 
 
 @app.cell
-def _(clinical_distance_matrix, cluster_labels, silhouette_score):
-    sil_score = silhouette_score(clinical_distance_matrix, cluster_labels, metric="precomputed")
+def _(clinical_distance_matrix, cluster_labels, logger, np, silhouette_score):
+    minimum_clusters_for_silhouette = 2
+    sample_count = clinical_distance_matrix.shape[0]
+    maximum_clusters_for_silhouette = sample_count - 1
+    distinct_cluster_count = int(np.unique(cluster_labels).size)
+    if (
+        minimum_clusters_for_silhouette
+        <= distinct_cluster_count
+        <= maximum_clusters_for_silhouette
+    ):
+        sil_score = silhouette_score(
+            clinical_distance_matrix, cluster_labels, metric="precomputed"
+        )
+    else:
+        logger.warning(
+            f"Exploratory clustering produced {distinct_cluster_count} distinct labels for "
+            f"{sample_count} samples; silhouette is undefined outside "
+            f"[{minimum_clusters_for_silhouette}, {maximum_clusters_for_silhouette}]. "
+            "Skipping silhouette score (likely indicates the distance_threshold is mismatched "
+            "to this dataset's embedding distribution)."
+        )
+        sil_score = None
     sil_score
     return (sil_score,)
 
