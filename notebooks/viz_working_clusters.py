@@ -18,11 +18,13 @@ def _():
 
 @app.cell
 def _():
+    from vir.adapters import ADAPTERS
     from vir.config import DATA_DIR
     from vir.db import fetch_cluster_assignments, fetch_cluster_profiles, fetch_runs
     from vir.osi import build_osi_payload, osi_payload_as_json
 
     return (
+        ADAPTERS,
         DATA_DIR,
         build_osi_payload,
         fetch_cluster_assignments,
@@ -33,16 +35,32 @@ def _():
 
 
 @app.cell
-def _():
-    from vir.adapters.datasus.viz import AGE_GROUP_COLOR, CODE_TYPE_COLOR, SEX_COLOR
-
-    return AGE_GROUP_COLOR, CODE_TYPE_COLOR, SEX_COLOR
+def _(mo):
+    args = mo.cli_args() if mo.app_meta().mode == "script" else {}
+    return (args,)
 
 
 @app.cell
-def _(CODE_TYPE_COLOR):
-    code_type_color_lowercase = {key.lower(): value for key, value in CODE_TYPE_COLOR.items()}
-    return (code_type_color_lowercase,)
+def _(ADAPTERS, mo):
+    adapter = mo.ui.dropdown(
+        options=list(ADAPTERS.keys()),
+        label="Choose adapter",
+        searchable=True,
+        value="datasus",
+    )
+    adapter
+    return (adapter,)
+
+
+@app.cell
+def _(ADAPTERS, adapter, args):
+    adapter_name = args.get("adapter", adapter.value)
+    active_adapter = ADAPTERS[adapter_name]
+    viz_palettes = active_adapter.viz_palettes
+    SEX_COLOR = viz_palettes["sex"]
+    AGE_GROUP_COLOR = viz_palettes["age_group"]
+    code_type_color_lowercase = viz_palettes["code_type"]
+    return AGE_GROUP_COLOR, SEX_COLOR, adapter_name, code_type_color_lowercase
 
 
 @app.cell
@@ -118,23 +136,41 @@ def _(fetch_cluster_profiles, selected_run_id):
 
 
 @app.cell
+def _(DATA_DIR):
+    DATA_DIR
+    return
+
+
+@app.cell
 def _(DATA_DIR, pl, selected_run_id):
     run_dataset_path = DATA_DIR / "runs" / f"{selected_run_id}.parquet"
     if run_dataset_path.exists():
         run_dataset = pl.read_parquet(run_dataset_path)
     else:
         run_dataset = pl.DataFrame()
-    return (run_dataset,)
+    return run_dataset, run_dataset_path
 
 
 @app.cell
-def _(mo, run_dataset):
+def _(mo, pl, run_dataset, run_dataset_path, runs_dataframe, selected_run_id):
+    selected_run_row = runs_dataframe.filter(pl.col("run_id").eq(selected_run_id))
+    selected_dataset_name = (
+        selected_run_row["dataset_name"][0] if not selected_run_row.is_empty() else None
+    )
+    selected_stratum = selected_run_row["city"][0] if not selected_run_row.is_empty() else None
+    rerun_target = selected_stratum or selected_dataset_name or "<stratum>"
     mo.stop(
         run_dataset.is_empty(),
         mo.callout(
             mo.md(
-                "Prepared dataset parquet not found for this run. "
-                "Re-run the pipeline so the per-record data is available."
+                f"Per-record parquet sidecar not found for run **{selected_run_id}**.\n\n"
+                f"- Expected at `{run_dataset_path}`\n"
+                f"- Cause: `vir model snf` writes this sidecar at the end of `save_run`. "
+                f"If the SNF step crashed or was interrupted after the run row was "
+                f"inserted but before the parquet write, the row stays orphaned.\n\n"
+                f"Recover by re-running:\n\n"
+                f"```bash\nvir pipeline run {rerun_target} --year-min … --year-max …\n```\n\n"
+                f"or delete the orphan run: `vir results delete --id {selected_run_id}`."
             ),
             kind="warn",
         ),
@@ -191,7 +227,9 @@ def _(assignments, cluster_dropdown, pl):
 @app.cell
 def _(cluster_assignments, run_dataset):
     cluster_records = run_dataset.join(
-        cluster_assignments.select(["terminology_id", "code", "code_type"]).unique(),
+        cluster_assignments.select(
+            ["terminology_id", "code", "code_type", "description"]
+        ).unique(),
         on=["terminology_id", "code", "code_type"],
         how="inner",
     )
@@ -420,10 +458,22 @@ def _(epi_week_chart, mo, per_member_timeline_chart, total_timeline_chart):
 
 
 @app.cell
-def _(mo):
-    export_button = mo.ui.run_button(label="Export selected codes to OSI (JSON)")
-    export_button
-    return (export_button,)
+def _(adapter_name, mo):
+    osi_supported = adapter_name == "datasus"
+    export_button = (
+        mo.ui.run_button(label="Export selected codes to OSI (JSON)") if osi_supported else None
+    )
+    if osi_supported:
+        export_button
+    else:
+        mo.callout(
+            mo.md(
+                f"OSI export is currently only wired up for the DATASUS adapter; "
+                f"the active adapter is `{adapter_name}`."
+            ),
+            kind="info",
+        )
+    return export_button, osi_supported
 
 
 @app.cell
@@ -435,10 +485,13 @@ def _(
     member_table,
     mo,
     osi_payload_as_json,
+    osi_supported,
     pl,
     runs_dataframe,
     selected_run_id,
 ):
+    mo.stop(not osi_supported)
+
     if not export_button.value:
         _export_content = mo.md(
             "*Tick member codes above and click the export button to preview the OSI payload.*"
