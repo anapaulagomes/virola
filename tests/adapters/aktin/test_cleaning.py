@@ -191,6 +191,22 @@ def test_malformed_aufnahme_ts_drops_the_case(cases, diagnoses):
     assert result["week"].null_count() == 0
 
 
+def test_intersex_sex_value_x_passes_through(cases, diagnoses):
+    """AKTIN's ``geschlecht`` accepts ``X`` (divers / non-binary). The cleaning
+    pipeline must not drop or reshape it; downstream consumers (viz palettes,
+    demographic view) handle it explicitly."""
+    cases_with_x = cases.with_columns(
+        pl.when(pl.col("a_encounter_num").eq(1))
+        .then(pl.lit("X"))
+        .otherwise(pl.col("geschlecht"))
+        .alias("geschlecht")
+    )
+    result = clean_aktin_raw(cases_with_x, diagnoses)
+
+    encounter_1_rows = result.filter(pl.col("a_encounter_num").eq(1))
+    assert encounter_1_rows["sex"].unique().to_list() == ["X"]
+
+
 def test_empty_cases_does_not_explode(diagnoses):
     """An empty ``cases`` frame must produce an empty result without raising."""
     empty_cases = pl.DataFrame(

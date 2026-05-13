@@ -58,3 +58,14 @@ class Adapter(ABC):
     @abstractmethod
     def cleaned_filename(self, stratum: str | None) -> str:
         """Return the filename ``vir prepare clean`` writes into ``INTERIM_DATA_DIR`` for this stratum."""
+
+    @property
+    @abstractmethod
+    def viz_palettes(self) -> dict[str, dict[str, str]]:
+        """Return colour maps used by the result-viz notebooks.
+
+        Expected keys: ``"sex"``, ``"age_group"``, ``"code_type"``. Each value is a
+        ``{label: hex_color}`` mapping. ``code_type`` keys must use the lowercase
+        canonical form (``"cid10"``, ``"icd10gm"``, ...) so notebooks can join
+        directly against the canonical row.
+        """
