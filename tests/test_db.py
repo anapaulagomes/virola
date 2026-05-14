@@ -67,18 +67,20 @@ class TestRunsAdapterMigration:
         assert "adapter" in self._columns(connection)
 
     def test_existing_rows_are_backfilled_to_datasus(self, tmp_db):
+        """Legacy DBs created before the ``adapter`` column existed end up with
+        ``NULL`` adapter values. The migration must backfill those rows to
+        ``datasus`` (the only adapter that existed at the time)."""
         db_module.create_embeddings_table_if_not_exists()
         db_module.create_results_schema()
-        run_id = db_module.insert_run(
-            dataset_name="legacy",
-            city="Bauru",
-            region="Sudeste",
-            population_range="250 - 500 mil",
-            year_min=2022,
-            year_max=2024,
-            snf_k=10,
-            n_clusters=3,
+        connection = db_module.get_connection(write=True)
+        connection.execute(
+            "INSERT INTO runs (dataset_name, city, region, population_range, "
+            "year_min, year_max, snf_k, n_clusters) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING run_id",
+            ["legacy", "Bauru", "Sudeste", "250 - 500 mil", 2022, 2024, 10, 3],
         )
+        run_id = connection.execute("SELECT run_id FROM runs").fetchone()[0]
+        connection.execute("UPDATE runs SET adapter = NULL WHERE run_id = ?", [run_id])
         db_module.create_results_schema()
         adapter_value = (
             db_module.get_connection()
@@ -89,8 +91,8 @@ class TestRunsAdapterMigration:
 
     def test_backfill_does_not_overwrite_existing_adapter_values(self, tmp_db):
         db_module.create_embeddings_table_if_not_exists()
-        db_module.create_results_schema()
         run_id = db_module.insert_run(
+            adapter="aktin",
             dataset_name="aktin_germany",
             city="germany",
             region=None,
@@ -99,9 +101,6 @@ class TestRunsAdapterMigration:
             year_max=2023,
             snf_k=10,
             n_clusters=3,
-        )
-        db_module.get_connection(write=True).execute(
-            "UPDATE runs SET adapter = 'aktin' WHERE run_id = ?", [run_id]
         )
         db_module.create_results_schema()
         adapter_value = (
@@ -112,11 +111,129 @@ class TestRunsAdapterMigration:
         assert adapter_value == "aktin"
 
 
+class TestInsertRunPersistsAdapter:
+    def test_inserted_row_keeps_explicit_adapter_value(self, tmp_db):
+        db_module.create_embeddings_table_if_not_exists()
+        run_id = db_module.insert_run(
+            adapter="aktin",
+            dataset_name="aktin_germany",
+            city="germany",
+            region=None,
+            population_range=None,
+            year_min=2018,
+            year_max=2023,
+            snf_k=10,
+            n_clusters=4,
+        )
+        adapter_value = (
+            db_module.get_connection()
+            .execute("SELECT adapter FROM runs WHERE run_id = ?", [run_id])
+            .fetchone()[0]
+        )
+        assert adapter_value == "aktin"
+
+    def test_subsequent_insert_does_not_overwrite_aktin_to_datasus(self, tmp_db):
+        """Regression: a later insert_run call (which calls create_results_schema
+        again) used to silently retag any NULL-or-still-pending AKTIN rows as
+        ``datasus`` via the legacy backfill UPDATE."""
+        db_module.create_embeddings_table_if_not_exists()
+        aktin_run = db_module.insert_run(
+            adapter="aktin",
+            dataset_name="aktin_germany",
+            city="germany",
+            region=None,
+            population_range=None,
+            year_min=2018,
+            year_max=2023,
+            snf_k=10,
+            n_clusters=4,
+        )
+        db_module.insert_run(
+            adapter="datasus",
+            dataset_name="base_aesop_raw_extracao_01042026_salvador",
+            city="Salvador",
+            region="Nordeste",
+            population_range="> 500 mil",
+            year_min=2022,
+            year_max=2024,
+            snf_k=10,
+            n_clusters=3,
+        )
+        adapter_value = (
+            db_module.get_connection()
+            .execute("SELECT adapter FROM runs WHERE run_id = ?", [aktin_run])
+            .fetchone()[0]
+        )
+        assert adapter_value == "aktin"
+
+
+class TestFetchRunsAdapterFilter:
+    @pytest.fixture
+    def runs_for_each_adapter(self, tmp_db):
+        db_module.create_embeddings_table_if_not_exists()
+        db_module.create_results_schema()
+        datasus_run = db_module.insert_run(
+            adapter="datasus",
+            dataset_name="base_aesop_raw_extracao_01042026_salvador",
+            city="Salvador",
+            region="Nordeste",
+            population_range="> 500 mil",
+            year_min=2022,
+            year_max=2024,
+            snf_k=10,
+            n_clusters=3,
+        )
+        aktin_run = db_module.insert_run(
+            adapter="aktin",
+            dataset_name="aktin_germany",
+            city="germany",
+            region=None,
+            population_range=None,
+            year_min=2018,
+            year_max=2023,
+            snf_k=10,
+            n_clusters=4,
+        )
+        return datasus_run, aktin_run
+
+    def test_select_includes_adapter_column(self, runs_for_each_adapter):
+        runs = db_module.fetch_runs()
+        assert "adapter" in runs.columns
+
+    def test_default_returns_all_adapters(self, runs_for_each_adapter):
+        datasus_run, aktin_run = runs_for_each_adapter
+        runs = db_module.fetch_runs()
+        assert sorted(runs["run_id"].to_list()) == sorted([datasus_run, aktin_run])
+
+    def test_filters_to_datasus_runs(self, runs_for_each_adapter):
+        datasus_run, _ = runs_for_each_adapter
+        runs = db_module.fetch_runs(adapter="datasus")
+        assert runs["run_id"].to_list() == [datasus_run]
+        assert runs["adapter"].unique().to_list() == ["datasus"]
+
+    def test_filters_to_aktin_runs(self, runs_for_each_adapter):
+        _, aktin_run = runs_for_each_adapter
+        runs = db_module.fetch_runs(adapter="aktin")
+        assert runs["run_id"].to_list() == [aktin_run]
+        assert runs["adapter"].unique().to_list() == ["aktin"]
+
+    def test_unknown_adapter_returns_empty(self, runs_for_each_adapter):
+        runs = db_module.fetch_runs(adapter="does_not_exist")
+        assert runs.is_empty()
+
+    def test_empty_table_returns_empty_regardless_of_filter(self, tmp_db):
+        db_module.create_embeddings_table_if_not_exists()
+        db_module.create_results_schema()
+        assert db_module.fetch_runs().is_empty()
+        assert db_module.fetch_runs(adapter="datasus").is_empty()
+
+
 class TestFetchClusterProfilesForRuns:
     @pytest.fixture
     def seeded_db(self, tmp_db):
         db_module.create_embeddings_table_if_not_exists()
         run_id_1 = db_module.insert_run(
+            adapter="datasus",
             dataset_name="test_a",
             city="City A",
             region="North",
@@ -127,6 +244,7 @@ class TestFetchClusterProfilesForRuns:
             n_clusters=3,
         )
         run_id_2 = db_module.insert_run(
+            adapter="datasus",
             dataset_name="test_b",
             city="City B",
             region="South",
@@ -180,6 +298,7 @@ class TestDeleteRun:
         db_module.create_embeddings_table_if_not_exists()
         db_module.create_results_schema()
         run_id = db_module.insert_run(
+            adapter="datasus",
             dataset_name="test_delete",
             city="Manaus",
             region="Norte",
@@ -248,6 +367,7 @@ class TestDeleteRun:
 
     def test_does_not_touch_other_runs(self, seeded_run):
         other_run = db_module.insert_run(
+            adapter="datasus",
             dataset_name="other",
             city="Bauru",
             region="Sudeste",

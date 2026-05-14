@@ -152,7 +152,7 @@ class AktinAdapter(Adapter):
         return build_icd10gm_labels()
 
     def stratum_metadata(self, stratum: str) -> dict:
-        if stratum.lower() == "germany":
+        if "germany" in stratum.lower():
             return {"city": "germany", "region": None, "population_range": None}
         return {"city": None, "region": None, "population_range": None}
 

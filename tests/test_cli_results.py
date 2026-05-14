@@ -9,6 +9,7 @@ runner = CliRunner()
 def _seed_run(city: str | None, dataset_name: str | None = None) -> int:
     db_module.create_embeddings_table_if_not_exists()
     return db_module.insert_run(
+        adapter="datasus",
         dataset_name=dataset_name or f"dataset_{city or 'unknown'}",
         city=city,
         region="Norte",
