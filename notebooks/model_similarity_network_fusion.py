@@ -707,6 +707,7 @@ def _(fused, igraph, leidenalg, np):
 
 @app.cell
 def _(
+    active_adapter,
     cluster_largest,
     cluster_median,
     common_ids,
@@ -737,6 +738,7 @@ def _(
     zaff,
 ):
     run_id = save_run(
+        adapter=active_adapter.name,
         dataset_name=extract_dataset_name(file_path),
         year_min=int(year_min),
         year_max=int(year_max),

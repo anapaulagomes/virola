@@ -242,6 +242,8 @@ def create_dimensions_table_if_not_exists():
 
 
 def insert_run(
+    *,
+    adapter: str,
     dataset_name: str,
     city: str | None,
     region: str | None,
@@ -267,23 +269,30 @@ def insert_run(
     n_singletons: int | None = None,
     pct_singletons: float | None = None,
 ) -> int:
-    """Insert a new run and return its run_id."""
+    """Insert a new run and return its run_id.
+
+    ``adapter`` is required: it pins the row to the adapter that produced it so
+    notebooks can filter via :func:`fetch_runs`. Without it, the legacy
+    ``UPDATE runs SET adapter = 'datasus' WHERE adapter IS NULL`` migration
+    silently retags any new run as ``datasus`` on the next schema-create call.
+    """
     create_results_schema()
     _created_at = created_at if created_at is not None else datetime.now().isoformat()
     with _write_context() as con:
         result = con.execute(
             """
             INSERT INTO runs (
-                dataset_name, city, region, population_range,
+                adapter, dataset_name, city, region, population_range,
                 year_min, year_max, snf_k, n_clusters,
                 indicative_enabled, silhouette_score, affinity_zscore, notes, created_at, finished_at,
                 n_codes_clinical, n_codes_temporal, n_codes_demographic, n_codes_common,
                 n_missing_temporal, n_missing_demographic,
                 cluster_largest, cluster_median, n_singletons, pct_singletons
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING run_id
             """,
             [
+                adapter,
                 dataset_name,
                 city,
                 region,
@@ -376,12 +385,16 @@ def find_run(
     return runs.row(0, named=True)
 
 
-def fetch_runs() -> pl.DataFrame:
-    """Return all runs as a Polars DataFrame, including duration in minutes."""
-    return (
-        get_connection()
-        .execute("""
-        SELECT run_id, dataset_name, city, region, population_range,
+def fetch_runs(adapter: str | None = None) -> pl.DataFrame:
+    """Return runs as a Polars DataFrame, including duration in minutes.
+
+    When ``adapter`` is provided, restrict the result to runs produced by that
+    adapter (e.g. ``"datasus"`` or ``"aktin"``). This is the supported way to
+    list runs for a single dataset family from notebooks — clients should not
+    rely on stratum names to do the filtering.
+    """
+    base_query = """
+        SELECT run_id, dataset_name, adapter, city, region, population_range,
                year_min, year_max, snf_k, n_clusters,
                indicative_enabled, silhouette_score, affinity_zscore,
                n_codes_clinical, n_codes_temporal, n_codes_demographic, n_codes_common,
@@ -392,8 +405,13 @@ def fetch_runs() -> pl.DataFrame:
                    WHEN finished_at IS NOT NULL
                    THEN ROUND(EXTRACT(EPOCH FROM (finished_at - created_at)) / 60.0, 1)
                END AS duration_min
-        FROM runs ORDER BY created_at DESC
-    """)
+        FROM runs
+    """
+    if adapter is None:
+        return get_connection().execute(base_query + " ORDER BY created_at DESC").pl()
+    return (
+        get_connection()
+        .execute(base_query + " WHERE adapter = ? ORDER BY created_at DESC", [adapter])
         .pl()
     )
 
@@ -728,6 +746,7 @@ def get_cross_terminology_pairs() -> list[tuple[str, str, str, str, str]]:
 
 def save_run(
     *,
+    adapter: str,
     dataset_name: str,
     year_min: int,
     year_max: int,
@@ -765,6 +784,7 @@ def save_run(
     n_codes_common = len(common_ids)
 
     run_id = insert_run(
+        adapter=adapter,
         dataset_name=dataset_name,
         city=meta["city"],
         region=meta["region"],

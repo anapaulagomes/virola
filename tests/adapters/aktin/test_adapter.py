@@ -67,6 +67,14 @@ def test_stratum_metadata_returns_none_values_when_stratum_is_unknown():
     assert metadata == {"city": None, "region": None, "population_range": None}
 
 
+def test_stratum_metadata_resolves_dataset_slug_with_germany_substring():
+    """``save_run`` passes the dataset slug (``aktin_germany``), not the bare
+    stratum. The matcher has to accept it so the ``city`` column is populated
+    on the inserted run."""
+    metadata = _aktin().stratum_metadata("aktin_germany")
+    assert metadata == {"city": "germany", "region": None, "population_range": None}
+
+
 def test_build_terminology_labels_delegates_to_icd10gm_builder():
     labels = _aktin().build_terminology_labels()
     assert isinstance(labels, pl.DataFrame)
