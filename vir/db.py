@@ -238,6 +238,11 @@ def create_dimensions_table_if_not_exists():
                 PRIMARY KEY (terminology_id_1, terminology_id_2, dimension),
                 CHECK (terminology_id_1 < terminology_id_2)
             );
+            CREATE TABLE IF NOT EXISTS clinical_coverage (
+                model VARCHAR NOT NULL,
+                terminology_id INTEGER NOT NULL REFERENCES medical_terminologies(id),
+                PRIMARY KEY (model, terminology_id)
+            );
         """)
 
 
@@ -666,13 +671,50 @@ def fetch_terminologies(model_name: str | None = None) -> pl.DataFrame:
     return get_connection().execute(query + " ORDER BY id").pl()
 
 
-def insert_clinical_dimensions(model_name: str | None = None) -> None:
-    """Compute and insert pairwise cosine similarities for all terminologies."""
+def insert_clinical_dimensions(
+    model_name: str | None = None,
+    terminology_ids: list[int] | None = None,
+) -> None:
+    """Compute and persist pairwise cosine similarities incrementally.
+
+    Only pairs whose endpoints are needed for the current run are inserted.
+    Coverage is tracked in ``clinical_coverage`` so subsequent runs skip work
+    that is already done. A pair (a, b) with a < b is inserted whenever at
+    least one of {a, b} is newly covered — pairs between already-covered ids
+    are guaranteed to exist by the coverage invariant and are not re-computed.
+    """
+    model = model_name or DEFAULT_MODEL
     with _write_context() as con:
         con.execute("SET preserve_insertion_order=false")
+        if terminology_ids is None:
+            requested_ids = (
+                con.execute(
+                    "SELECT id FROM medical_terminologies WHERE model = $model",
+                    {"model": model},
+                )
+                .pl()["id"]
+                .to_list()
+            )
+        else:
+            requested_ids = terminology_ids
+        covered_ids = (
+            con.execute(
+                "SELECT terminology_id FROM clinical_coverage WHERE model = $model",
+                {"model": model},
+            )
+            .pl()["terminology_id"]
+            .to_list()
+        )
+        covered_set = set(covered_ids)
+        uncovered_ids = sorted({tid for tid in requested_ids if tid not in covered_set})
+        if not uncovered_ids:
+            return
+        affected_ids = sorted(covered_set.union(uncovered_ids))
         con.execute(
             f"""
             INSERT INTO dimensions
+            WITH uncovered(id) AS (SELECT unnest($uncovered::INTEGER[])),
+                 affected(id) AS (SELECT unnest($affected::INTEGER[]))
             SELECT
                 t1.id AS terminology_id_1,
                 t2.id AS terminology_id_2,
@@ -681,28 +723,63 @@ def insert_clinical_dimensions(model_name: str | None = None) -> None:
             FROM medical_terminologies t1
             JOIN medical_terminologies t2 ON t1.id < t2.id
             WHERE t1.model = $model AND t2.model = $model
+              AND t1.id IN (SELECT id FROM affected)
+              AND t2.id IN (SELECT id FROM affected)
+              AND (t1.id IN (SELECT id FROM uncovered) OR t2.id IN (SELECT id FROM uncovered))
             """,
-            {"model": model_name or DEFAULT_MODEL},
+            {"model": model, "uncovered": uncovered_ids, "affected": affected_ids},
+        )
+        con.execute(
+            """
+            INSERT INTO clinical_coverage(model, terminology_id)
+            SELECT $model, unnest($uncovered::INTEGER[])
+            """,
+            {"model": model, "uncovered": uncovered_ids},
         )
 
 
-def read_dimension(dimension: str) -> pl.DataFrame:
+def read_dimension(
+    dimension: str,
+    terminology_ids: list[int] | None = None,
+) -> pl.DataFrame:
+    if terminology_ids is None:
+        return (
+            get_connection()
+            .execute(
+                "SELECT terminology_id_1, terminology_id_2, value FROM dimensions WHERE dimension = $dimension ORDER BY terminology_id_1",
+                {"dimension": dimension},
+            )
+            .pl()
+        )
     return (
         get_connection()
         .execute(
-            "SELECT terminology_id_1, terminology_id_2, value FROM dimensions WHERE dimension = $dimension ORDER BY terminology_id_1",
-            {"dimension": dimension},
+            """
+            WITH wanted(id) AS (SELECT unnest($ids::INTEGER[]))
+            SELECT terminology_id_1, terminology_id_2, value
+            FROM dimensions
+            WHERE dimension = $dimension
+              AND terminology_id_1 IN (SELECT id FROM wanted)
+              AND terminology_id_2 IN (SELECT id FROM wanted)
+            ORDER BY terminology_id_1
+            """,
+            {"dimension": dimension, "ids": terminology_ids},
         )
         .pl()
     )
 
 
-def dimension_exists(dimension: str, model_name: str | None = None) -> bool:
-    """Check if a given dimension has any rows in the dimensions table.
+def dimension_exists(
+    dimension: str,
+    model_name: str | None = None,
+    terminology_ids: list[int] | None = None,
+) -> bool:
+    """Check whether a dimension is fully cached for the given inputs.
 
-    When ``model_name`` is provided, only rows whose terminologies belong to that
-    model are considered — necessary so regenerations for a new embedding model
-    are not skipped when another model's dimensions already exist.
+    For ``dimension == "clinical"`` with a model and terminology_ids, returns
+    True only when every requested id is recorded in ``clinical_coverage`` for
+    that model — meaning every pair among them already exists in
+    ``dimensions``. Falls back to the legacy "any row exists" check otherwise.
     """
     con = get_connection()
     table_exists = con.execute(
@@ -710,6 +787,22 @@ def dimension_exists(dimension: str, model_name: str | None = None) -> bool:
     ).fetchone()
     if not table_exists:
         return False
+    if dimension == "clinical" and model_name is not None and terminology_ids is not None:
+        coverage_table_exists = con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'clinical_coverage'"
+        ).fetchone()
+        if not coverage_table_exists:
+            return False
+        missing = con.execute(
+            """
+            SELECT COUNT(*)
+            FROM (SELECT unnest($ids::INTEGER[]) AS id) requested
+            ANTI JOIN clinical_coverage c
+              ON c.model = $model AND c.terminology_id = requested.id
+            """,
+            {"model": model_name, "ids": terminology_ids},
+        ).fetchone()[0]
+        return missing == 0
     if model_name is None:
         return (
             con.execute(
