@@ -157,9 +157,10 @@ class ClinicalView(BaseView):
         }
 
     def _get_or_create_clinical_dimension(self):
-        if dimension_exists("clinical") is False:
+        model_name = _required_model(self.params)
+        if dimension_exists("clinical", model_name) is False:
             logger.info("Creating dimensions table...")
             create_dimensions_table_if_not_exists()
-            logger.info("Inserting clinical dimensions...")
-            insert_clinical_dimensions()
+            logger.info(f"Inserting clinical dimensions for model {model_name}...")
+            insert_clinical_dimensions(model_name)
         return read_dimension("clinical")

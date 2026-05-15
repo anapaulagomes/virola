@@ -669,6 +669,7 @@ def fetch_terminologies(model_name: str | None = None) -> pl.DataFrame:
 def insert_clinical_dimensions(model_name: str | None = None) -> None:
     """Compute and insert pairwise cosine similarities for all terminologies."""
     with _write_context() as con:
+        con.execute("SET preserve_insertion_order=false")
         con.execute(
             f"""
             INSERT INTO dimensions
@@ -679,7 +680,7 @@ def insert_clinical_dimensions(model_name: str | None = None) -> None:
                 'clinical' AS dimension
             FROM medical_terminologies t1
             JOIN medical_terminologies t2 ON t1.id < t2.id
-            WHERE t1.model = $model
+            WHERE t1.model = $model AND t2.model = $model
             """,
             {"model": model_name or DEFAULT_MODEL},
         )
@@ -696,18 +697,37 @@ def read_dimension(dimension: str) -> pl.DataFrame:
     )
 
 
-def dimension_exists(dimension: str) -> bool:
-    """Check if a given dimension has any rows in the dimensions table."""
+def dimension_exists(dimension: str, model_name: str | None = None) -> bool:
+    """Check if a given dimension has any rows in the dimensions table.
+
+    When ``model_name`` is provided, only rows whose terminologies belong to that
+    model are considered — necessary so regenerations for a new embedding model
+    are not skipped when another model's dimensions already exist.
+    """
     con = get_connection()
     table_exists = con.execute(
         "SELECT 1 FROM information_schema.tables WHERE table_name = 'dimensions'"
     ).fetchone()
     if not table_exists:
         return False
+    if model_name is None:
+        return (
+            con.execute(
+                "SELECT 1 FROM dimensions WHERE dimension = $dimension LIMIT 1",
+                {"dimension": dimension},
+            ).fetchone()
+            is not None
+        )
     return (
         con.execute(
-            "SELECT 1 FROM dimensions WHERE dimension = $dimension LIMIT 1",
-            {"dimension": dimension},
+            """
+            SELECT 1
+            FROM dimensions d
+            JOIN medical_terminologies t ON d.terminology_id_1 = t.id
+            WHERE d.dimension = $dimension AND t.model = $model
+            LIMIT 1
+            """,
+            {"dimension": dimension, "model": model_name},
         ).fetchone()
         is not None
     )
