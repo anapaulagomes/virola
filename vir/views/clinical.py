@@ -60,7 +60,6 @@ class ClinicalView(BaseView):
         Returns:
             Distance matrix (NxN numpy array)
         """
-        # get unique terminology IDs from input dataframe
         terminology_ids = sorted(self.df["terminology_id"].unique().to_list())
         n_diagnoses = len(terminology_ids)
 
@@ -71,14 +70,9 @@ class ClinicalView(BaseView):
                 "and that the data file contains codes matching the medical_terminologies table."
             )
 
-        # create mapping from terminology_id to matrix index
         id_to_idx = {tid: idx for idx, tid in enumerate(terminology_ids)}
 
-        clinical_df = self._get_or_create_clinical_dimension()
-        clinical_df = clinical_df.filter(
-            pl.col("terminology_id_1").is_in(terminology_ids)
-            & pl.col("terminology_id_2").is_in(terminology_ids)
-        )
+        clinical_df = self._get_or_create_clinical_dimension(terminology_ids)
 
         similarity_matrix = np.zeros((n_diagnoses, n_diagnoses), dtype=np.float32)
 
@@ -156,11 +150,13 @@ class ClinicalView(BaseView):
             "std_norm": float(np.std(np.linalg.norm(embeddings, axis=1))),
         }
 
-    def _get_or_create_clinical_dimension(self):
+    def _get_or_create_clinical_dimension(self, terminology_ids: list[int]):
         model_name = _required_model(self.params)
-        if dimension_exists("clinical", model_name) is False:
-            logger.info("Creating dimensions table...")
-            create_dimensions_table_if_not_exists()
-            logger.info(f"Inserting clinical dimensions for model {model_name}...")
-            insert_clinical_dimensions(model_name)
-        return read_dimension("clinical")
+        create_dimensions_table_if_not_exists()
+        if dimension_exists("clinical", model_name, terminology_ids) is False:
+            logger.info(
+                f"Inserting clinical dimensions for model {model_name} "
+                f"({len(terminology_ids)} terminology ids)..."
+            )
+            insert_clinical_dimensions(model_name, terminology_ids)
+        return read_dimension("clinical", terminology_ids=terminology_ids)
