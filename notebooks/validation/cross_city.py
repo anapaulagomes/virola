@@ -482,13 +482,15 @@ def _(
         _facet_key = (_city_row["region"], _city_row["population_range"])
         _cities_per_facet.setdefault(_facet_key, []).append(_city_row["city"])
 
+    _n_population_rows = len(_population_order)
     for _population_index, _population in enumerate(_population_order, start=1):
+        _plot_row = _n_population_rows - _population_index + 1
         for _region_index, _region in enumerate(_region_order, start=1):
             _cities_in_facet = _cities_per_facet.get((_region, _population))
             if not _cities_in_facet:
                 continue
             _fig_faceted.add_annotation(
-                row=_population_index,
+                row=_plot_row,
                 col=_region_index,
                 xref="x domain",
                 yref="y domain",
