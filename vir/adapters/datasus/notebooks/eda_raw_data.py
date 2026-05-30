@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.19.0"
+__generated_with = "0.23.4"
 app = marimo.App(width="medium")
 
 
@@ -498,6 +498,69 @@ def _(pl, px):
 @app.cell
 def _(codes_per_week, processed_df):
     codes_per_week(processed_df)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Choosing `MIN_WEEKS` — distribution of weeks per code
+
+    For each `(code_type, year, terminology_id)`, count the number of distinct
+    weeks the code appears in. The ECDF below shows, for any candidate cutoff
+    on the x-axis, the fraction of `(code, year)` pairs that would be dropped.
+    A vertical line marks the current `MIN_WEEKS` slider value.
+    """)
+    return
+
+
+@app.cell
+def _(pl, processed_df):
+    weeks_per_code_per_year = processed_df.group_by(["code_type", "year", "terminology_id"]).agg(
+        pl.col("week").n_unique().alias("week_count")
+    )
+    return (weeks_per_code_per_year,)
+
+
+@app.cell
+def _(px, weeks_per_code_per_year, weeks_slider):
+    _fig = px.ecdf(
+        weeks_per_code_per_year,
+        x="week_count",
+        color="code_type",
+        facet_col="year",
+        ecdfnorm="probability",
+        labels={
+            "week_count": "Distinct weeks the code appears in (within the year)",
+            "code_type": "Code type",
+        },
+        title="ECDF of weeks-per-code by (code_type, year)",
+    )
+    _fig.add_vline(
+        x=weeks_slider.value,
+        line_dash="dash",
+        line_color="black",
+        annotation_text=f"MIN_WEEKS = {weeks_slider.value}",
+        annotation_position="top right",
+    )
+    for _annotation in _fig.layout.annotations:
+        _annotation.text = _annotation.text.replace("year=", "")
+    _fig.update_layout(template="plotly_white", height=420)
+    _fig
+    return
+
+
+@app.cell
+def _(pl, weeks_per_code_per_year, weeks_slider):
+    weeks_per_code_per_year.group_by("code_type").agg(
+        pl.col("week_count").min().alias("min"),
+        pl.col("week_count").quantile(0.25).alias("p25"),
+        pl.col("week_count").median().alias("median"),
+        pl.col("week_count").quantile(0.75).alias("p75"),
+        pl.col("week_count").max().alias("max"),
+        pl.len().alias("code_year_pairs"),
+        pl.col("week_count").ge(weeks_slider.value).mean().alias("kept_fraction"),
+    ).sort("code_type")
     return
 
 
