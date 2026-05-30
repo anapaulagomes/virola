@@ -222,7 +222,8 @@ def _(
         )
 
     # population size legend
-    for _population_label, _size in POPULATION_SIZES.items():
+    _legend_population_sizes = {"250K-500K": 12, "> 500K": 22}
+    for _population_label, _size in _legend_population_sizes.items():
         figure.add_trace(
             go.Scattergeo(
                 lon=[None],
@@ -244,7 +245,7 @@ def _(
         showrivers=False,
         showsubunits=False,
         bgcolor="white",
-        lataxis_range=[-36, 6],
+        lataxis_range=[-45, 12],
         lonaxis_range=[-75, -27],
         projection_type="mercator",
     )
@@ -259,7 +260,8 @@ def _(
             bgcolor="white",
             bordercolor="#DDDDDD",
             borderwidth=1,
-            font=dict(size=15),
+            font=dict(size=18),
+            grouptitlefont=dict(size=15),
             itemsizing="trace",
             tracegroupgap=15,
             x=0.1,
@@ -372,6 +374,12 @@ def _(mo):
 
 
 @app.cell
+def _(all_cities_df):
+    all_cities_df.shape
+    return
+
+
+@app.cell
 def _(all_cities_df, pl):
     all_cities_df.select(pl.col("quantity").sum().alias("total"))  # unique records
     return
@@ -389,6 +397,12 @@ def _(all_cities_df, pl):
         pl.col("quantity").sum().alias("total"),
         pl.struct("code", "code_type").n_unique().alias("unique_codes"),
     ).sort("total", descending=True)
+    return
+
+
+@app.cell
+def _(all_cities_df):
+    all_cities_df.sort(["week", "year"])
     return
 
 
