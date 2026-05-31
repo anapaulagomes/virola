@@ -246,7 +246,7 @@ def create_dimensions_table_if_not_exists():
                 value FLOAT4 NOT NULL,
                 dimension VARCHAR NOT NULL,
                 model VARCHAR NOT NULL,
-                PRIMARY KEY (terminology_id_1, terminology_id_2, dimension, model),
+                PRIMARY KEY (model, dimension, terminology_id_1, terminology_id_2),
                 CHECK (terminology_id_1 < terminology_id_2)
             );
             CREATE TABLE IF NOT EXISTS clinical_coverage (
@@ -339,6 +339,21 @@ def migrate_decouple_terminology_model_if_needed() -> None:
         has_assignments = _table_exists(con, "cluster_assignments")
 
         logger.info("Migrating to decoupled terminology/embedding schema...")
+        # `dimensions` can hold 100M+ rows; its primary-key index cannot be built
+        # in a single transaction within memory. Fewer threads + not preserving
+        # insertion order lower the rebuild's footprint, and the rows are loaded
+        # after COMMIT in bounded, individually-committed chunks (see below).
+        previous_threads = con.execute("SELECT current_setting('threads')").fetchone()[0]
+        previous_preserve = con.execute(
+            "SELECT current_setting('preserve_insertion_order')"
+        ).fetchone()[0]
+
+        def _restore_settings():
+            con.execute(f"SET threads={previous_threads}")
+            con.execute(f"SET preserve_insertion_order={previous_preserve}")
+
+        con.execute("SET threads=2")
+        con.execute("SET preserve_insertion_order=false")
         con.execute("BEGIN TRANSACTION")
         try:
             con.execute(
@@ -369,9 +384,11 @@ def migrate_decouple_terminology_model_if_needed() -> None:
                 {"model": canonical_model},
             )
             if has_dimensions:
+                # Regular (not TEMP) table so it survives the COMMIT below and can
+                # feed the post-commit chunked load of the new dimensions table.
                 con.execute(
                     """
-                    CREATE TEMP TABLE _dims_stage AS
+                    CREATE TABLE _dims_stage AS
                     SELECT terminology_id_1, terminology_id_2, value, dimension, $model AS model
                     FROM dimensions
                     """,
@@ -425,6 +442,7 @@ def migrate_decouple_terminology_model_if_needed() -> None:
             )
 
             if has_dimensions:
+                # Created empty here; rows are loaded after COMMIT in chunks.
                 con.execute("""
                     CREATE TABLE dimensions (
                         terminology_id_1 INTEGER NOT NULL REFERENCES medical_terminologies(id),
@@ -432,15 +450,10 @@ def migrate_decouple_terminology_model_if_needed() -> None:
                         value FLOAT4 NOT NULL,
                         dimension VARCHAR NOT NULL,
                         model VARCHAR NOT NULL,
-                        PRIMARY KEY (terminology_id_1, terminology_id_2, dimension, model),
+                        PRIMARY KEY (model, dimension, terminology_id_1, terminology_id_2),
                         CHECK (terminology_id_1 < terminology_id_2)
                     );
                 """)
-                con.execute(
-                    "INSERT INTO dimensions (terminology_id_1, terminology_id_2, value, dimension, model) "
-                    "SELECT terminology_id_1, terminology_id_2, value, dimension, model FROM _dims_stage"
-                )
-                con.execute("DROP TABLE _dims_stage")
             if has_coverage:
                 con.execute("""
                     CREATE TABLE clinical_coverage (
@@ -473,7 +486,37 @@ def migrate_decouple_terminology_model_if_needed() -> None:
             con.execute("COMMIT")
         except Exception:
             con.execute("ROLLBACK")
+            _restore_settings()
             raise
+
+        # Load dimensions in bounded, individually-committed id-range chunks. A
+        # single bulk insert would build the whole primary-key index in one
+        # transaction and exhaust memory; committing per chunk lets DuckDB
+        # checkpoint and release index-build memory between chunks.
+        if has_dimensions:
+            try:
+                lo, hi = con.execute(
+                    "SELECT min(terminology_id_1), max(terminology_id_1) FROM _dims_stage"
+                ).fetchone()
+                step = 500
+                start = lo if lo is not None else 1
+                while lo is not None and start <= hi:
+                    con.execute(
+                        """
+                        INSERT INTO dimensions (terminology_id_1, terminology_id_2, value, dimension, model)
+                        SELECT terminology_id_1, terminology_id_2, value, dimension, model
+                        FROM _dims_stage
+                        WHERE terminology_id_1 >= $lo AND terminology_id_1 < $hi
+                        ORDER BY terminology_id_1, terminology_id_2
+                        """,
+                        {"lo": start, "hi": start + step},
+                    )
+                    start += step
+                con.execute("DROP TABLE _dims_stage")
+            finally:
+                _restore_settings()
+        else:
+            _restore_settings()
 
         n_canonical = con.execute("SELECT COUNT(*) FROM medical_terminologies").fetchone()[0]
         n_embeddings = con.execute("SELECT COUNT(*) FROM terminology_embeddings").fetchone()[0]
