@@ -205,12 +205,17 @@ def create_results_schema():
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS n_singletons        INTEGER;
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS pct_singletons      FLOAT;
             ALTER TABLE runs ADD COLUMN IF NOT EXISTS adapter             VARCHAR;
+            ALTER TABLE runs ADD COLUMN IF NOT EXISTS model               VARCHAR;
         """)
 
         con.execute("UPDATE runs SET adapter = 'datasus' WHERE adapter IS NULL;")
+        con.execute(
+            "UPDATE runs SET model = $model WHERE model IS NULL;", {"model": DEFAULT_MODEL}
+        )
 
 
 def create_embeddings_table_if_not_exists():
+    migrate_decouple_terminology_model_if_needed()
     with _write_context() as con:
         con.execute("""
             CREATE SEQUENCE IF NOT EXISTS id_sequence START 1;
@@ -219,14 +224,19 @@ def create_embeddings_table_if_not_exists():
                 code_type VARCHAR,
                 code VARCHAR,
                 description VARCHAR,
-                model VARCHAR,
+                UNIQUE(code, code_type)
+            );
+            CREATE TABLE IF NOT EXISTS terminology_embeddings(
+                terminology_id INTEGER NOT NULL REFERENCES medical_terminologies(id),
+                model VARCHAR NOT NULL,
                 embedding FLOAT[],
-                UNIQUE(code, code_type, model)
+                PRIMARY KEY (terminology_id, model)
             );
         """)
 
 
 def create_dimensions_table_if_not_exists():
+    migrate_decouple_terminology_model_if_needed()
     with _write_context() as con:
         con.execute("""
             CREATE SEQUENCE IF NOT EXISTS id_sequence START 1;
@@ -235,7 +245,8 @@ def create_dimensions_table_if_not_exists():
                 terminology_id_2 INTEGER NOT NULL REFERENCES medical_terminologies(id),
                 value FLOAT4 NOT NULL,
                 dimension VARCHAR NOT NULL,
-                PRIMARY KEY (terminology_id_1, terminology_id_2, dimension),
+                model VARCHAR NOT NULL,
+                PRIMARY KEY (terminology_id_1, terminology_id_2, dimension, model),
                 CHECK (terminology_id_1 < terminology_id_2)
             );
             CREATE TABLE IF NOT EXISTS clinical_coverage (
@@ -244,6 +255,232 @@ def create_dimensions_table_if_not_exists():
                 PRIMARY KEY (model, terminology_id)
             );
         """)
+
+
+def _table_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
+    return (
+        con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = ?", [name]
+        ).fetchone()
+        is not None
+    )
+
+
+def _has_legacy_embeddings_schema(con: duckdb.DuckDBPyConnection) -> bool:
+    """True when ``medical_terminologies`` still carries the per-model embedding
+    columns (``model``/``embedding``), i.e. the database predates the split of
+    terminology identity from embeddings."""
+    return (
+        con.execute(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.columns
+            WHERE table_name = 'medical_terminologies' AND column_name = 'embedding'
+            """
+        ).fetchone()[0]
+        > 0
+    )
+
+
+def migrate_decouple_terminology_model_if_needed() -> None:
+    """Decouple ``terminology_id`` from the embedding model.
+
+    Legacy schema stored one ``medical_terminologies`` row per
+    ``(code, code_type, model)`` — so each model produced a *different* id for
+    the same code, binding every downstream table (and the processed parquet) to
+    a single model. This migration makes the identity canonical per
+    ``(code, code_type)`` and moves embeddings into ``terminology_embeddings``
+    keyed by ``(terminology_id, model)``.
+
+    Canonical ids are the ids of :data:`DEFAULT_MODEL` (PubMedBERT); every other
+    model's rows are remapped onto them by ``(code, code_type)``. Existing
+    clinical ``dimensions`` are stamped with ``DEFAULT_MODEL`` and
+    ``cluster_assignments`` referencing non-canonical ids are remapped, so no run
+    is lost. Idempotent: a no-op once the schema is already decoupled.
+    """
+    with _write_context() as con:
+        terminologies_exist = con.execute(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'medical_terminologies'"
+        ).fetchone()
+        if not terminologies_exist or not _has_legacy_embeddings_schema(con):
+            return
+
+        canonical_model = DEFAULT_MODEL
+        canonical_count = con.execute(
+            "SELECT COUNT(*) FROM medical_terminologies WHERE model = $model",
+            {"model": canonical_model},
+        ).fetchone()[0]
+        if canonical_count == 0:
+            raise RuntimeError(
+                f"Cannot migrate: canonical model {canonical_model!r} has no rows in "
+                "medical_terminologies. Set DEFAULT_MODEL to a model present in the DB."
+            )
+
+        orphan_codes = con.execute(
+            """
+            SELECT COUNT(*)
+            FROM medical_terminologies mt
+            LEFT JOIN medical_terminologies canon
+              ON canon.code = mt.code AND canon.code_type = mt.code_type
+             AND canon.model = $model
+            WHERE canon.id IS NULL
+            """,
+            {"model": canonical_model},
+        ).fetchone()[0]
+        if orphan_codes > 0:
+            raise RuntimeError(
+                f"Cannot migrate: {orphan_codes} embedding rows have (code, code_type) "
+                f"absent from the canonical model {canonical_model!r}; remapping them by "
+                "code would drop their embeddings. Resolve before migrating."
+            )
+
+        has_dimensions = _table_exists(con, "dimensions")
+        has_coverage = _table_exists(con, "clinical_coverage")
+        has_assignments = _table_exists(con, "cluster_assignments")
+
+        logger.info("Migrating to decoupled terminology/embedding schema...")
+        con.execute("BEGIN TRANSACTION")
+        try:
+            con.execute(
+                """
+                CREATE TEMP TABLE _id_map AS
+                SELECT mt.id AS old_id, canon.id AS canonical_id
+                FROM medical_terminologies mt
+                JOIN medical_terminologies canon
+                  ON canon.code = mt.code AND canon.code_type = mt.code_type
+                 AND canon.model = $model
+                """,
+                {"model": canonical_model},
+            )
+            con.execute(
+                """
+                CREATE TEMP TABLE _emb_stage AS
+                SELECT m.canonical_id AS terminology_id, mt.model AS model, mt.embedding AS embedding
+                FROM medical_terminologies mt
+                JOIN _id_map m ON m.old_id = mt.id
+                """
+            )
+            con.execute(
+                """
+                CREATE TEMP TABLE _mt_stage AS
+                SELECT id, code_type, code, description
+                FROM medical_terminologies WHERE model = $model
+                """,
+                {"model": canonical_model},
+            )
+            if has_dimensions:
+                con.execute(
+                    """
+                    CREATE TEMP TABLE _dims_stage AS
+                    SELECT terminology_id_1, terminology_id_2, value, dimension, $model AS model
+                    FROM dimensions
+                    """,
+                    {"model": canonical_model},
+                )
+            if has_coverage:
+                con.execute(
+                    "CREATE TEMP TABLE _cov_stage AS SELECT model, terminology_id FROM clinical_coverage"
+                )
+            if has_assignments:
+                con.execute(
+                    """
+                    CREATE TEMP TABLE _ca_stage AS
+                    SELECT ca.run_id AS run_id, m.canonical_id AS terminology_id, max(ca.cluster_id) AS cluster_id
+                    FROM cluster_assignments ca
+                    JOIN _id_map m ON m.old_id = ca.terminology_id
+                    GROUP BY ca.run_id, m.canonical_id
+                    """
+                )
+
+            if has_assignments:
+                con.execute("DROP TABLE cluster_assignments")
+            if has_dimensions:
+                con.execute("DROP TABLE dimensions")
+            if has_coverage:
+                con.execute("DROP TABLE clinical_coverage")
+            con.execute("DROP TABLE medical_terminologies")
+
+            con.execute("""
+                CREATE TABLE medical_terminologies(
+                    id INTEGER PRIMARY KEY DEFAULT nextval('id_sequence'),
+                    code_type VARCHAR,
+                    code VARCHAR,
+                    description VARCHAR,
+                    UNIQUE(code, code_type)
+                );
+                CREATE TABLE terminology_embeddings(
+                    terminology_id INTEGER NOT NULL REFERENCES medical_terminologies(id),
+                    model VARCHAR NOT NULL,
+                    embedding FLOAT[],
+                    PRIMARY KEY (terminology_id, model)
+                );
+            """)
+            con.execute(
+                "INSERT INTO medical_terminologies (id, code_type, code, description) "
+                "SELECT id, code_type, code, description FROM _mt_stage"
+            )
+            con.execute(
+                "INSERT INTO terminology_embeddings (terminology_id, model, embedding) "
+                "SELECT terminology_id, model, embedding FROM _emb_stage"
+            )
+
+            if has_dimensions:
+                con.execute("""
+                    CREATE TABLE dimensions (
+                        terminology_id_1 INTEGER NOT NULL REFERENCES medical_terminologies(id),
+                        terminology_id_2 INTEGER NOT NULL REFERENCES medical_terminologies(id),
+                        value FLOAT4 NOT NULL,
+                        dimension VARCHAR NOT NULL,
+                        model VARCHAR NOT NULL,
+                        PRIMARY KEY (terminology_id_1, terminology_id_2, dimension, model),
+                        CHECK (terminology_id_1 < terminology_id_2)
+                    );
+                """)
+                con.execute(
+                    "INSERT INTO dimensions (terminology_id_1, terminology_id_2, value, dimension, model) "
+                    "SELECT terminology_id_1, terminology_id_2, value, dimension, model FROM _dims_stage"
+                )
+                con.execute("DROP TABLE _dims_stage")
+            if has_coverage:
+                con.execute("""
+                    CREATE TABLE clinical_coverage (
+                        model VARCHAR NOT NULL,
+                        terminology_id INTEGER NOT NULL REFERENCES medical_terminologies(id),
+                        PRIMARY KEY (model, terminology_id)
+                    );
+                """)
+                con.execute(
+                    "INSERT INTO clinical_coverage (model, terminology_id) "
+                    "SELECT model, terminology_id FROM _cov_stage"
+                )
+                con.execute("DROP TABLE _cov_stage")
+            if has_assignments:
+                con.execute("""
+                    CREATE TABLE cluster_assignments (
+                        run_id          INTEGER NOT NULL REFERENCES runs(run_id),
+                        terminology_id  INTEGER NOT NULL REFERENCES medical_terminologies(id),
+                        cluster_id      INTEGER NOT NULL,
+                        PRIMARY KEY (run_id, terminology_id)
+                    );
+                """)
+                con.execute(
+                    "INSERT INTO cluster_assignments (run_id, terminology_id, cluster_id) "
+                    "SELECT run_id, terminology_id, cluster_id FROM _ca_stage"
+                )
+                con.execute("DROP TABLE _ca_stage")
+
+            con.execute("DROP TABLE _id_map; DROP TABLE _emb_stage; DROP TABLE _mt_stage;")
+            con.execute("COMMIT")
+        except Exception:
+            con.execute("ROLLBACK")
+            raise
+
+        n_canonical = con.execute("SELECT COUNT(*) FROM medical_terminologies").fetchone()[0]
+        n_embeddings = con.execute("SELECT COUNT(*) FROM terminology_embeddings").fetchone()[0]
+        logger.info(
+            f"Migration complete: {n_canonical} canonical terminologies, "
+            f"{n_embeddings} embeddings across models."
+        )
 
 
 def insert_run(
@@ -257,6 +494,7 @@ def insert_run(
     year_max: int,
     snf_k: int,
     n_clusters: int,
+    model: str | None = None,
     indicative_enabled: bool = False,
     silhouette_score: float | None = None,
     affinity_zscore: float | None = None,
@@ -287,17 +525,18 @@ def insert_run(
         result = con.execute(
             """
             INSERT INTO runs (
-                adapter, dataset_name, city, region, population_range,
+                adapter, model, dataset_name, city, region, population_range,
                 year_min, year_max, snf_k, n_clusters,
                 indicative_enabled, silhouette_score, affinity_zscore, notes, created_at, finished_at,
                 n_codes_clinical, n_codes_temporal, n_codes_demographic, n_codes_common,
                 n_missing_temporal, n_missing_demographic,
                 cluster_largest, cluster_median, n_singletons, pct_singletons
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING run_id
             """,
             [
                 adapter,
+                model or DEFAULT_MODEL,
                 dataset_name,
                 city,
                 region,
@@ -620,11 +859,17 @@ def fetch_run_leiden(run_id: int) -> pl.DataFrame:
 
 
 def get_all_embeddings(model: str | None = None) -> list[dict]:
-    """Get all embeddings with their metadata."""
+    """Get all embeddings (for the given model) with their terminology metadata."""
     rows = (
         get_connection()
         .execute(
-            "SELECT id, code, code_type, description, embedding FROM medical_terminologies WHERE model = $model ORDER BY id",
+            """
+            SELECT mt.id, mt.code, mt.code_type, mt.description, te.embedding
+            FROM terminology_embeddings te
+            JOIN medical_terminologies mt ON mt.id = te.terminology_id
+            WHERE te.model = $model
+            ORDER BY mt.id
+            """,
             {"model": model or DEFAULT_MODEL},
         )
         .fetchall()
@@ -636,11 +881,43 @@ def get_all_embeddings(model: str | None = None) -> list[dict]:
 
 
 def insert(df, model: str | None = None) -> None:
+    """Persist embeddings for ``model``, decoupling identity from embeddings.
+
+    Canonical terminology identity (``code``, ``code_type``, ``description``) is
+    upserted into ``medical_terminologies`` once per ``(code, code_type)``; the
+    per-model vectors land in ``terminology_embeddings`` keyed by
+    ``(terminology_id, model)``. Embedding dimensionality is validated against
+    :data:`MODEL_DIMENSIONS`.
+    """
+    model_name = model or DEFAULT_MODEL
     with _write_context() as con:
         con.register("df_view", df)
+        bad_dim = con.execute(
+            "SELECT COUNT(*) FROM df_view WHERE len(embedding) <> $dim",
+            {"dim": MODEL_DIMENSIONS},
+        ).fetchone()[0]
+        if bad_dim > 0:
+            raise ValueError(
+                f"{bad_dim} embeddings do not have the expected dimensionality "
+                f"({MODEL_DIMENSIONS}). Model {model_name!r} is incompatible with the "
+                "current MODEL_DIMENSIONS."
+            )
         con.execute(
-            "INSERT INTO medical_terminologies (code, code_type, description, model, embedding) SELECT code, code_type, description, $model AS model, embedding FROM df_view",
-            {"model": model or DEFAULT_MODEL},
+            """
+            INSERT INTO medical_terminologies (code, code_type, description)
+            SELECT DISTINCT code, code_type, description FROM df_view
+            ON CONFLICT (code, code_type) DO NOTHING
+            """
+        )
+        con.execute(
+            """
+            INSERT INTO terminology_embeddings (terminology_id, model, embedding)
+            SELECT mt.id, $model AS model, d.embedding
+            FROM df_view d
+            JOIN medical_terminologies mt ON mt.code = d.code AND mt.code_type = d.code_type
+            ON CONFLICT (terminology_id, model) DO UPDATE SET embedding = excluded.embedding
+            """,
+            {"model": model_name},
         )
 
 
@@ -649,7 +926,7 @@ def count_terminologies(model_name: str | None = None) -> int:
         return (
             get_connection()
             .execute(
-                "SELECT COUNT(*) FROM medical_terminologies WHERE model = $model",
+                "SELECT COUNT(*) FROM terminology_embeddings WHERE model = $model",
                 {"model": model_name},
             )
             .fetchone()[0]
@@ -658,17 +935,16 @@ def count_terminologies(model_name: str | None = None) -> int:
 
 
 def fetch_terminologies(model_name: str | None = None) -> pl.DataFrame:
-    query = "SELECT id, code, description, code_type, code || ':' || code_type AS label FROM medical_terminologies"
-    if model_name:
-        return (
-            get_connection()
-            .execute(
-                query + " WHERE model = $model ORDER BY id",
-                {"model": model_name},
-            )
-            .pl()
-        )
-    return get_connection().execute(query + " ORDER BY id").pl()
+    """Return canonical terminology labels.
+
+    Identity is model-agnostic since the decoupling, so ``model_name`` is
+    accepted for backwards compatibility but no longer filters the rows.
+    """
+    query = (
+        "SELECT id, code, description, code_type, code || ':' || code_type AS label "
+        "FROM medical_terminologies ORDER BY id"
+    )
+    return get_connection().execute(query).pl()
 
 
 def insert_clinical_dimensions(
@@ -689,10 +965,10 @@ def insert_clinical_dimensions(
         if terminology_ids is None:
             requested_ids = (
                 con.execute(
-                    "SELECT id FROM medical_terminologies WHERE model = $model",
+                    "SELECT terminology_id FROM terminology_embeddings WHERE model = $model",
                     {"model": model},
                 )
-                .pl()["id"]
+                .pl()["terminology_id"]
                 .to_list()
             )
         else:
@@ -716,16 +992,17 @@ def insert_clinical_dimensions(
             WITH uncovered(id) AS (SELECT unnest($uncovered::INTEGER[])),
                  affected(id) AS (SELECT unnest($affected::INTEGER[]))
             SELECT
-                t1.id AS terminology_id_1,
-                t2.id AS terminology_id_2,
+                t1.terminology_id AS terminology_id_1,
+                t2.terminology_id AS terminology_id_2,
                 array_cosine_similarity(t1.embedding::float[{MODEL_DIMENSIONS}], t2.embedding::float[{MODEL_DIMENSIONS}]) AS value,
-                'clinical' AS dimension
-            FROM medical_terminologies t1
-            JOIN medical_terminologies t2 ON t1.id < t2.id
+                'clinical' AS dimension,
+                $model AS model
+            FROM terminology_embeddings t1
+            JOIN terminology_embeddings t2 ON t1.terminology_id < t2.terminology_id
             WHERE t1.model = $model AND t2.model = $model
-              AND t1.id IN (SELECT id FROM affected)
-              AND t2.id IN (SELECT id FROM affected)
-              AND (t1.id IN (SELECT id FROM uncovered) OR t2.id IN (SELECT id FROM uncovered))
+              AND t1.terminology_id IN (SELECT id FROM affected)
+              AND t2.terminology_id IN (SELECT id FROM affected)
+              AND (t1.terminology_id IN (SELECT id FROM uncovered) OR t2.terminology_id IN (SELECT id FROM uncovered))
             """,
             {"model": model, "uncovered": uncovered_ids, "affected": affected_ids},
         )
@@ -741,16 +1018,29 @@ def insert_clinical_dimensions(
 def read_dimension(
     dimension: str,
     terminology_ids: list[int] | None = None,
+    model_name: str | None = None,
 ) -> pl.DataFrame:
+    """Read a dimension's pairwise values.
+
+    For the clinical dimension, similarities depend on the embedding model, so
+    pass ``model_name`` to select the right rows. When omitted, no model filter
+    is applied (back-compatible for single-model reads).
+    """
+    model_filter = "" if model_name is None else " AND model = $model"
+    params: dict = {"dimension": dimension}
+    if model_name is not None:
+        params["model"] = model_name
     if terminology_ids is None:
         return (
             get_connection()
             .execute(
-                "SELECT terminology_id_1, terminology_id_2, value FROM dimensions WHERE dimension = $dimension ORDER BY terminology_id_1",
-                {"dimension": dimension},
+                "SELECT terminology_id_1, terminology_id_2, value FROM dimensions "
+                "WHERE dimension = $dimension" + model_filter + " ORDER BY terminology_id_1",
+                params,
             )
             .pl()
         )
+    params["ids"] = terminology_ids
     return (
         get_connection()
         .execute(
@@ -758,12 +1048,14 @@ def read_dimension(
             WITH wanted(id) AS (SELECT unnest($ids::INTEGER[]))
             SELECT terminology_id_1, terminology_id_2, value
             FROM dimensions
-            WHERE dimension = $dimension
+            WHERE dimension = $dimension"""
+            + model_filter
+            + """
               AND terminology_id_1 IN (SELECT id FROM wanted)
               AND terminology_id_2 IN (SELECT id FROM wanted)
             ORDER BY terminology_id_1
             """,
-            {"dimension": dimension, "ids": terminology_ids},
+            params,
         )
         .pl()
     )
@@ -816,8 +1108,7 @@ def dimension_exists(
             """
             SELECT 1
             FROM dimensions d
-            JOIN medical_terminologies t ON d.terminology_id_1 = t.id
-            WHERE d.dimension = $dimension AND t.model = $model
+            WHERE d.dimension = $dimension AND d.model = $model
             LIMIT 1
             """,
             {"dimension": dimension, "model": model_name},
@@ -867,6 +1158,7 @@ def save_run(
     n_clusters: int,
     fused_labels: np.ndarray,
     common_ids: list[int],
+    model: str | None = None,
     indicative_enabled: bool = True,
     silhouette_score: float | None = None,
     affinity_zscore: float | None = None,
@@ -906,6 +1198,7 @@ def save_run(
         year_max=year_max,
         snf_k=snf_k,
         n_clusters=n_clusters,
+        model=model,
         indicative_enabled=indicative_enabled,
         silhouette_score=silhouette_score,
         affinity_zscore=affinity_zscore,
