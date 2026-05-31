@@ -167,10 +167,14 @@ def _(ADAPTERS, args):
 
 
 @app.cell
-def _(ClinicalView, active_adapter, dataset_name, df):
-    clinical_view = ClinicalView(
-        df=df, dataset_name=dataset_name, params={"model": active_adapter.default_model}
-    )
+def _(active_adapter, args):
+    model = args.get("model", active_adapter.default_model)
+    return (model,)
+
+
+@app.cell
+def _(ClinicalView, dataset_name, df, model):
+    clinical_view = ClinicalView(df=df, dataset_name=dataset_name, params={"model": model})
     return (clinical_view,)
 
 

@@ -122,10 +122,11 @@ class ClinicalView(BaseView):
         con = get_connection()
         result = con.execute(
             """
-            SELECT id, code, code_type, description, embedding
-            FROM medical_terminologies
-            WHERE id = ANY($ids) AND model = $model
-            ORDER BY id
+            SELECT mt.id, mt.code, mt.code_type, mt.description, te.embedding
+            FROM terminology_embeddings te
+            JOIN medical_terminologies mt ON mt.id = te.terminology_id
+            WHERE te.terminology_id = ANY($ids) AND te.model = $model
+            ORDER BY mt.id
             """,
             {"ids": terminology_ids, "model": model_name},
         )
@@ -159,4 +160,4 @@ class ClinicalView(BaseView):
                 f"({len(terminology_ids)} terminology ids)..."
             )
             insert_clinical_dimensions(model_name, terminology_ids)
-        return read_dimension("clinical", terminology_ids=terminology_ids)
+        return read_dimension("clinical", terminology_ids=terminology_ids, model_name=model_name)

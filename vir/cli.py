@@ -330,6 +330,12 @@ def view_clinical(
     ),
     year_min: int = typer.Option(2022, "--year-min", help="Minimum year (inclusive)"),
     year_max: int = typer.Option(2024, "--year-max", help="Maximum year (inclusive)"),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Embedding model for the clinical view. Defaults to the adapter's default_model. "
+        "Embeddings for this model must already be loaded (vir setup embeddings --model ...).",
+    ),
     no_indicative: bool = typer.Option(
         False, "--no-indicative", help="Include all codes (skip indicative filtering)"
     ),
@@ -347,6 +353,8 @@ def view_clinical(
         "--year-max",
         str(year_max),
     ]
+    if model:
+        args.extend(["--model", model])
     if no_indicative:
         args.append("--no-indicative")
 
@@ -502,6 +510,12 @@ def pipeline_run(
     min_weeks: int = typer.Option(12, "--min-weeks", help="Minimum weeks for temporal view"),
     snf_k: int = typer.Option(10, "--snf-k", help="SNF parameter k"),
     n_clusters: int = typer.Option(200, "--n-clusters", help="Number of clusters"),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Embedding model for the clinical view. Defaults to the adapter's default_model. "
+        "Embeddings for this model must already be loaded (vir setup embeddings --model ...).",
+    ),
     skip_clean: bool = typer.Option(False, "--skip-clean", help="Skip data cleaning step"),
     no_indicative: bool = typer.Option(
         False, "--no-indicative", help="Include all codes (skip indicative filtering)"
@@ -559,6 +573,7 @@ def pipeline_run(
     dataset = city_slug
 
     indicative_args = ["--no-indicative"] if no_indicative else []
+    model_args = ["--model", model] if model else []
 
     # Step 3: Clinical view
     typer.secho("Step 3/6: Running clinical view analysis...", fg=typer.colors.BLUE, bold=True)
@@ -572,6 +587,7 @@ def pipeline_run(
         str(year_min),
         "--year-max",
         str(year_max),
+        *model_args,
         *indicative_args,
     ]
     exit_code = run_marimo_notebook(notebook, args)
@@ -636,6 +652,7 @@ def pipeline_run(
         str(n_clusters),
         "--output",
         str(CLUSTERING_DIR),
+        *model_args,
         *indicative_args,
     ]
     if notes:

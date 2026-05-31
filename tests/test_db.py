@@ -314,9 +314,9 @@ class TestDeleteRun:
     def seeded_run_with_terminology(self, seeded_run):
         connection = db_module.get_connection(write=True)
         connection.execute(
-            "INSERT INTO medical_terminologies (id, code, code_type, description, model, embedding) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            [1001, "A00", "cid10", "Cólera", "test-model", [0.1, 0.2, 0.3]],
+            "INSERT INTO medical_terminologies (id, code, code_type, description) "
+            "VALUES (?, ?, ?, ?)",
+            [1001, "A00", "cid10", "Cólera"],
         )
         connection.execute(
             "INSERT INTO cluster_assignments (run_id, terminology_id, cluster_id) VALUES (?, ?, ?)",
@@ -791,3 +791,165 @@ class TestExplainClusters:
             )
 
         mock_upsert.assert_not_called()
+
+
+CANONICAL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+OTHER_MODEL = "cambridgeltl/SapBERT-UMLS-2020AB-all-lang-from-XLMR"
+
+
+def _seed_legacy_two_model_db(connection):
+    """Build a legacy (pre-decoupling) schema with two models sharing the same
+    codes but different ids, plus dimensions/coverage/cluster_assignments that
+    reference the canonical-model ids (and one assignment on the other model's
+    id range), mirroring the real database before migration."""
+    connection.execute("CREATE SEQUENCE IF NOT EXISTS id_sequence START 1")
+    connection.execute(
+        """
+        CREATE TABLE medical_terminologies(
+            id INTEGER PRIMARY KEY DEFAULT nextval('id_sequence'),
+            code_type VARCHAR, code VARCHAR, description VARCHAR,
+            model VARCHAR, embedding FLOAT[], UNIQUE(code, code_type, model)
+        );
+        CREATE TABLE runs(run_id INTEGER PRIMARY KEY, dataset_name VARCHAR);
+        CREATE TABLE dimensions(
+            terminology_id_1 INTEGER NOT NULL REFERENCES medical_terminologies(id),
+            terminology_id_2 INTEGER NOT NULL REFERENCES medical_terminologies(id),
+            value FLOAT4 NOT NULL, dimension VARCHAR NOT NULL,
+            PRIMARY KEY (terminology_id_1, terminology_id_2, dimension),
+            CHECK (terminology_id_1 < terminology_id_2)
+        );
+        CREATE TABLE clinical_coverage(
+            model VARCHAR NOT NULL,
+            terminology_id INTEGER NOT NULL REFERENCES medical_terminologies(id),
+            PRIMARY KEY (model, terminology_id)
+        );
+        CREATE TABLE cluster_assignments(
+            run_id INTEGER NOT NULL REFERENCES runs(run_id),
+            terminology_id INTEGER NOT NULL REFERENCES medical_terminologies(id),
+            cluster_id INTEGER NOT NULL,
+            PRIMARY KEY (run_id, terminology_id)
+        );
+        """
+    )
+    connection.executemany(
+        "INSERT INTO medical_terminologies (id, code_type, code, description, model, embedding) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            [100, "icd10gm", "A00", "descA", CANONICAL, [0.1, 0.2]],
+            [101, "icd10gm", "B00", "descB", CANONICAL, [0.3, 0.4]],
+            [1, "icd10gm", "A00", "descA", OTHER_MODEL, [0.5, 0.6]],
+            [2, "icd10gm", "B00", "descB", OTHER_MODEL, [0.7, 0.8]],
+        ],
+    )
+    connection.execute("INSERT INTO runs VALUES (5, 'ds')")
+    connection.execute("INSERT INTO dimensions VALUES (100, 101, 0.9, 'clinical')")
+    connection.executemany(
+        "INSERT INTO clinical_coverage VALUES (?, ?)",
+        [[CANONICAL, 100], [CANONICAL, 101]],
+    )
+    # One assignment on the other model's id (1 -> canonical 100), one canonical (101).
+    connection.executemany(
+        "INSERT INTO cluster_assignments VALUES (?, ?, ?)",
+        [[5, 1, 0], [5, 101, 1]],
+    )
+
+
+class TestDecoupleTerminologyMigration:
+    def test_migration_decouples_identity_and_embeddings(self, tmp_db):
+        connection = db_module.get_connection(write=True)
+        _seed_legacy_two_model_db(connection)
+
+        db_module.migrate_decouple_terminology_model_if_needed()
+        con = db_module.get_connection(write=True)
+
+        mt_columns = {
+            row[0]
+            for row in con.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'medical_terminologies'"
+            ).fetchall()
+        }
+        assert "model" not in mt_columns
+        assert "embedding" not in mt_columns
+
+        assert con.execute("SELECT COUNT(*) FROM medical_terminologies").fetchone()[0] == 2
+        assert sorted(
+            con.execute("SELECT id FROM medical_terminologies ORDER BY id").pl()["id"].to_list()
+        ) == [100, 101]
+
+        embeddings = con.execute(
+            "SELECT terminology_id, model FROM terminology_embeddings ORDER BY model, terminology_id"
+        ).fetchall()
+        assert embeddings == [
+            (100, OTHER_MODEL),
+            (101, OTHER_MODEL),
+            (100, CANONICAL),
+            (101, CANONICAL),
+        ]
+
+    def test_dimensions_are_stamped_with_canonical_model(self, tmp_db):
+        connection = db_module.get_connection(write=True)
+        _seed_legacy_two_model_db(connection)
+        db_module.migrate_decouple_terminology_model_if_needed()
+        con = db_module.get_connection(write=True)
+        rows = con.execute(
+            "SELECT terminology_id_1, terminology_id_2, dimension, model FROM dimensions"
+        ).fetchall()
+        assert rows == [(100, 101, "clinical", CANONICAL)]
+
+    def test_cluster_assignments_remapped_to_canonical_ids(self, tmp_db):
+        connection = db_module.get_connection(write=True)
+        _seed_legacy_two_model_db(connection)
+        db_module.migrate_decouple_terminology_model_if_needed()
+        con = db_module.get_connection(write=True)
+        rows = con.execute(
+            "SELECT run_id, terminology_id, cluster_id FROM cluster_assignments ORDER BY terminology_id"
+        ).fetchall()
+        assert rows == [(5, 100, 0), (5, 101, 1)]
+        # No id from the other model's range survives.
+        assert (
+            con.execute(
+                "SELECT COUNT(*) FROM cluster_assignments WHERE terminology_id < 100"
+            ).fetchone()[0]
+            == 0
+        )
+
+    def test_migration_is_idempotent(self, tmp_db):
+        connection = db_module.get_connection(write=True)
+        _seed_legacy_two_model_db(connection)
+        db_module.migrate_decouple_terminology_model_if_needed()
+        # Second run must be a no-op (no error, schema already decoupled).
+        db_module.migrate_decouple_terminology_model_if_needed()
+        con = db_module.get_connection(write=True)
+        assert con.execute("SELECT COUNT(*) FROM terminology_embeddings").fetchone()[0] == 4
+
+    def test_insert_and_read_back_on_decoupled_schema(self, tmp_db):
+        db_module.create_embeddings_table_if_not_exists()
+        frame = pl.DataFrame(
+            {
+                "code": ["A00", "B00"],
+                "code_type": ["icd10gm", "icd10gm"],
+                "description": ["descA", "descB"],
+                "embedding": [
+                    [0.1] * db_module.MODEL_DIMENSIONS,
+                    [0.2] * db_module.MODEL_DIMENSIONS,
+                ],
+            }
+        )
+        db_module.insert(frame, OTHER_MODEL)
+        rows = db_module.get_all_embeddings(OTHER_MODEL)
+        assert {r["code"] for r in rows} == {"A00", "B00"}
+        assert db_module.count_terminologies(OTHER_MODEL) == 2
+
+    def test_insert_rejects_wrong_embedding_dim(self, tmp_db):
+        db_module.create_embeddings_table_if_not_exists()
+        frame = pl.DataFrame(
+            {
+                "code": ["A00"],
+                "code_type": ["icd10gm"],
+                "description": ["descA"],
+                "embedding": [[0.1, 0.2, 0.3]],
+            }
+        )
+        with pytest.raises(ValueError, match="dimensionality"):
+            db_module.insert(frame, OTHER_MODEL)

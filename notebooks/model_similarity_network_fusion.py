@@ -136,8 +136,8 @@ def _(mo):
 
 
 @app.cell
-def _(active_adapter, load_terminology_labels):
-    terminology_labels = load_terminology_labels(model=active_adapter.default_model)
+def _(load_terminology_labels, model):
+    terminology_labels = load_terminology_labels(model=model)
     return (terminology_labels,)
 
 
@@ -145,6 +145,12 @@ def _(active_adapter, load_terminology_labels):
 def _(ADAPTERS, args):
     active_adapter = ADAPTERS[args.get("adapter", "datasus")]
     return (active_adapter,)
+
+
+@app.cell
+def _(active_adapter, args):
+    model = args.get("model", active_adapter.default_model)
+    return (model,)
 
 
 @app.cell
@@ -198,9 +204,9 @@ def _(df, extract_dataset_name, file_path):
 
 
 @app.cell
-def _(ClinicalView, DemographicView, TemporalView, active_adapter, view_params):
+def _(ClinicalView, DemographicView, TemporalView, model, view_params):
     # Instantiate views
-    clinical_view = ClinicalView(**view_params, params={"model": active_adapter.default_model})
+    clinical_view = ClinicalView(**view_params, params={"model": model})
     temporal_view = TemporalView(**view_params)
     demographic_view = DemographicView(**view_params)
 
@@ -718,6 +724,7 @@ def _(
     indicative_codes_enabled,
     insert_run_leiden,
     leiden_results,
+    model,
     multi_k_results,
     n_clusters,
     n_codes_clinical,
@@ -746,6 +753,7 @@ def _(
         n_clusters=int(n_clusters),
         fused_labels=fused_labels,
         common_ids=common_ids,
+        model=model,
         indicative_enabled=indicative_codes_enabled,
         silhouette_score=float(silhouette),
         affinity_zscore=float(zaff),
