@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import polars as pl
@@ -21,7 +22,9 @@ class DatasusAdapter(Adapter):
     """
 
     name = "datasus"
-    default_model = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+    default_model = os.getenv(
+        "VIROLA_DATASUS_MODEL", "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
+    )
     terminology_csv_filename = "cid10_ciap2_ab.csv"
 
     def clean(

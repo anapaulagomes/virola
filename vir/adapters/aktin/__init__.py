@@ -1,4 +1,5 @@
 import io
+import os
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -107,7 +108,9 @@ class AktinAdapter(Adapter):
     """
 
     name = "aktin"
-    default_model = "cambridgeltl/SapBERT-UMLS-2020AB-all-lang-from-XLMR"
+    default_model = os.getenv(
+        "VIROLA_AKTIN_MODEL", "cambridgeltl/SapBERT-UMLS-2020AB-all-lang-from-XLMR"
+    )
     terminology_csv_filename = "icd10gm_aktin.csv"
 
     def clean(
