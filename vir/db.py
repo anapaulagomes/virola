@@ -257,6 +257,69 @@ def create_dimensions_table_if_not_exists():
         """)
 
 
+def backfill_clinical_coverage() -> list[str]:
+    """Repair coverage for models whose clinical matrix is complete but untracked.
+
+    The decouple migration copied a canonical model's full pairwise ``dimensions``
+    without writing matching ``clinical_coverage`` rows (coverage is the newer
+    incremental mechanism; bulk-computed models predate it). ``dimension_exists``
+    then reports such a model as uncomputed, so ``insert_clinical_dimensions``
+    re-inserts pairs that already exist and trips the ``dimensions`` primary key.
+
+    For every model whose stored clinical pair count equals the complete
+    ``C(n, 2)`` for its ``n`` embeddings, this marks all of its ids covered. It is
+    idempotent and never touches models with a partial (correctly tracked) matrix.
+    Returns the list of models repaired.
+    """
+    repaired_models: list[str] = []
+    with _write_context() as con:
+        if not _table_exists(con, "dimensions"):
+            return repaired_models
+        if not _table_exists(con, "clinical_coverage"):
+            return repaired_models
+        models = (
+            con.execute("SELECT DISTINCT model FROM dimensions WHERE dimension = 'clinical'")
+            .pl()["model"]
+            .to_list()
+        )
+        for model in models:
+            n_ids = con.execute(
+                "SELECT COUNT(*) FROM terminology_embeddings WHERE model = $model",
+                {"model": model},
+            ).fetchone()[0]
+            n_pairs = con.execute(
+                "SELECT COUNT(*) FROM dimensions WHERE dimension = 'clinical' AND model = $model",
+                {"model": model},
+            ).fetchone()[0]
+            if n_ids == 0 or n_pairs != n_ids * (n_ids - 1) // 2:
+                continue
+            n_covered = con.execute(
+                "SELECT COUNT(*) FROM clinical_coverage WHERE model = $model",
+                {"model": model},
+            ).fetchone()[0]
+            if n_covered >= n_ids:
+                continue
+            con.execute(
+                """
+                INSERT INTO clinical_coverage (model, terminology_id)
+                SELECT $model, te.terminology_id
+                FROM terminology_embeddings te
+                WHERE te.model = $model
+                  AND NOT EXISTS (
+                      SELECT 1 FROM clinical_coverage c
+                      WHERE c.model = te.model AND c.terminology_id = te.terminology_id
+                  )
+                """,
+                {"model": model},
+            )
+            repaired_models.append(model)
+            logger.info(
+                f"Backfilled clinical_coverage for complete model {model!r} "
+                f"({n_ids} terminology ids)."
+            )
+    return repaired_models
+
+
 def _table_exists(con: duckdb.DuckDBPyConnection, name: str) -> bool:
     return (
         con.execute(
@@ -525,6 +588,8 @@ def migrate_decouple_terminology_model_if_needed() -> None:
             f"{n_embeddings} embeddings across models."
         )
 
+    backfill_clinical_coverage()
+
 
 def insert_run(
     *,
@@ -681,7 +746,7 @@ def fetch_runs(adapter: str | None = None) -> pl.DataFrame:
     rely on stratum names to do the filtering.
     """
     base_query = """
-        SELECT run_id, dataset_name, adapter, city, region, population_range,
+        SELECT run_id, dataset_name, adapter, model, city, region, population_range,
                year_min, year_max, snf_k, n_clusters,
                indicative_enabled, silhouette_score, affinity_zscore,
                n_codes_clinical, n_codes_temporal, n_codes_demographic, n_codes_common,

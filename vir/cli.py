@@ -25,6 +25,7 @@ from vir.config import (
     VALIDATION_DIR,
 )
 from vir.db import (
+    backfill_clinical_coverage,
     delete_run,
     fetch_cluster_assignments,
     fetch_runs,
@@ -180,6 +181,23 @@ def setup_embeddings(
     if exit_code == 0:
         typer.secho("✓ Embeddings database created successfully", fg=typer.colors.GREEN)
     sys.exit(exit_code)
+
+
+@setup_app.command("repair-coverage")
+def setup_repair_coverage():
+    """Backfill clinical_coverage for models whose clinical matrix is complete.
+
+    Repairs the gap left by the terminology/embedding decouple migration, which
+    copied a model's full pairwise dimensions without recording coverage. Without
+    this, re-running views for such a model re-inserts existing pairs and trips
+    the dimensions primary key. Idempotent — safe to run repeatedly.
+    """
+    repaired_models = backfill_clinical_coverage()
+    if not repaired_models:
+        typer.secho("✓ Coverage already consistent; nothing to repair.", fg=typer.colors.GREEN)
+        return
+    for model_name in repaired_models:
+        typer.secho(f"✓ Backfilled coverage for {model_name}", fg=typer.colors.GREEN)
 
 
 # ============================================================================
