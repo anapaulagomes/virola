@@ -797,6 +797,131 @@ CANONICAL = "cambridgeltl/SapBERT-from-PubMedBERT-fulltext"
 OTHER_MODEL = "cambridgeltl/SapBERT-UMLS-2020AB-all-lang-from-XLMR"
 
 
+def _seed_decoupled_schema(connection):
+    """Create the post-decouple schema (terminologies, embeddings, dimensions,
+    clinical_coverage) with no rows, matching the production DDL."""
+    connection.execute("CREATE SEQUENCE IF NOT EXISTS id_sequence START 1")
+    connection.execute(
+        """
+        CREATE TABLE medical_terminologies(
+            id INTEGER PRIMARY KEY DEFAULT nextval('id_sequence'),
+            code_type VARCHAR, code VARCHAR, description VARCHAR,
+            UNIQUE(code, code_type)
+        );
+        CREATE TABLE terminology_embeddings(
+            terminology_id INTEGER NOT NULL REFERENCES medical_terminologies(id),
+            model VARCHAR NOT NULL, embedding FLOAT[],
+            PRIMARY KEY (terminology_id, model)
+        );
+        CREATE TABLE dimensions(
+            terminology_id_1 INTEGER NOT NULL REFERENCES medical_terminologies(id),
+            terminology_id_2 INTEGER NOT NULL REFERENCES medical_terminologies(id),
+            value FLOAT4 NOT NULL, dimension VARCHAR NOT NULL, model VARCHAR NOT NULL,
+            PRIMARY KEY (model, dimension, terminology_id_1, terminology_id_2),
+            CHECK (terminology_id_1 < terminology_id_2)
+        );
+        CREATE TABLE clinical_coverage(
+            model VARCHAR NOT NULL,
+            terminology_id INTEGER NOT NULL REFERENCES medical_terminologies(id),
+            PRIMARY KEY (model, terminology_id)
+        );
+        """
+    )
+
+
+def _seed_complete_clinical_matrix(connection, model, terminology_ids):
+    """Insert embeddings for ``terminology_ids`` and the full pairwise clinical
+    matrix for ``model``, leaving clinical_coverage untouched (the migration gap)."""
+    connection.executemany(
+        "INSERT INTO medical_terminologies (id, code_type, code, description) VALUES (?, ?, ?, ?)",
+        [
+            [terminology_id, "icd10gm", f"C{terminology_id}", "desc"]
+            for terminology_id in terminology_ids
+        ],
+    )
+    connection.executemany(
+        "INSERT INTO terminology_embeddings (terminology_id, model, embedding) VALUES (?, ?, ?)",
+        [[terminology_id, model, [0.1, 0.2]] for terminology_id in terminology_ids],
+    )
+    connection.executemany(
+        "INSERT INTO dimensions VALUES (?, ?, 0.9, 'clinical', ?)",
+        [
+            [first, second, model]
+            for first in terminology_ids
+            for second in terminology_ids
+            if first < second
+        ],
+    )
+
+
+class TestBackfillClinicalCoverage:
+    def test_backfills_complete_untracked_model(self, tmp_db):
+        connection = db_module.get_connection(write=True)
+        _seed_decoupled_schema(connection)
+        _seed_complete_clinical_matrix(connection, CANONICAL, [100, 101, 102])
+
+        repaired = db_module.backfill_clinical_coverage()
+
+        assert repaired == [CANONICAL]
+        covered = (
+            connection.execute(
+                "SELECT terminology_id FROM clinical_coverage WHERE model = ? ORDER BY terminology_id",
+                [CANONICAL],
+            )
+            .pl()["terminology_id"]
+            .to_list()
+        )
+        assert covered == [100, 101, 102]
+
+    def test_is_idempotent(self, tmp_db):
+        connection = db_module.get_connection(write=True)
+        _seed_decoupled_schema(connection)
+        _seed_complete_clinical_matrix(connection, CANONICAL, [100, 101, 102])
+
+        db_module.backfill_clinical_coverage()
+        assert db_module.backfill_clinical_coverage() == []
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM clinical_coverage WHERE model = ?", [CANONICAL]
+            ).fetchone()[0]
+            == 3
+        )
+
+    def test_leaves_partial_model_untouched(self, tmp_db):
+        connection = db_module.get_connection(write=True)
+        _seed_decoupled_schema(connection)
+        connection.executemany(
+            "INSERT INTO medical_terminologies (id, code_type, code, description) VALUES (?, ?, ?, ?)",
+            [
+                [terminology_id, "icd10gm", f"C{terminology_id}", "desc"]
+                for terminology_id in [1, 2, 3]
+            ],
+        )
+        connection.executemany(
+            "INSERT INTO terminology_embeddings (terminology_id, model, embedding) VALUES (?, ?, ?)",
+            [[terminology_id, OTHER_MODEL, [0.1, 0.2]] for terminology_id in [1, 2, 3]],
+        )
+        connection.execute(
+            "INSERT INTO dimensions VALUES (1, 2, 0.9, 'clinical', ?)", [OTHER_MODEL]
+        )
+
+        assert db_module.backfill_clinical_coverage() == []
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM clinical_coverage WHERE model = ?", [OTHER_MODEL]
+            ).fetchone()[0]
+            == 0
+        )
+
+    def test_no_op_when_coverage_table_absent(self, tmp_db):
+        connection = db_module.get_connection(write=True)
+        connection.execute(
+            "CREATE TABLE dimensions(terminology_id_1 INTEGER, terminology_id_2 INTEGER, "
+            "value FLOAT4, dimension VARCHAR, model VARCHAR)"
+        )
+        assert db_module.backfill_clinical_coverage() == []
+
+
 def _seed_legacy_two_model_db(connection):
     """Build a legacy (pre-decoupling) schema with two models sharing the same
     codes but different ids, plus dimensions/coverage/cluster_assignments that
