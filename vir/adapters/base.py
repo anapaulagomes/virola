@@ -3,6 +3,8 @@ from pathlib import Path
 
 import polars as pl
 
+from vir.config import OUTPUTS_DIR
+
 
 class Adapter(ABC):
     """Contract for dataset-specific adapters that produce the canonical aggregated row.
@@ -54,6 +56,13 @@ class Adapter(ABC):
     def indicative_codes_file(self) -> Path | None:
         """Optional path to the indicative-codes labeling CSV. ``None`` when not provided."""
         return None
+
+    @property
+    def outputs_dir(self) -> Path:
+        """Per-adapter directory for paper figures and tables, created on access."""
+        directory = OUTPUTS_DIR / self.name
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory
 
     @abstractmethod
     def cleaned_filename(self, stratum: str | None) -> str:

@@ -25,6 +25,7 @@ CLUSTERING_DIR = DATA_DIR / "clustering"
 REFERENCES_DIR = PROJ_ROOT / "vir" / "adapters" / "datasus" / "references"
 VIEWS_CACHE_DIR = DATA_DIR / "views"
 VALIDATION_DIR = DATA_DIR / "validation"
+OUTPUTS_DIR = DATA_DIR / "outputs"
 
 RAW_DATA_FILE = RAW_DATA_DIR / "base_aesop_raw_extracao_01042026.parquet/*.parquet"
 
@@ -36,6 +37,7 @@ dirs = (
     CLUSTERING_DIR,
     VIEWS_CACHE_DIR,
     VALIDATION_DIR,
+    OUTPUTS_DIR,
 )
 for _directory in dirs:
     _directory.mkdir(parents=True, exist_ok=True)
