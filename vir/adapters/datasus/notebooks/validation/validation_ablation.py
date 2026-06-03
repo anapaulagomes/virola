@@ -30,7 +30,7 @@ def _():
         VALIDATION_DIR,
     )
     from vir.db import fetch_cluster_assignments, fetch_runs
-    from vir.helpers import slugify
+    from vir.helpers import find_dataset_file, slugify
     from vir.notebook_widgets import (
         distance_to_affinity,
         load_and_prepare_dataframe,
@@ -53,6 +53,7 @@ def _():
         distance_to_affinity,
         fetch_cluster_assignments,
         fetch_runs,
+        find_dataset_file,
         go,
         load_and_prepare_dataframe,
         load_dotenv,
@@ -117,63 +118,118 @@ def _(mo):
 
 @app.cell
 def _(fetch_runs, mo):
-    _runs = fetch_runs()
+    all_runs_df = fetch_runs()
     mo.stop(
-        _runs.is_empty(),
+        all_runs_df.is_empty(),
         mo.callout(mo.md("No saved runs found. Run the SNF pipeline first."), kind="warn"),
     )
+    return (all_runs_df,)
 
-    runs_latest_per_city = _runs.unique(subset=["city"], keep="first")
-    runs_by_city = {
-        row["city"]: row for row in runs_latest_per_city.iter_rows(named=True) if row["city"]
-    }
-    return (runs_by_city,)
+
+@app.cell
+def _(all_runs_df, mo):
+    _adapters = sorted(value for value in all_runs_df["adapter"].unique().to_list() if value)
+    adapter_selector = mo.ui.dropdown(
+        options=_adapters,
+        value=_adapters[0] if _adapters else None,
+        label="Adapter",
+    )
+    adapter_selector
+    return (adapter_selector,)
+
+
+@app.cell
+def _(ADAPTERS, adapter_selector, all_runs_df, mo, pl):
+    _models_for_adapter = sorted(
+        value
+        for value in all_runs_df.filter(pl.col("adapter") == adapter_selector.value)["model"]
+        .unique()
+        .to_list()
+        if value
+    )
+    _adapter = ADAPTERS.get(adapter_selector.value)
+    _adapter_default = _adapter.default_model if _adapter is not None else None
+    _default_model = (
+        _adapter_default
+        if _adapter_default in _models_for_adapter
+        else (_models_for_adapter[0] if _models_for_adapter else None)
+    )
+    model_selector = mo.ui.dropdown(
+        options=_models_for_adapter,
+        value=_default_model,
+        label="Embedding model",
+    )
+    model_selector
+    return (model_selector,)
 
 
 @app.cell
 def _(
-    CITY_NAMES,
+    AFFINITY_ZSCORE_PERMS,
     Path,
     VALIDATION_DIR,
-    AFFINITY_ZSCORE_PERMS,
+    adapter_selector,
+    all_runs_df,
     logger,
     mo,
-    runs_by_city,
+    model_selector,
+    pl,
     slugify,
 ):
     if mo.app_meta().mode == "script":
         _cli_args = mo.cli_args()
+        selected_adapter = _cli_args.get("adapter") or adapter_selector.value
+        selected_model = _cli_args.get("model") or model_selector.value
+        n_permutations = int(_cli_args.get("permutations", AFFINITY_ZSCORE_PERMS))
+        output_dir = Path(_cli_args["output"]) if _cli_args.get("output") else VALIDATION_DIR
+    else:
+        selected_adapter = adapter_selector.value
+        selected_model = model_selector.value
+        n_permutations = AFFINITY_ZSCORE_PERMS
+        output_dir = VALIDATION_DIR
+
+    _filtered_runs = all_runs_df.filter(
+        (pl.col("adapter") == selected_adapter) & (pl.col("model") == selected_model)
+    )
+    _latest_per_city = _filtered_runs.unique(subset=["city"], keep="first")
+    runs_by_city = {
+        row["city"]: row for row in _latest_per_city.iter_rows(named=True) if row["city"]
+    }
+
+    _available_cities = sorted(runs_by_city)
+
+    if mo.app_meta().mode == "script":
         _city_arg = _cli_args.get("city", "")
         _slug_to_canonical = {slugify(key): key for key in runs_by_city}
         _matched_city = _slug_to_canonical.get(slugify(_city_arg)) if _city_arg else None
         if _city_arg and _matched_city is None:
             logger.warning(
-                f"--city {_city_arg!r} did not match any saved run; running all cities. "
+                f"--city {_city_arg!r} did not match any saved run for "
+                f"{selected_adapter}/{selected_model}; running all cities. "
                 f"Available: {sorted(runs_by_city)}"
             )
-        _selected_cities = (
-            [_matched_city]
-            if _matched_city
-            else sorted(k for k in runs_by_city if k in CITY_NAMES)
-        )
-        n_permutations = int(_cli_args.get("permutations", AFFINITY_ZSCORE_PERMS))
-        output_dir = Path(_cli_args["output"]) if _cli_args.get("output") else VALIDATION_DIR
+        _selected_cities = [_matched_city] if _matched_city else _available_cities
     else:
-        n_permutations = AFFINITY_ZSCORE_PERMS
-        _selected_cities = sorted(k for k in runs_by_city if k in CITY_NAMES)
-        output_dir = VALIDATION_DIR
+        _selected_cities = _available_cities
 
     city_selector = mo.ui.multiselect(
-        options=_selected_cities,
+        options=_available_cities,
         value=_selected_cities,
         label="Cities to include in the ablation",
     )
     city_selector
-    return city_selector, n_permutations, output_dir
+    return (
+        city_selector,
+        n_permutations,
+        output_dir,
+        runs_by_city,
+        selected_adapter,
+        selected_model,
+    )
 
 
 @app.cell
-def _(PROCESSED_DATA_DIR, city_selector, mo, runs_by_city):
+def _(PROCESSED_DATA_DIR, city_selector, find_dataset_file, mo, runs_by_city):
     mo.stop(
         not city_selector.value,
         mo.callout(mo.md("Select at least one city above."), kind="warn"),
@@ -181,15 +237,11 @@ def _(PROCESSED_DATA_DIR, city_selector, mo, runs_by_city):
 
     _all_files = [str(file.resolve()) for file in PROCESSED_DATA_DIR.glob("**/prepared_*.parquet")]
 
-    def _resolve_file_for_dataset(dataset_name):
-        _matches = [file for file in _all_files if dataset_name in file]
-        return _matches[0] if _matches else None
-
     selected_runs = []
     missing_files = []
     for _city in city_selector.value:
         _run = runs_by_city[_city]
-        _file = _resolve_file_for_dataset(_run["dataset_name"])
+        _file = find_dataset_file(_run["dataset_name"], _all_files)
         if _file is None:
             missing_files.append((_city, _run["dataset_name"]))
             continue

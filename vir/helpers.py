@@ -61,6 +61,22 @@ def extract_dataset_name(file_path: str) -> str:
     return stem
 
 
+def find_dataset_file(dataset_name: str, candidate_paths: list[str]) -> str | None:
+    """Return the candidate path whose name contains ``dataset_name``.
+
+    Matching is robust to Unicode normalization differences: macOS stores
+    filenames decomposed (NFD), while the database stores dataset names
+    composed (NFC), so a naive substring test fails for accented cities such
+    as ``anápolis`` or ``gravataí``. Both sides are normalized to NFC before
+    comparison; the original path string is returned unchanged.
+    """
+    needle = unicodedata.normalize("NFC", dataset_name)
+    for path in candidate_paths:
+        if needle in unicodedata.normalize("NFC", path):
+            return path
+    return None
+
+
 def get_n_jobs():
     if slurm_cpus := os.getenv("SLURM_CPUS_PER_TASK"):
         return int(slurm_cpus)

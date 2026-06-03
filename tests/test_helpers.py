@@ -1,8 +1,9 @@
+import unicodedata
 from pathlib import Path
 
 import pytest
 
-from vir.helpers import extract_dataset_name, slugify, suffix_from
+from vir.helpers import extract_dataset_name, find_dataset_file, slugify, suffix_from
 
 
 class TestSuffixFrom:
@@ -87,3 +88,33 @@ class TestSlugify:
     )
     def test_slugify(self, input_text, expected_slug):
         assert slugify(input_text) == expected_slug
+
+
+class TestFindDatasetFile:
+    def test_matches_plain_ascii_name(self):
+        candidates = [
+            "/data/processed/prepared_base_salvador.parquet",
+            "/data/processed/prepared_base_manaus.parquet",
+        ]
+        assert (
+            find_dataset_file("base_manaus", candidates)
+            == "/data/processed/prepared_base_manaus.parquet"
+        )
+
+    def test_matches_nfc_name_against_nfd_filename(self):
+        nfc_name = unicodedata.normalize("NFC", "base_anápolis")
+        nfd_path = unicodedata.normalize(
+            "NFD", "/data/processed/prepared_base_anápolis.parquet"
+        )
+        assert nfc_name != nfd_path[: len(nfc_name)]
+        assert find_dataset_file(nfc_name, [nfd_path]) == nfd_path
+
+    def test_returns_original_path_unchanged(self):
+        nfd_path = unicodedata.normalize(
+            "NFD", "/data/processed/prepared_base_gravataí.parquet"
+        )
+        result = find_dataset_file(unicodedata.normalize("NFC", "base_gravataí"), [nfd_path])
+        assert result is nfd_path
+
+    def test_returns_none_when_no_match(self):
+        assert find_dataset_file("base_curitiba", ["/data/prepared_base_salvador.parquet"]) is None
