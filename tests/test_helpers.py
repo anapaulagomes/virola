@@ -103,16 +103,12 @@ class TestFindDatasetFile:
 
     def test_matches_nfc_name_against_nfd_filename(self):
         nfc_name = unicodedata.normalize("NFC", "base_anápolis")
-        nfd_path = unicodedata.normalize(
-            "NFD", "/data/processed/prepared_base_anápolis.parquet"
-        )
+        nfd_path = unicodedata.normalize("NFD", "/data/processed/prepared_base_anápolis.parquet")
         assert nfc_name != nfd_path[: len(nfc_name)]
         assert find_dataset_file(nfc_name, [nfd_path]) == nfd_path
 
     def test_returns_original_path_unchanged(self):
-        nfd_path = unicodedata.normalize(
-            "NFD", "/data/processed/prepared_base_gravataí.parquet"
-        )
+        nfd_path = unicodedata.normalize("NFD", "/data/processed/prepared_base_gravataí.parquet")
         result = find_dataset_file(unicodedata.normalize("NFC", "base_gravataí"), [nfd_path])
         assert result is nfd_path
 
