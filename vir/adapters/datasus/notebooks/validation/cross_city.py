@@ -19,6 +19,7 @@ def _():
 @app.cell
 def _():
     from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
+    from vir.adapters.datasus import DatasusAdapter
     from vir.adapters.datasus.features import CITY_NAMES, CODE_TYPES_MAPPING
     from vir.adapters.datasus.viz import AGE_GROUP_COLOR, SEX_COLOR
     from vir.config import DATA_DIR, REFERENCES_DIR
@@ -30,6 +31,7 @@ def _():
         CITY_NAMES,
         CODE_TYPES_MAPPING,
         DATA_DIR,
+        DatasusAdapter,
         POPULATION_RANGE_TRANSLATIONS,
         REFERENCES_DIR,
         REGION_TRANSLATIONS,
@@ -38,6 +40,12 @@ def _():
         fetch_cluster_assignments,
         fetch_runs,
     )
+
+
+@app.cell
+def _(DatasusAdapter):
+    outputs_dir = DatasusAdapter().outputs_dir
+    return (outputs_dir,)
 
 
 @app.cell
@@ -56,7 +64,7 @@ def _(mo):
 
 
 @app.cell
-def _(CITY_NAMES, fetch_runs, mo):
+def _(CITY_NAMES, DatasusAdapter, fetch_runs, mo):
     runs_df = fetch_runs()
 
     mo.stop(
@@ -64,19 +72,30 @@ def _(CITY_NAMES, fetch_runs, mo):
         mo.callout(mo.md("No runs found. Run `vir model snf` first."), kind="warn"),
     )
 
+    _models = sorted(value for value in runs_df["model"].unique().to_list() if value)
+    _adapter_default = DatasusAdapter.default_model
+    _default_model = (
+        _adapter_default if _adapter_default in _models else (_models[0] if _models else None)
+    )
+    model_selector = mo.ui.dropdown(
+        options=_models,
+        value=_default_model,
+        label="Embedding model",
+    )
     city_selector = mo.ui.multiselect(
         options=CITY_NAMES,
         value=CITY_NAMES,
         label="Cities to compare (select 2 or more)",
     )
-    city_selector
-    return city_selector, runs_df
+    mo.vstack([model_selector, city_selector])
+    return city_selector, model_selector, runs_df
 
 
 @app.cell
-def _(pl, runs_df):
+def _(model_selector, pl, runs_df):
     latest_per_city = (
         runs_df.filter(pl.col("city").is_not_null())
+        .filter(pl.col("model") == model_selector.value)
         .sort("created_at", descending=True)
         .group_by("city")
         .first()
@@ -420,11 +439,11 @@ def _(jaccard_df, mo, px, tau):
 
 @app.cell
 def _(
-    DATA_DIR,
     POPULATION_RANGE_TRANSLATIONS,
     REGION_TRANSLATIONS,
     TABLEAU_COLORS,
     jaccard_df,
+    outputs_dir,
     pl,
     px,
     runs_df,
@@ -464,17 +483,30 @@ def _(
     )
     _fig_faceted.add_vline(
         x=tau,
-        line_dash="dash",
-        line_color="red",
+        line_dash="3px,3px",
+        line_color="black",
         annotation_text=f"τ = {tau:.3f}",
+        annotation_font_color="black",
     )
-    _fig_faceted.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+    _fig_faceted.for_each_annotation(
+        lambda a: a.update(text="")
+        if "region=" in a.text
+        else a.update(text=a.text.split("=")[-1])
+    )
     _fig_faceted.update_layout(
-        showlegend=False,
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=1.02,
+            title_text="",
+        ),
         paper_bgcolor="white",
         plot_bgcolor="white",
         height=500,
-        margin=dict(b=110),
+        margin=dict(l=10, r=90, t=40, b=90),
     )
     _fig_faceted.for_each_xaxis(lambda axis: axis.update(title_text=""))
 
@@ -505,7 +537,7 @@ def _(
                 font=dict(size=12, color="black"),
             )
 
-    _fig_faceted.write_image(DATA_DIR / "paper" / "jaccard_distribution.pdf")
+    _fig_faceted.write_image(outputs_dir / "jaccard_distribution.pdf")
     _fig_faceted
     return
 
@@ -911,6 +943,7 @@ def _(
     component_membership,
     mo,
     mutual_edges,
+    outputs_dir,
     pl,
     px,
     selected_cities,
@@ -981,7 +1014,8 @@ def _(
     )
     _fig.update_layout(
         xaxis_title="Component ID",
-        yaxis_title="City",
+        yaxis_title="",
+        font=dict(size=20),
         height=400,
         width=1400,
         margin=dict(l=120, r=120, t=60, b=80),
@@ -995,7 +1029,7 @@ def _(
         cmin=0.2,
         cmax=1,
     )
-    _fig.write_image("cross_city_heatmap.pdf", format="pdf", scale=2)
+    _fig.write_image(outputs_dir / "cross_city_heatmap.pdf", format="pdf", scale=2)
     _fig
     return
 
@@ -1385,7 +1419,7 @@ def _(mo):
 
 
 @app.cell
-def _(DATA_DIR, consistency, n_total, pl, px, selected_cities):
+def _(consistency, n_total, outputs_dir, pl, px, selected_cities):
     _k_values = list(range(1, len(selected_cities) + 1))
     _sensitivity_rows = []
     for _k in _k_values:
@@ -1399,8 +1433,7 @@ def _(DATA_DIR, consistency, n_total, pl, px, selected_cities):
         )
     _sensitivity_df = pl.DataFrame(_sensitivity_rows)
 
-    (DATA_DIR / "paper").mkdir(parents=True, exist_ok=True)
-    _sensitivity_df.write_csv(DATA_DIR / "paper" / "sensitivity_k.csv")
+    _sensitivity_df.write_csv(outputs_dir / "sensitivity_k.csv")
 
     _fig = px.line(
         _sensitivity_df,
@@ -1425,13 +1458,13 @@ def _(DATA_DIR, consistency, n_total, pl, px, selected_cities):
     )
     _fig.update_xaxes(showline=True, linecolor="black", linewidth=1)
     _fig.update_yaxes(showline=True, linecolor="black", linewidth=1)
-    _fig.write_image("sensitivity_k.pdf", scale=2)
+    _fig.write_image(outputs_dir / "sensitivity_k.pdf", scale=2)
     _fig
     return
 
 
 @app.cell
-def _(DATA_DIR, all_assignments, pl):
+def _(all_assignments, outputs_dir, pl):
     _cluster_sizes = all_assignments.group_by(["city", "cluster_id"]).agg(
         pl.len().alias("cluster_size")
     )
@@ -1457,20 +1490,19 @@ def _(DATA_DIR, all_assignments, pl):
         .sort("city")
     )
 
-    (DATA_DIR / "paper").mkdir(parents=True, exist_ok=True)
-    _partition_overview.write_csv(DATA_DIR / "paper" / "partition_overview.csv")
+    _partition_overview.write_csv(outputs_dir / "partition_overview.csv")
     _partition_overview
     return
 
 
 @app.cell
 def _(
-    DATA_DIR,
     component_membership,
     json,
     mo,
     n_consistent,
     n_total,
+    outputs_dir,
     pl,
     selected_cities,
     tau,
@@ -1494,8 +1526,7 @@ def _(
         "n_full_span_components": _n_full_span_components,
     }
 
-    (DATA_DIR / "paper").mkdir(parents=True, exist_ok=True)
-    (DATA_DIR / "paper" / "paper_numbers.json").write_text(json.dumps(_paper_numbers, indent=2))
+    (outputs_dir / "paper_numbers.json").write_text(json.dumps(_paper_numbers, indent=2))
 
     mo.callout(
         mo.md(f"""

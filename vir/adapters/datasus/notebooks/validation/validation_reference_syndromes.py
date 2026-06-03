@@ -22,14 +22,15 @@ def _():
 
 @app.cell
 def _():
+    from vir.adapters.datasus import DatasusAdapter
     from vir.adapters.datasus.features import CITY_NAMES, CODE_TYPES_MAPPING
-    from vir.config import DATA_DIR, REFERENCES_DIR
+    from vir.config import REFERENCES_DIR
     from vir.db import fetch_cluster_assignments, fetch_runs
 
     return (
         CITY_NAMES,
         CODE_TYPES_MAPPING,
-        DATA_DIR,
+        DatasusAdapter,
         REFERENCES_DIR,
         fetch_cluster_assignments,
         fetch_runs,
@@ -37,9 +38,31 @@ def _():
 
 
 @app.cell
+def _(DatasusAdapter):
+    outputs_dir = DatasusAdapter().outputs_dir
+    return (outputs_dir,)
+
+
+@app.cell
 def _(load_dotenv):
     _ = load_dotenv()
     return
+
+
+@app.cell
+def _(DatasusAdapter, fetch_runs, mo):
+    _models = sorted(value for value in fetch_runs()["model"].unique().to_list() if value)
+    _adapter_default = DatasusAdapter.default_model
+    _default_model = (
+        _adapter_default if _adapter_default in _models else (_models[0] if _models else None)
+    )
+    model_selector = mo.ui.dropdown(
+        options=_models,
+        value=_default_model,
+        label="Embedding model",
+    )
+    model_selector
+    return (model_selector,)
 
 
 @app.cell
@@ -88,8 +111,8 @@ def _(CODE_TYPES_MAPPING, REFERENCES_DIR, pl):
 
 
 @app.cell
-def _(fetch_runs, mo):
-    _runs = fetch_runs()
+def _(fetch_runs, mo, model_selector, pl):
+    _runs = fetch_runs().filter(pl.col("model") == model_selector.value)
     mo.stop(
         _runs.is_empty(),
         mo.callout(mo.md("No saved runs found. Run the SNF pipeline first."), kind="warn"),
@@ -544,8 +567,10 @@ def _(mo):
 
 
 @app.cell
-def _(CITY_NAMES, fetch_runs, mo, pl):
-    _all_runs = fetch_runs().filter(pl.col("city").is_in(CITY_NAMES))
+def _(CITY_NAMES, fetch_runs, mo, model_selector, pl):
+    _all_runs = fetch_runs().filter(
+        pl.col("city").is_in(CITY_NAMES) & (pl.col("model") == model_selector.value)
+    )
     _run_options = {
         f"{row['city']} (#{row['run_id']})": row["run_id"]
         for row in (
@@ -567,7 +592,7 @@ def _(CITY_NAMES, fetch_runs, mo, pl):
 
 @app.cell
 def _(
-    DATA_DIR,
+    outputs_dir,
     anchor_arbovirus,
     anchor_uri,
     cross_city_run_select,
@@ -648,13 +673,13 @@ def _(
             _rows.append({"city": _city_name, "syndrome": _syndrome_name, **_metrics})
 
     validation_summary = pl.DataFrame(_rows)
-    validation_summary.write_csv(DATA_DIR / "paper" / "validation_summary.csv")
+    validation_summary.write_csv(outputs_dir / "validation_summary.csv")
     validation_summary
     return (validation_summary,)
 
 
 @app.cell
-def _(DATA_DIR, mo, pl, validation_summary):
+def _(outputs_dir, mo, pl, validation_summary):
     mo.stop(
         validation_summary.is_empty(),
         mo.callout(mo.md("No validation data to pivot."), kind="warn"),
@@ -685,7 +710,7 @@ def _(DATA_DIR, mo, pl, validation_summary):
         .with_columns([pl.col(_column).cast(pl.Int64) for _column in _coherent_count_columns])
         .sort("city")
     )
-    _pivot.write_csv(DATA_DIR / "paper" / "validation_summary_pivot.csv")
+    _pivot.write_csv(outputs_dir / "validation_summary_pivot.csv")
     mo.ui.table(_pivot, selection=None)
     return
 
@@ -714,7 +739,7 @@ def _(mo):
 
 @app.cell
 def _(
-    DATA_DIR,
+    outputs_dir,
     anchor_arbovirus,
     anchor_uri,
     cross_city_run_select,
@@ -803,10 +828,8 @@ def _(
     )
     _uri_presence_matrix = _build_presence_matrix(anchor_uri, _run_id_to_city, _threshold_fraction)
 
-    _arbovirus_presence_matrix.write_csv(
-        DATA_DIR / "paper" / "arbovirus_clusters_vs_reference.csv"
-    )
-    _uri_presence_matrix.write_csv(DATA_DIR / "paper" / "uri_clusters_vs_reference.csv")
+    _arbovirus_presence_matrix.write_csv(outputs_dir / "arbovirus_clusters_vs_reference.csv")
+    _uri_presence_matrix.write_csv(outputs_dir / "uri_clusters_vs_reference.csv")
 
     mo.vstack(
         [
