@@ -20,9 +20,10 @@ def _():
         normalized_mutual_info_score,
     )
     from sklearn.metrics.pairwise import cosine_similarity
-    from snf import compute, metrics
+    from snf import compute
 
-    from vir.adapters.datasus.features import CITY_NAMES
+    from vir import metrics
+    from vir.adapters import ADAPTERS
     from vir.config import (
         AFFINITY_ZSCORE_PERMS,
         AFFINITY_ZSCORE_SEED,
@@ -38,14 +39,15 @@ def _():
     from vir.views import ClinicalView, DemographicView, TemporalView
 
     return (
-        CITY_NAMES,
+        ADAPTERS,
+        AFFINITY_ZSCORE_PERMS,
+        AFFINITY_ZSCORE_SEED,
         ClinicalView,
         DemographicView,
-        Path,
         PROCESSED_DATA_DIR,
+        Path,
         TemporalView,
         VALIDATION_DIR,
-        AFFINITY_ZSCORE_PERMS,
         adjusted_rand_score,
         cluster,
         compute,
@@ -64,15 +66,7 @@ def _():
         np,
         pl,
         slugify,
-        AFFINITY_ZSCORE_SEED,
     )
-
-
-@app.cell
-def _():
-    from vir.adapters.datasus import DatasusAdapter
-
-    return (DatasusAdapter,)
 
 
 @app.cell
@@ -270,7 +264,6 @@ def _(PROCESSED_DATA_DIR, city_selector, find_dataset_file, mo, runs_by_city):
 @app.cell
 def _(
     ClinicalView,
-    DatasusAdapter,
     DemographicView,
     TemporalView,
     adjusted_rand_score,
@@ -304,7 +297,7 @@ def _(
     _scan_clinical = ClinicalView(
         df=_scan_df,
         dataset_name=_scan_run["dataset_name"],
-        params={"model": DatasusAdapter.default_model},
+        params={"model": _scan_run["model"]},
     )
     _scan_demographic = DemographicView(df=_scan_df, dataset_name=_scan_run["dataset_name"])
     _scan_temporal = TemporalView(df=_scan_df, dataset_name=_scan_run["dataset_name"])
@@ -339,8 +332,8 @@ def _(
 
 @app.cell
 def _(
+    AFFINITY_ZSCORE_SEED,
     ClinicalView,
-    DatasusAdapter,
     DemographicView,
     TemporalView,
     adjusted_rand_score,
@@ -358,7 +351,6 @@ def _(
     np,
     pl,
     selected_runs,
-    AFFINITY_ZSCORE_SEED,
 ):
     _CONDITIONS = [
         {
@@ -417,7 +409,7 @@ def _(
         clinical = ClinicalView(
             df=dataframe,
             dataset_name=run["dataset_name"],
-            params={"model": DatasusAdapter.default_model},
+            params={"model": run["model"]},
         )
         demographic = DemographicView(df=dataframe, dataset_name=run["dataset_name"])
         temporal = TemporalView(df=dataframe, dataset_name=run["dataset_name"])
@@ -497,17 +489,18 @@ def _(
 
 
 @app.cell
-def _(logger, mo, output_dir, results_long_df, slugify):
+def _(logger, mo, output_dir, results_long_df, selected_model, slugify):
     output_dir.mkdir(parents=True, exist_ok=True)
+    _model_slug = slugify(selected_model)
 
     if mo.app_meta().mode == "script":
         for _city, _city_df in results_long_df.group_by("city"):
             _slug = slugify(_city[0])
-            _path = output_dir / f"ablation_{_slug}.csv"
+            _path = output_dir / f"ablation_{_slug}_{_model_slug}.csv"
             _city_df.write_csv(_path)
             logger.info(f"Saved {_path}")
     else:
-        _path = output_dir / "ablation_results.csv"
+        _path = output_dir / f"ablation_results_{_model_slug}.csv"
         results_long_df.write_csv(_path)
         mo.md(f"Results saved to `{_path}`")
     return
@@ -694,6 +687,134 @@ def _(go, mo, n_permutations, results_summary_df):
         _figs.append(_figure)
 
     mo.vstack([mo.ui.plotly(figure) for figure in _figs])
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ### Grouped view — one bar per metric, per condition
+
+    The same summary aggregated into a single grouped chart: each condition on the
+    x-axis forms a group, and within each group one bar encodes one metric. Colour
+    encodes the metric, and whiskers show ± one standard deviation across cities.
+
+    Because the affinity Z-score lives on a different scale (tens to hundreds) than
+    ARI, NMI, and silhouette (all in $[-1, 1]$), it is plotted against the secondary
+    (right) y-axis. The three bounded metrics share the primary (left) y-axis so their
+    differences remain visible rather than being flattened by the Z-score range.
+    """)
+    return
+
+
+@app.cell
+def _(
+    ADAPTERS,
+    go,
+    mo,
+    n_permutations,
+    results_summary_df,
+    selected_adapter,
+    selected_model,
+    slugify,
+):
+    _CONDITION_ORDER = [
+        "Full model",
+        "Drop Clinical",
+        "Drop Demographic",
+        "Drop Temporal",
+        "Clinical only",
+        "Demographic only",
+        "Temporal only",
+        "Naive concat",
+    ]
+    _PAPER_FIGURE_PATH = (
+        ADAPTERS[selected_adapter].outputs_dir / f"ablation_metrics_{slugify(selected_model)}.pdf"
+    )
+    _METRIC_SPECS = [
+        {
+            "column": "ari",
+            "label": "ARI",
+            "color": "#2E86AB",
+            "axis": "y",
+            "offsetgroup": "1",
+        },
+        {
+            "column": "nmi",
+            "label": "NMI",
+            "color": "#A23B72",
+            "axis": "y",
+            "offsetgroup": "2",
+        },
+        {
+            "column": "silhouette",
+            "label": "Silhouette",
+            "color": "#F18F01",
+            "axis": "y",
+            "offsetgroup": "3",
+        },
+        {
+            "column": "affinity_zscore",
+            "label": f"Affinity Z-score ({n_permutations:,} perms, right axis)",
+            "color": "#3B8C3F",
+            "axis": "y2",
+            "offsetgroup": "4",
+        },
+    ]
+
+    _rows_by_condition = {row["condition"]: row for row in results_summary_df.to_dicts()}
+    _ordered_conditions = [name for name in _CONDITION_ORDER if name in _rows_by_condition]
+
+    _grouped_figure = go.Figure()
+    for _metric in _METRIC_SPECS:
+        _means = [
+            _rows_by_condition[name][f"{_metric['column']}_mean"] for name in _ordered_conditions
+        ]
+        _stds = [
+            _rows_by_condition[name][f"{_metric['column']}_std"] for name in _ordered_conditions
+        ]
+        _grouped_figure.add_trace(
+            go.Bar(
+                name=_metric["label"],
+                x=_ordered_conditions,
+                y=_means,
+                error_y=dict(type="data", array=_stds, visible=True, thickness=1.2),
+                marker_color=_metric["color"],
+                offsetgroup=_metric["offsetgroup"],
+                yaxis=_metric["axis"],
+            )
+        )
+
+    _grouped_figure.update_layout(
+        title=f"Ablation metrics by condition (mean ± std across cities) — {selected_model}",
+        barmode="group",
+        bargap=0.25,
+        bargroupgap=0.05,
+        height=480,
+        margin=dict(t=60, b=120, l=70, r=70),
+        plot_bgcolor="white",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0.0),
+        xaxis=dict(title="Condition", tickangle=-30),
+        yaxis=dict(
+            title="ARI / NMI / Silhouette",
+            range=[-0.2, 1.05],
+            gridcolor="#eeeeee",
+            zeroline=True,
+            zerolinecolor="#cccccc",
+        ),
+        yaxis2=dict(
+            title="Affinity Z-score",
+            overlaying="y",
+            side="right",
+            showgrid=False,
+            rangemode="tozero",
+        ),
+    )
+
+    _PAPER_FIGURE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _grouped_figure.write_image(_PAPER_FIGURE_PATH, format="pdf", scale=2)
+
+    mo.ui.plotly(_grouped_figure)
     return
 
 
