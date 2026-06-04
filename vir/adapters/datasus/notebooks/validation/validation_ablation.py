@@ -489,6 +489,12 @@ def _(
 
 
 @app.cell
+def _(selected_model, slugify):
+    slugify(selected_model)
+    return
+
+
+@app.cell
 def _(logger, mo, output_dir, results_long_df, selected_model, slugify):
     output_dir.mkdir(parents=True, exist_ok=True)
     _model_slug = slugify(selected_model)
@@ -708,11 +714,16 @@ def _(mo):
 
 
 @app.cell
+def _(results_summary_df):
+    results_summary_df
+    return
+
+
+@app.cell
 def _(
     ADAPTERS,
     go,
     mo,
-    n_permutations,
     results_summary_df,
     selected_adapter,
     selected_model,
@@ -732,47 +743,42 @@ def _(
         ADAPTERS[selected_adapter].outputs_dir / f"ablation_metrics_{slugify(selected_model)}.pdf"
     )
     _METRIC_SPECS = [
-        {
-            "column": "ari",
-            "label": "ARI",
-            "color": "#2E86AB",
-            "axis": "y",
-            "offsetgroup": "1",
-        },
-        {
-            "column": "nmi",
-            "label": "NMI",
-            "color": "#A23B72",
-            "axis": "y",
-            "offsetgroup": "2",
-        },
+        {"column": "ari", "label": "ARI", "color": "#0072B2", "axis": "y", "offsetgroup": "1"},
+        {"column": "nmi", "label": "NMI", "color": "#CC79A7", "axis": "y", "offsetgroup": "2"},
         {
             "column": "silhouette",
             "label": "Silhouette",
-            "color": "#F18F01",
+            "color": "#E69F00",
             "axis": "y",
             "offsetgroup": "3",
         },
         {
             "column": "affinity_zscore",
-            "label": f"Affinity Z-score ({n_permutations:,} perms, right axis)",
-            "color": "#3B8C3F",
+            "label": "Affinity Z-score",
+            "color": "#009E73",
             "axis": "y2",
             "offsetgroup": "4",
         },
     ]
+    _LEFT_MIN, _LEFT_MAX = -0.2, 1.05
 
     _rows_by_condition = {row["condition"]: row for row in results_summary_df.to_dicts()}
-    _ordered_conditions = [name for name in _CONDITION_ORDER if name in _rows_by_condition]
+    _ordered_conditions = [c for c in _CONDITION_ORDER if c in _rows_by_condition]
+
+    # Derive y2 range so its zero aligns with the left axis zero
+    _z_peaks = [
+        _rows_by_condition[c]["affinity_zscore_mean"]
+        + _rows_by_condition[c]["affinity_zscore_std"]
+        for c in _ordered_conditions
+    ]
+    _right_max = max(_z_peaks) * 1.10
+    _right_min = -(abs(_LEFT_MIN) / _LEFT_MAX) * _right_max
 
     _grouped_figure = go.Figure()
     for _metric in _METRIC_SPECS:
-        _means = [
-            _rows_by_condition[name][f"{_metric['column']}_mean"] for name in _ordered_conditions
-        ]
-        _stds = [
-            _rows_by_condition[name][f"{_metric['column']}_std"] for name in _ordered_conditions
-        ]
+        _col = _metric["column"]
+        _means = [_rows_by_condition[c][f"{_col}_mean"] for c in _ordered_conditions]
+        _stds = [_rows_by_condition[c][f"{_col}_std"] for c in _ordered_conditions]
         _grouped_figure.add_trace(
             go.Bar(
                 name=_metric["label"],
@@ -786,7 +792,6 @@ def _(
         )
 
     _grouped_figure.update_layout(
-        title=f"Ablation metrics by condition (mean ± std across cities) — {selected_model}",
         barmode="group",
         bargap=0.25,
         bargroupgap=0.05,
@@ -797,7 +802,7 @@ def _(
         xaxis=dict(title="Condition", tickangle=-30),
         yaxis=dict(
             title="ARI / NMI / Silhouette",
-            range=[-0.2, 1.05],
+            range=[_LEFT_MIN, _LEFT_MAX],
             gridcolor="#eeeeee",
             zeroline=True,
             zerolinecolor="#cccccc",
@@ -807,13 +812,12 @@ def _(
             overlaying="y",
             side="right",
             showgrid=False,
-            rangemode="tozero",
+            range=[_right_min, _right_max],
         ),
     )
 
     _PAPER_FIGURE_PATH.parent.mkdir(parents=True, exist_ok=True)
     _grouped_figure.write_image(_PAPER_FIGURE_PATH, format="pdf", scale=2)
-
     mo.ui.plotly(_grouped_figure)
     return
 
