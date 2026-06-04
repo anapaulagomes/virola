@@ -85,4 +85,4 @@ def get_n_jobs():
 
 def slugify(text: str) -> str:
     ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
-    return ascii_text.lower().replace(" ", "_")
+    return ascii_text.lower().replace(" ", "_").replace("/", "_")

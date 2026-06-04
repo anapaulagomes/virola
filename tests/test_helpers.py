@@ -84,6 +84,7 @@ class TestSlugify:
             ("Rio Branco", "rio_branco"),
             ("Distrito Federal", "distrito_federal"),
             ("salvador", "salvador"),
+            ("cities/salvador", "cities_salvador"),
         ],
     )
     def test_slugify(self, input_text, expected_slug):
