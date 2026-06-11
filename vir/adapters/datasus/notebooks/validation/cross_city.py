@@ -939,6 +939,12 @@ def _(all_assignments, jaccard_df, k_slider, mo, pl, tau):
 
 
 @app.cell
+def _(component_membership):
+    component_membership
+    return
+
+
+@app.cell
 def _(
     component_membership,
     mo,
@@ -1009,6 +1015,7 @@ def _(
         color_continuous_scale="Blues",
         zmin=tau,
         zmax=1.0,
+        aspect="auto",
         labels={"color": "Jaccard", "x": "Component ID", "y": "City"},
         # text_auto=".2f",
     )
@@ -1016,19 +1023,79 @@ def _(
         xaxis_title="Component ID",
         yaxis_title="",
         font=dict(size=20),
-        height=400,
+        height=max(420, 34 * len(_city_labels) + 200),
         width=1400,
-        margin=dict(l=120, r=120, t=60, b=80),
+        margin=dict(l=120, r=120, t=90, b=80),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
     )
+    _fig.update_xaxes(tickfont=dict(size=12), automargin=True)
+    _fig.update_yaxes(tickfont=dict(size=18), automargin=True)
     _fig.update_coloraxes(
         colorbar=dict(
             lenmode="fraction",
-            len=1.0,
+            len=1.06,
+            yref="paper",
+            y=0.5,
+            yanchor="middle",
+            x=1.01,
+            xanchor="left",
             thickness=20,
+            outlinewidth=1,
+            outlinecolor="rgb(180, 180, 180)",
+            tickfont=dict(size=12),
+            title=dict(text=""),
         ),
         cmin=0.2,
         cmax=1,
     )
+    _fig.add_annotation(
+        x=1.01,
+        y=1.0,
+        xref="paper",
+        yref="paper",
+        text="Jaccard",
+        showarrow=False,
+        xanchor="left",
+        yanchor="bottom",
+        yshift=18,
+        font=dict(size=18, color="black"),
+    )
+
+    _highlighted_syndromes = {
+        "88": "Intestinal infections",
+        "99": "Influenza",
+        "9": "Anxiety",
+        "58": "Irregular / excessive menstruation",
+    }
+    for _component_id, _syndrome_label in _highlighted_syndromes.items():
+        if _component_id not in _component_labels:
+            continue
+        _column_index = _component_labels.index(_component_id)
+        _fig.add_vrect(
+            x0=_column_index - 0.5,
+            x1=_column_index + 0.5,
+            line_width=2,
+            line_color="black",
+            fillcolor="rgba(0, 0, 0, 0)",
+        )
+        _fig.add_annotation(
+            x=_column_index,
+            y=1.0,
+            xref="x",
+            yref="y domain",
+            text=_syndrome_label,
+            showarrow=True,
+            arrowhead=2,
+            arrowwidth=1.5,
+            arrowcolor="black",
+            ax=0,
+            ay=-30,
+            xanchor="center",
+            yanchor="bottom",
+            font=dict(size=18, color="black"),
+        )
+
     _fig.write_image(outputs_dir / "cross_city_heatmap.pdf", format="pdf", scale=2)
     _fig
     return
@@ -1492,6 +1559,39 @@ def _(all_assignments, outputs_dir, pl):
 
     _partition_overview.write_csv(outputs_dir / "partition_overview.csv")
     _partition_overview
+    return
+
+
+@app.cell
+def _(component_code_presence, outputs_dir, pl, valid_component_ids):
+    component_codes_export = (
+        component_code_presence.filter(pl.col("component_id").is_in(valid_component_ids))
+        .select(
+            [
+                "component_id",
+                "code",
+                "code_type",
+                "description",
+                "is_core",
+                "is_exclusive_to_one_city",
+                "n_cities_with_code",
+                "n_cities_in_component",
+                "total_records_all_cities",
+            ]
+        )
+        .sort(
+            ["component_id", "is_core", "total_records_all_cities"],
+            descending=[False, True, True],
+        )
+    )
+
+    component_codes_export.write_csv(outputs_dir / "component_codes.csv")
+
+    component_codes_export.filter(pl.col("is_core")).write_csv(
+        outputs_dir / "component_core_codes.csv"
+    )
+
+    component_codes_export
     return
 
 
