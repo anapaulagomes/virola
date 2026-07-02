@@ -18,7 +18,10 @@ def _():
 
 @app.cell
 def _():
-    from publication.commons import POPULATION_RANGE_TRANSLATIONS, REGION_TRANSLATIONS
+    from data.publication.commons import (
+        POPULATION_RANGE_TRANSLATIONS,
+        REGION_TRANSLATIONS,
+    )
     from vir.adapters.datasus import DatasusAdapter
     from vir.adapters.datasus.features import CITY_NAMES, CODE_TYPES_MAPPING
     from vir.adapters.datasus.viz import AGE_GROUP_COLOR, SEX_COLOR

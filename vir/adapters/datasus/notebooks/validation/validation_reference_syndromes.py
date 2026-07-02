@@ -143,7 +143,14 @@ def _(pl):
     def count_reference_categories(anchor: pl.DataFrame) -> int:
         return _build_match_key(anchor).select("match_key", "code_type").unique().height
 
-    return count_reference_categories, match_reference_codes
+    def count_corpus_categories(run_assignments: pl.DataFrame) -> int:
+        return _build_match_key(run_assignments).select("match_key", "code_type").unique().height
+
+    return (
+        count_corpus_categories,
+        count_reference_categories,
+        match_reference_codes,
+    )
 
 
 @app.cell
@@ -193,6 +200,7 @@ def _(
     anchor_arbovirus,
     anchor_uri,
     assignments,
+    count_corpus_categories,
     count_reference_categories,
     match_reference_codes,
     mo,
@@ -201,6 +209,7 @@ def _(
     _assignment_columns = assignments.select("terminology_id", "code", "code_type", "cluster_id")
     arbovirus_hits = match_reference_codes(anchor_arbovirus, _assignment_columns)
     uri_hits = match_reference_codes(anchor_uri, _assignment_columns)
+    corpus_category_count = count_corpus_categories(_assignment_columns)
 
     def _categories_found(hits: pl.DataFrame) -> int:
         return hits.select("match_key", "code_type").unique().height
@@ -230,7 +239,7 @@ def _(
             mo.ui.table(_coverage, selection=None),
         ]
     )
-    return arbovirus_hits, uri_hits
+    return arbovirus_hits, corpus_category_count, uri_hits
 
 
 @app.cell
@@ -255,6 +264,47 @@ def _(mo):
         ]
     )
     return (precision_threshold,)
+
+
+@app.cell
+def _(
+    anchor_arbovirus,
+    anchor_uri,
+    corpus_category_count,
+    count_reference_categories,
+    mo,
+    precision_threshold,
+):
+    _tau = precision_threshold.value / 100
+    _arbo_reference_categories = count_reference_categories(anchor_arbovirus)
+    _ili_reference_categories = count_reference_categories(anchor_uri)
+    _arbo_base_rate = _arbo_reference_categories / corpus_category_count
+    _ili_base_rate = _ili_reference_categories / corpus_category_count
+    _arbo_enrichment = _tau / _arbo_base_rate
+    _ili_enrichment = _tau / _ili_base_rate
+    mo.callout(
+        mo.md(
+            rf"""**How to read τ = {precision_threshold.value}%**
+
+The corpus contains **{corpus_category_count} distinct code categories**.
+If codes were distributed uniformly across clusters, a randomly chosen cluster would contain
+roughly {_arbo_base_rate:.1%} arbovirus categories ({_arbo_reference_categories} out of
+{corpus_category_count}) and {_ili_base_rate:.1%} ILI categories ({_ili_reference_categories}
+out of {corpus_category_count}).
+
+Requiring τ = {precision_threshold.value}% therefore demands a cluster be
+**{_arbo_enrichment:.1f}× above chance** to count as a coherent arbovirus recovery, and
+**{_ili_enrichment:.1f}× above chance** for ILI.
+
+The asymmetry is expected: arboviroses is a small syndrome ({_arbo_reference_categories}
+categories), so even a moderate τ is a high relative bar. ILI is broader ({_ili_reference_categories}
+categories), so the same τ is less demanding in relative terms — consistent with ILI codes being
+more dispersed across the nosological space. A fixed τ is therefore *more stringent* for rare
+syndromes than for common ones, which is a desirable property."""
+        ),
+        kind="info",
+    )
+    return
 
 
 @app.cell
@@ -757,13 +807,13 @@ def _(arbovirus_hits, assignments, go, mo, np, pl, uri_hits):
 
 
 @app.cell
-def _(arbovirus_hits, chord, uri_hits):
+def _(arbovirus_hits, chord, outputs_dir, uri_hits):
     chord(arbovirus_hits, "Arboviroses", "#2ca02c", "rgba(44,160,44,0.45)").write_image(
-        "chord_arbo.pdf"
+        outputs_dir / "chord_arbo.pdf"
     )
     chord(
         uri_hits, "Influenza Like Illness (ILI)", "#1f77b4", "rgba(31,119,180,0.45)"
-    ).write_image("chord_uri.pdf")
+    ).write_image(outputs_dir / "chord_uri.pdf")
     return
 
 
@@ -1282,9 +1332,9 @@ def _(
 
 
 @app.cell
-def _(pacman_map):
-    pacman_map("arboviroses", "Arboviroses").write_image("pacmanmap_arboviroses.pdf")
-    pacman_map("uri", "Influenza Like Illness").write_image("pacmanmap_ili.pdf")
+def _(outputs_dir, pacman_map):
+    pacman_map("arboviroses", "Arboviroses").write_image(outputs_dir / "pacmanmap_arboviroses.pdf")
+    pacman_map("uri", "Influenza Like Illness").write_image(outputs_dir / "pacmanmap_ili.pdf")
     return
 
 
@@ -1672,9 +1722,13 @@ def _(
 
 
 @app.cell
-def _(anchor_arbovirus, anchor_uri, upset):
-    upset(anchor_arbovirus, "Arboviroses", "#2ca02c").write_image("upset_arboviroses.pdf")
-    upset(anchor_uri, "Influenza Like Illness (ILI)", "#1f77b4").write_image("upset_ili.pdf")
+def _(anchor_arbovirus, anchor_uri, outputs_dir, upset):
+    upset(anchor_arbovirus, "Arboviroses", "#2ca02c").write_image(
+        outputs_dir / "upset_arboviroses.pdf"
+    )
+    upset(anchor_uri, "Influenza Like Illness (ILI)", "#1f77b4").write_image(
+        outputs_dir / "upset_ili.pdf"
+    )
     return
 
 
