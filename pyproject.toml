@@ -5,7 +5,7 @@ build-backend = "flit_core.buildapi"
 [project]
 name = "vir"
 version = "0.0.1"
-description = "A short description of the project."
+description = "A framework for data-driven syndrome discovery from aggregated health records."
 authors = [
   { name = "Ana Paula Gomes Ferreira" },
 ]
