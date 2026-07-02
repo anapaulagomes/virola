@@ -12,6 +12,17 @@ skip patterns, and stratum metadata. Everything downstream of the canonical row
 `(year, week, sex, age_group, code_type, code, quantity, terminology_id, terminology_label, [city])`
 is shared.
 
+## Licensing
+
+The MIT license (see `LICENSE`) covers the **source code of this project only**.
+
+The reference and auxiliary files bundled with each adapter — terminology tables,
+classification files, code lists, and any other third-party data (e.g. CID-10, CIAP-2,
+AB, ICD-10-GM, AESOP code lists) — are **not** covered by this license. They remain
+subject to the terms and licenses of their respective data sources, and their use and
+redistribution are the responsibility of those sources. Refer to each source for the
+applicable terms before reusing these files.
+
 ## Setup (shared)
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) (the project pins its Python
