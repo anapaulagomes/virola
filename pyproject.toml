@@ -43,7 +43,7 @@ dependencies = [
     "polars>=1.32.3",
     "protobuf>=5.0.0",
     "polars-u64-idx>=1.32.3",
-    "pyarrow>=21.0.0",
+    "pyarrow>=23.0.1",
     "pytest",
     "python-dotenv",
     "ruff",
