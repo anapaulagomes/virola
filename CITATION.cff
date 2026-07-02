@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite both the software and the paper below."
+title: "virola: a framework for data-driven syndrome discovery from aggregated health records"
+authors:
+  - family-names: "Gomes Ferreira"
+    given-names: "Ana Paula"
+    affiliation: "Center for Artificial Intelligence in Public Health Research (ZKI-PH), Robert Koch Institute, Berlin, Germany; Department of Mathematics and Computer Science, Freie Universität Berlin, Berlin, Germany"
+license: MIT
+repository-code: "https://github.com/anapaulagomes/virola"
+type: software
+preferred-citation:
+  type: article
+  title: "A multi-view similarity network fusion framework for syndrome discovery from aggregated health records"
+  authors:
+    - family-names: "Gomes Ferreira"
+      given-names: "Ana Paula"
+      affiliation: "Center for Artificial Intelligence in Public Health Research (ZKI-PH), Robert Koch Institute, Berlin, Germany; Department of Mathematics and Computer Science, Freie Universität Berlin, Berlin, Germany"
+    - family-names: "Anžel"
+      given-names: "Aleksandar"
+      affiliation: "Center for Artificial Intelligence in Public Health Research (ZKI-PH), Robert Koch Institute, Berlin, Germany"
+    - family-names: "Tavares Veras"
+      given-names: "Pilar"
+      affiliation: "Center for Data and Knowledge Integration for Health (CIDACS), Gonçalo Moniz Institute, Fundação Oswaldo Cruz, Salvador, Brazil"
+    - family-names: "Pereira Ramos"
+      given-names: "Pablo Ivan"
+      affiliation: "Center for Data and Knowledge Integration for Health (CIDACS), Gonçalo Moniz Institute, Fundação Oswaldo Cruz, Salvador, Brazil; National Institution of Science and Technology for Digital Health (INCT-DigiSaúde), Brazil"
+    - family-names: "Barral-Netto"
+      given-names: "Manoel"
+      affiliation: "National Institution of Science and Technology for Digital Health (INCT-DigiSaúde), Brazil"
+    - family-names: "Marcilio"
+      given-names: "Izabel"
+      affiliation: "Center for Data and Knowledge Integration for Health (CIDACS), Gonçalo Moniz Institute, Fundação Oswaldo Cruz, Salvador, Brazil"
+    - family-names: "Hattab"
+      given-names: "Georges"
+      affiliation: "Center for Artificial Intelligence in Public Health Research (ZKI-PH), Robert Koch Institute, Berlin, Germany; Department of Mathematics and Computer Science, Freie Universität Berlin, Berlin, Germany"
+  year: 2026
