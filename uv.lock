@@ -3042,7 +3042,7 @@ wheels = [
 ]
 
 [[package]]
-name = "vir"
+name = "virola"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
