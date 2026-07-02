@@ -16,13 +16,14 @@ def _():
         POPULATION_RANGE,
     )
     from vir.adapters.datasus.helpers import load_all_cities
-    from vir.config import RAW_DATA_FILE
+    from vir.config import OUTPUTS_DIR, RAW_DATA_FILE
     from vir.data_filters import filter_min_temporal_coverage, filter_temporal_quantiles
     from vir.viz import plot_categories, scatter_plot_year_per_week
 
     return (
         IBGE_CITY_MAP,
         ORIGINAL_AGE_GROUP,
+        OUTPUTS_DIR,
         POPULATION_RANGE,
         RAW_DATA_FILE,
         filter_min_temporal_coverage,
@@ -404,6 +405,19 @@ def _(df, pl, px):
         values="count",
         title="Record distribution by region and city",
     )
+    _fig
+    return
+
+
+@app.cell
+def _(OUTPUTS_DIR, df, pl, px):
+    _fig = px.treemap(
+        df.group_by(["code_type"]).agg(pl.len().alias("count")),
+        path=["code_type"],
+        values="count",
+    )
+    _fig.update_traces(texttemplate="%{label}<br>%{value:,} (%{percentEntry:.1%})")
+    _fig.write_image(OUTPUTS_DIR / "treemap_codetype.pdf")
     _fig
     return
 
