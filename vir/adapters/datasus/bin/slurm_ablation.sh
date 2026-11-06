@@ -10,17 +10,20 @@
 #SBATCH --output=logs/ablation_%A_%a.out
 #SBATCH --error=logs/ablation_%A_%a.err
 
-# Usage:
-#   sbatch bin/slurm_ablation.sh
-#   sbatch --export=ALL,EXTRA_ARGS="--permutations 5000" bin/slurm_ablation.sh
+# Usage (from the repo root; Slurm does not create the log directory):
+#   mkdir -p logs
+#   sbatch vir/adapters/datasus/bin/slurm_ablation.sh
+#   sbatch --export=ALL,EXTRA_ARGS="--permutations 5000" vir/adapters/datasus/bin/slurm_ablation.sh
 #
-# The --array range must match the number of lines in bin/cities.txt.
+# The --array range must match the number of lines in vir/adapters/datasus/bin/cities.txt.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJ_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-CITIES_FILE="$SCRIPT_DIR/cities.txt"
+# sbatch runs a spooled copy of this script, so BASH_SOURCE does not point at the repo;
+# submit from the repo root and SLURM_SUBMIT_DIR is the project root.
+PROJ_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$SCRIPT_DIR/../../../.." && pwd)}"
+CITIES_FILE="$PROJ_ROOT/vir/adapters/datasus/bin/cities.txt"
 
 export NUMBER_OF_THREADS="${SLURM_CPUS_PER_TASK:-4}"
 

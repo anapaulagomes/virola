@@ -155,9 +155,11 @@ uv run vir results llm-descriptions 1                   # requires Ollama (see O
 
 Two SLURM scripts mirror the helpers above; edit the `--mail-user` line at the top of each before
 submitting and set `DATA_DIR` (in `.env` or via `--export`) when the shared filesystem is not the
-project root.
+project root. Submit from the repo root, which the scripts take from `SLURM_SUBMIT_DIR`, and
+create `logs/` first because Slurm does not create the output directory.
 
 ```bash
+mkdir -p logs
 sbatch vir/adapters/datasus/bin/slurm_pipeline.sh                                  # full pipeline, every city
 sbatch --export=ALL,EXTRA_ARGS="--skip-clean" vir/adapters/datasus/bin/slurm_pipeline.sh
 

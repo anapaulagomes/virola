@@ -2,12 +2,12 @@
 # Run build-profiles, explain, and llm-descriptions for a run.
 #
 # Usage:
-#   bin/enrich_latest_run.sh
-#   bin/enrich_latest_run.sh all
-#   bin/enrich_latest_run.sh --dataset data/interim/cleaned_...belo_horizonte.parquet
-#   bin/enrich_latest_run.sh --run-id 7
-#   bin/enrich_latest_run.sh --run-id 7 --dataset data/interim/cleaned_...caucaia.parquet
-#   bin/enrich_latest_run.sh --year-min 2022 --year-max 2024
+#   vir/adapters/datasus/bin/enrich_latest_run.sh
+#   vir/adapters/datasus/bin/enrich_latest_run.sh all
+#   vir/adapters/datasus/bin/enrich_latest_run.sh --dataset data/interim/cleaned_...belo_horizonte.parquet
+#   vir/adapters/datasus/bin/enrich_latest_run.sh --run-id 7
+#   vir/adapters/datasus/bin/enrich_latest_run.sh --run-id 7 --dataset data/interim/cleaned_...caucaia.parquet
+#   vir/adapters/datasus/bin/enrich_latest_run.sh --year-min 2022 --year-max 2024
 #
 # When "all" is passed as the first argument, enrich the latest run for every
 # city that has at least one run in the database.
@@ -24,7 +24,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJ_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJ_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 
 if [[ -f "$PROJ_ROOT/.env" ]]; then
     set -a

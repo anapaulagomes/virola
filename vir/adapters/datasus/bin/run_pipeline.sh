@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Usage: bin/run_pipeline.sh <city|all> [extra vir pipeline run flags...]
+# Usage: vir/adapters/datasus/bin/run_pipeline.sh <city|all> [extra vir pipeline run flags...]
 #
 # Examples:
-#   bin/run_pipeline.sh all
-#   bin/run_pipeline.sh "Porto Alegre"
-#   bin/run_pipeline.sh all --skip-clean --n-clusters 150
-#   bin/run_pipeline.sh "Manaus" --year-min 2023
+#   vir/adapters/datasus/bin/run_pipeline.sh all
+#   vir/adapters/datasus/bin/run_pipeline.sh "Porto Alegre"
+#   vir/adapters/datasus/bin/run_pipeline.sh all --skip-clean --n-clusters 150
+#   vir/adapters/datasus/bin/run_pipeline.sh "Manaus" --year-min 2023
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJ_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJ_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 CITIES_FILE="$SCRIPT_DIR/cities.txt"
 
 if [[ -f "$PROJ_ROOT/.env" ]]; then

@@ -25,7 +25,6 @@ def _():
 
 @app.cell
 def _():
-    from archive.demographic_features import DemographicFeaturesView
     from vir.db import get_connection
     from vir.helpers import extract_dataset_name
     from vir.notebook_widgets import (
@@ -34,6 +33,7 @@ def _():
         load_terminology_labels,
     )
     from vir.views.demographic import DemographicView
+    from vir.views.demographic_features import DemographicFeaturesView
 
     return (
         DemographicFeaturesView,

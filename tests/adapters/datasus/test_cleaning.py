@@ -70,6 +70,14 @@ def test_resolves_ibge_municipality_to_city_region_and_population_range():
     assert result["population_range"].to_list() == ["> 500 mil"]
 
 
+def test_resolves_ibge_municipality_given_as_string():
+    """AESOP extractions ship CO_MUNICIPIO_IBGE as a string column."""
+    raw = _minimal_raw().with_columns(pl.lit("292740").alias("CO_MUNICIPIO_IBGE"))
+    result = clean_datasus_raw(raw)
+
+    assert result["city"].to_list() == ["Salvador"]
+
+
 def test_drops_internal_aesop_columns():
     """CO_CNES and CO_MUNICIPIO_IBGE are administrative — not needed downstream."""
     result = clean_datasus_raw(_minimal_raw())

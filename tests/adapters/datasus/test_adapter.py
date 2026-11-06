@@ -133,3 +133,29 @@ def test_clean_with_stratum_filters_to_a_single_city(tmp_path):
     cleaned = pl.read_parquet(output_path)
     assert cleaned["city"].unique().to_list() == ["Salvador"]
     assert cleaned.height == 1
+
+
+def test_clean_finds_the_aesop_export_inside_the_raw_data_dir(tmp_path):
+    """`vir pipeline run` passes RAW_DATA_DIR (e.g. data/raw), which holds the export folder."""
+    single_file = _build_minimal_raw_aesop(tmp_path)
+    raw_data_dir = tmp_path / "raw"
+    export_dir = raw_data_dir / RAW_DATA_FILE.parent.name
+    export_dir.mkdir(parents=True)
+    single_file.rename(export_dir / "part-00000.parquet")
+    output_path = tmp_path / "cleaned.parquet"
+
+    _datasus().clean(raw_data_dir, output_path)
+
+    assert pl.read_parquet(output_path).height == 2
+
+
+def test_clean_reads_an_export_dir_given_directly(tmp_path):
+    single_file = _build_minimal_raw_aesop(tmp_path)
+    export_dir = tmp_path / "export.parquet"
+    export_dir.mkdir()
+    single_file.rename(export_dir / "part-00000.parquet")
+    output_path = tmp_path / "cleaned.parquet"
+
+    _datasus().clean(export_dir, output_path)
+
+    assert pl.read_parquet(output_path).height == 2
