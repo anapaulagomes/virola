@@ -14,6 +14,20 @@ _REFERENCES_DIR = Path(__file__).parent / "references"
 INDICATIVE_CODES_FILE = _REFERENCES_DIR / "indicative_codes_yes_no__2022_2025__90perc.csv"
 
 
+def _resolve_raw_parquet(raw_path: Path) -> Path:
+    """Return the parquet path (or glob) to read for a raw file, export dir or raw data dir.
+
+    A raw data dir (e.g. ``data/raw``) holds the AESOP export folder named after
+    ``RAW_DATA_FILE``; an export dir holds the ``part-*.parquet`` files directly.
+    """
+    if not raw_path.is_dir():
+        return raw_path
+    nested_export_dir = raw_path / RAW_DATA_FILE.parent.name
+    if nested_export_dir.is_dir():
+        return nested_export_dir / "*.parquet"
+    return raw_path / "*.parquet"
+
+
 class DatasusAdapter(Adapter):
     """Adapter for the Brazilian DATASUS / AESOP dataset.
 
@@ -34,11 +48,7 @@ class DatasusAdapter(Adapter):
         stratum: str | None = None,
         **options,
     ) -> Path:
-        raw_dataframe = (
-            pl.read_parquet(raw_path / "*.parquet")
-            if raw_path.is_dir()
-            else pl.read_parquet(raw_path)
-        )
+        raw_dataframe = pl.read_parquet(_resolve_raw_parquet(raw_path))
         raw_dataframe = raw_dataframe.with_row_index("unique_id", offset=0)
         cleaned = clean_datasus_raw(raw_dataframe)
         if stratum:
