@@ -59,6 +59,7 @@ def clean_datasus_raw(raw_dataframe: pl.DataFrame) -> pl.DataFrame:
         FX_ETARIA=pl.col("FX_ETARIA").replace_strict(ORIGINAL_TO_REDUCED_AGE_GROUP, default=None),
     )
 
+    dataframe = dataframe.with_columns(pl.col("CO_MUNICIPIO_IBGE").cast(pl.Int64))
     dataframe = dataframe.join(_ibge_lookup_frame(), on="CO_MUNICIPIO_IBGE", how="left")
     dataframe = dataframe.drop(["CO_CNES", "CO_MUNICIPIO_IBGE"])
 
